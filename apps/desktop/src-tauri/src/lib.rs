@@ -47,7 +47,9 @@ pub fn run() {
             app.manage(ApiSidecar(Mutex::new(child)));
             Ok(())
         })
-        .on_event(|app, event| {
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 if let Some(state) = app.try_state::<ApiSidecar>() {
                     if let Ok(mut guard) = state.0.lock() {
@@ -57,7 +59,5 @@ pub fn run() {
                     }
                 }
             }
-        })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        });
 }

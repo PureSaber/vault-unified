@@ -15,7 +15,7 @@ export default function ConflictModal() {
 
   async function load() {
     const data = await api.conflicts();
-    setConflicts(data as Conflict[]);
+    setConflicts(data as unknown as Conflict[]);
   }
 
   useEffect(() => {
