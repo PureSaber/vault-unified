@@ -1,0 +1,129 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from vault_unified.api.deps import get_vault
+from vault_unified.api.schemas import EntryIn, EntryOut, EntryUpdate
+from vault_unified.clipboard import copy_to_clipboard
+from vault_unified.crypto import mask_secret
+from vault_unified.generator import generate_password
+from vault_unified.manager import UnifiedVault
+from vault_unified.models import SecretEntry, Source
+
+router = APIRouter(prefix="/entries", tags=["entries"])
+
+
+def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
+    return EntryOut(
+        id=entry.id,
+        title=entry.title,
+        username=entry.username,
+        password=entry.password if reveal else mask_secret(entry.password),
+        url=entry.url,
+        notes=entry.notes,
+        source=entry.source.value,
+        tags=entry.tags,
+        sync_status=entry.sync_status.value,
+        linked_sources=entry.linked_sources,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+    )
+
+
+@router.get("", response_model=list[EntryOut])
+def list_entries(
+    source: str | None = None,
+    q: str | None = None,
+    vault: UnifiedVault = Depends(get_vault),
+) -> list[EntryOut]:
+    if q:
+        entries = vault.search(q)
+    else:
+        src = Source(source) if source else None
+        entries = vault.list_all(source=src)
+    return [_to_out(e) for e in entries]
+
+
+@router.get("/{entry_id}", response_model=EntryOut)
+def get_entry(
+    entry_id: str,
+    reveal: bool = Query(default=False),
+    vault: UnifiedVault = Depends(get_vault),
+) -> EntryOut:
+    entry = vault.get(entry_id)
+    if not entry:
+        try:
+            entry = vault.resolve(entry_id)
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Not found") from exc
+    return _to_out(entry, reveal=reveal)
+
+
+@router.post("", response_model=EntryOut)
+def create_entry(body: EntryIn, vault: UnifiedVault = Depends(get_vault)) -> EntryOut:
+    entry = vault.add(
+        body.title,
+        body.username,
+        body.password,
+        body.url,
+        body.notes,
+        body.tags,
+    )
+    return _to_out(entry, reveal=True)
+
+
+@router.patch("/{entry_id}", response_model=EntryOut)
+def update_entry(
+    entry_id: str,
+    body: EntryUpdate,
+    vault: UnifiedVault = Depends(get_vault),
+) -> EntryOut:
+    try:
+        entry = vault.edit(
+            entry_id,
+            title=body.title,
+            username=body.username,
+            password=body.password,
+            url=body.url,
+            notes=body.notes,
+            tags=body.tags,
+        )
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _to_out(entry, reveal=True)
+
+
+@router.delete("/{entry_id}")
+def delete_entry(entry_id: str, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    try:
+        entry = vault.resolve(entry_id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    vault.delete(entry.id)
+    return {"deleted": entry.title}
+
+
+@router.post("/{entry_id}/copy")
+def copy_field(
+    entry_id: str,
+    field: str = Query(default="password"),
+    vault: UnifiedVault = Depends(get_vault),
+) -> dict:
+    try:
+        entry = vault.resolve(entry_id)
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    value = entry.password if field == "password" else entry.username
+    if not value:
+        raise HTTPException(status_code=400, detail=f"No {field}")
+    copy_to_clipboard(value)
+    return {"copied": field, "title": entry.title}
+
+
+@router.get("/tools/generate")
+def generate(
+    length: int = Query(default=20, ge=8, le=128),
+    symbols: bool = Query(default=True),
+) -> dict:
+    pwd = generate_password(length, symbols=symbols)
+    return {"password": pwd}

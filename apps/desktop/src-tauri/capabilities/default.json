@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "com.puresaber.vault-unified",
+  "description": "Vault Unified desktop capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-open"
+  ]
+}

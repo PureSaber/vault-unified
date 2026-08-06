@@ -1,0 +1,82 @@
+import { useState } from "react";
+import { api, Entry, hasToken } from "./api/client";
+import Unlock, { lockApp } from "./pages/Unlock";
+import VaultList from "./pages/VaultList";
+import EntryForm from "./pages/EntryForm";
+import SyncPanel from "./pages/SyncPanel";
+import Settings from "./pages/Settings";
+import ConflictModal from "./pages/ConflictModal";
+
+type Page = "list" | "add" | "sync" | "settings" | "conflicts";
+
+export default function App() {
+  const [unlocked, setUnlocked] = useState(hasToken());
+  const [page, setPage] = useState<Page>("list");
+  const [editEntry, setEditEntry] = useState<Entry | null>(null);
+
+  async function handleLock() {
+    try {
+      await api.lock();
+    } catch {
+      /* ignore */
+    }
+    lockApp();
+    setUnlocked(false);
+  }
+
+  if (!unlocked) {
+    return (
+      <div className="app">
+        <Unlock onUnlock={() => setUnlocked(true)} />
+      </div>
+    );
+  }
+
+  return (
+    <div className="app">
+      <header className="header">
+        <h1>Vault Unified</h1>
+        <nav className="nav">
+          <button className={page === "list" ? "active" : ""} onClick={() => setPage("list")}>
+            Vault
+          </button>
+          <button className={page === "add" ? "active" : ""} onClick={() => { setEditEntry(null); setPage("add"); }}>
+            Add
+          </button>
+          <button className={page === "sync" ? "active" : ""} onClick={() => setPage("sync")}>
+            Sync
+          </button>
+          <button className={page === "conflicts" ? "active" : ""} onClick={() => setPage("conflicts")}>
+            Conflicts
+          </button>
+          <button className={page === "settings" ? "active" : ""} onClick={() => setPage("settings")}>
+            Settings
+          </button>
+          <button onClick={handleLock}>Lock</button>
+        </nav>
+      </header>
+      <main className="main">
+        {page === "list" && (
+          <VaultList
+            onEdit={(e) => {
+              setEditEntry(e);
+              setPage("add");
+            }}
+          />
+        )}
+        {page === "add" && (
+          <EntryForm
+            entry={editEntry}
+            onDone={() => {
+              setEditEntry(null);
+              setPage("list");
+            }}
+          />
+        )}
+        {page === "sync" && <SyncPanel />}
+        {page === "settings" && <Settings />}
+        {page === "conflicts" && <ConflictModal />}
+      </main>
+    </div>
+  );
+}

@@ -105,11 +105,27 @@ def _print_entries(entries: list) -> None:
 
 def _print_sync_results(results: dict[str, dict[str, int]]) -> None:
     for source, stats in results.items():
+        conflicts = stats.get("conflicts", 0)
+        conflict_txt = f", {conflicts} conflicts" if conflicts else ""
         console.print(
             f"[green]{source}:[/green] "
-            f"{stats['added']} added, {stats['updated']} updated "
-            f"({stats['total']} total)"
+            f"{stats.get('added', 0)} added, {stats.get('updated', 0)} updated"
+            f"{conflict_txt} ({stats.get('total', 0)} total)"
         )
+
+
+def _print_bidirectional_result(result) -> None:
+    for source, stats in result.pulled.items():
+        _print_sync_results({source: stats})
+    if result.pushed:
+        console.print(
+            f"[green]push:[/green] {result.pushed.get('pushed', 0)} entries, "
+            f"{result.pushed.get('errors', 0)} errors"
+        )
+    if result.conflicts:
+        console.print(f"[yellow]{len(result.conflicts)} conflict(s) — run: vault conflicts list[/yellow]")
+    for err in result.errors:
+        console.print(f"[red]error:[/red] {err}")
 
 
 def _interactive_menu(vault_path: Path) -> None:
@@ -526,16 +542,109 @@ def import_bitwarden(vault_path: Path | None, password: str | None) -> None:
 
 
 @main.command()
+@click.option("--bidirectional", "-b", is_flag=True, help="Pull and push with conflict detection")
 @click.option("--vault-path", type=click.Path(path_type=Path), default=None)
 @_password_option()
-def sync(vault_path: Path | None, password: str | None) -> None:
-    """Import from all available external sources."""
+def sync(vault_path: Path | None, password: str | None, bidirectional: bool) -> None:
+    """Sync with external sources (pull only, or bidirectional with -b)."""
     vault = _open_vault(vault_path or get_vault_path(), password)
+    if bidirectional:
+        result = vault.sync_bidirectional()
+        _print_bidirectional_result(result)
+        return
     results = vault.sync_all()
     if not results:
         console.print("[yellow]No external sources available.[/yellow]")
         return
     _print_sync_results(results)
+
+
+@main.command()
+@click.argument("identifier", required=False)
+@click.option("--all", "push_all", is_flag=True, help="Push all dirty entries")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def push(
+    identifier: str | None,
+    push_all: bool,
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    """Push local changes to Proton Pass and Bitwarden."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    if push_all:
+        result = vault.push_all_dirty()
+        console.print(f"[green]Pushed {result['pushed']} entries ({result['errors']} errors)[/green]")
+        return
+    if not identifier:
+        console.print("[red]Provide entry title/id or use --all[/red]")
+        sys.exit(1)
+    entry = vault.resolve(identifier)
+    result = vault.push_entry(entry.id)
+    console.print(f"[green]Pushed to {result['pushed']} target(s)[/green]")
+
+
+@main.group()
+def conflicts() -> None:
+    """Manage sync conflicts."""
+
+
+@conflicts.command("list")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def conflicts_list(vault_path: Path | None, password: str | None) -> None:
+    """List unresolved sync conflicts."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    items = vault.list_conflicts()
+    if not items:
+        console.print("[dim]No conflicts.[/dim]")
+        return
+    for c in items:
+        console.print(f"[yellow]{c.id[:8]}[/yellow] {c.title} (default: {c.default_choice})")
+
+
+@conflicts.command("resolve")
+@click.argument("conflict_id")
+@click.option(
+    "--choice",
+    type=click.Choice(["local", "remote", "merge"]),
+    required=True,
+)
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def conflicts_resolve(
+    conflict_id: str,
+    choice: str,
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    """Resolve a sync conflict."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    try:
+        entry = vault.resolve_conflict(conflict_id, choice)
+    except KeyError as exc:
+        console.print(f"[red]Not found:[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[green]Resolved:[/green] {entry.title}")
+
+
+@main.command("desktop")
+def desktop_cmd() -> None:
+    """Start the Tauri desktop app (requires npm install in apps/desktop)."""
+    import subprocess
+    from vault_unified.env import find_project_root
+
+    root = find_project_root()
+    desktop = root / "apps" / "desktop"
+    if not (desktop / "package.json").exists():
+        console.print("[red]Desktop app not found.[/red]")
+        sys.exit(1)
+    console.print("[cyan]Starting Vault Unified desktop...[/cyan]")
+    subprocess.Popen(
+        ["npm", "run", "tauri", "dev"],
+        cwd=desktop,
+        shell=True,
+    )
 
 
 if __name__ == "__main__":

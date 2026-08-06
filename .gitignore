@@ -30,3 +30,8 @@ build/
 Thumbs.db
 .idea/
 .vscode/
+
+# Desktop app
+apps/desktop/node_modules/
+apps/desktop/dist/
+apps/desktop/src-tauri/target/

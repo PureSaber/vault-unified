@@ -13,6 +13,11 @@ from vault_unified.models import SecretEntry, Source
 class ProtonPassAdapter(CliAdapter):
     name = "Proton Pass"
     cli_name = "pass-cli"
+    source = Source.PROTON_PASS
+
+    def __init__(self) -> None:
+        self._default_share_id = os.environ.get("PROTON_PASS_SHARE_ID", "")
+        self._default_vault_name = os.environ.get("PROTON_PASS_VAULT_NAME", "")
 
     def _env(self) -> dict[str, str] | None:
         token = os.environ.get("PROTON_PASS_PERSONAL_ACCESS_TOKEN")
@@ -23,7 +28,7 @@ class ProtonPassAdapter(CliAdapter):
         return env
 
     def is_configured(self) -> bool:
-        return super().is_available() and self._env() is not None
+        return super().is_configured() and self._env() is not None
 
     def is_available(self) -> bool:
         return self.is_configured()
@@ -46,21 +51,112 @@ class ProtonPassAdapter(CliAdapter):
                 entries.append(entry)
         return entries
 
+    def get_entry(self, external_id: str) -> SecretEntry | None:
+        env = self._env()
+        if not env:
+            return None
+        view = self._run(["item", "view", external_id, "--output", "json"], env=env)
+        if view.returncode != 0:
+            return None
+        detail = json.loads(view.stdout)
+        return self._parse_detail(detail, external_id)
+
+    def create_entry(self, entry: SecretEntry) -> SecretEntry:
+        env = self._env()
+        if not env:
+            raise RuntimeError("Proton Pass not configured")
+        args = ["item", "create", "login", "--title", entry.title]
+        if entry.username:
+            args.extend(["--username", entry.username])
+        if entry.password:
+            args.extend(["--password", entry.password])
+        if entry.url:
+            args.extend(["--url", entry.url])
+        share_id = entry.proton_share_id or self._default_share_id
+        vault_name = self._default_vault_name
+        if share_id:
+            args.extend(["--share-id", share_id])
+        elif vault_name:
+            args.extend(["--vault-name", vault_name])
+        result = self._run(args, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Failed to create Proton Pass item")
+        try:
+            created = json.loads(result.stdout)
+            ext_id = created.get("id") or created.get("itemId", "")
+            share = created.get("shareId") or share_id
+        except json.JSONDecodeError:
+            ext_id = result.stdout.strip()
+            share = share_id
+        if ext_id:
+            entry.link_source(Source.PROTON_PASS, ext_id)
+            entry.external_id = ext_id
+        if share:
+            entry.proton_share_id = share
+        return entry
+
+    def update_entry(self, entry: SecretEntry) -> SecretEntry:
+        env = self._env()
+        if not env:
+            raise RuntimeError("Proton Pass not configured")
+        ext_id = entry.get_linked_id(Source.PROTON_PASS) or entry.external_id
+        if not ext_id:
+            return self.create_entry(entry)
+        args = ["item", "update", "--item-id", ext_id]
+        share_id = entry.proton_share_id or self._default_share_id
+        if share_id:
+            args.extend(["--share-id", share_id])
+        elif self._default_vault_name:
+            args.extend(["--vault-name", self._default_vault_name])
+        for field, value in [
+            ("title", entry.title),
+            ("username", entry.username),
+            ("password", entry.password),
+            ("url", entry.url),
+        ]:
+            if value:
+                args.extend(["--field", f"{field}={value}"])
+        result = self._run(args, env=env)
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Failed to update Proton Pass item")
+        return entry
+
+    def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
+        env = self._env()
+        if not env:
+            raise RuntimeError("Proton Pass not configured")
+        share_id = self._default_share_id
+        if not share_id:
+            raise RuntimeError("PROTON_PASS_SHARE_ID required for delete")
+        result = self._run(
+            ["item", "delete", "--share-id", share_id, "--item-id", external_id],
+            env=env,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.strip() or "Failed to delete Proton Pass item")
+
     def _item_to_entry(self, item: dict[str, Any], env: dict[str, str]) -> SecretEntry | None:
         item_id = item.get("id") or item.get("itemId") or ""
-        title = item.get("title") or item.get("name") or "Untitled"
-
-        detail = item
         if item_id:
             view = self._run(["item", "view", item_id, "--output", "json"], env=env)
             if view.returncode == 0 and view.stdout.strip():
-                detail = json.loads(view.stdout)
+                return self._parse_detail(json.loads(view.stdout), item_id)
+        title = item.get("title") or item.get("name") or "Untitled"
+        entry = SecretEntry(
+            title=title,
+            source=Source.PROTON_PASS,
+            external_id=item_id or title,
+        )
+        entry.link_source(Source.PROTON_PASS, item_id)
+        return entry
 
+    def _parse_detail(self, detail: dict[str, Any], item_id: str) -> SecretEntry:
+        title = detail.get("title") or detail.get("name") or "Untitled"
         content = detail.get("content") or detail
-        login = content.get("login") or content.get("itemEmail") or {}
+        login = content.get("login") or {}
         if isinstance(login, str):
             username = login
-            password = content.get("password") or content.get("itemPassword") or ""
+            password = content.get("password") or ""
         else:
             username = login.get("username") or login.get("email") or ""
             password = login.get("password") or ""
@@ -74,13 +170,24 @@ class ProtonPassAdapter(CliAdapter):
             url = urls
 
         notes = content.get("note") or content.get("notes") or detail.get("note") or ""
+        share_id = (
+            detail.get("shareId")
+            or detail.get("share_id")
+            or content.get("shareId")
+            or self._default_share_id
+        )
+        remote_updated = detail.get("modifyTime") or detail.get("updatedAt") or ""
 
-        return SecretEntry(
+        entry = SecretEntry(
             title=title,
             username=username,
             password=password,
             url=url,
             notes=notes,
             source=Source.PROTON_PASS,
-            external_id=item_id or title,
+            external_id=item_id,
+            remote_updated_at=remote_updated,
+            proton_share_id=share_id or "",
         )
+        entry.link_source(Source.PROTON_PASS, item_id)
+        return entry

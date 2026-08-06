@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vault-unified"
-version = "0.2.0"
-description = "Unified password vault: local encrypted storage + Proton Pass + Bitwarden"
+version = "1.0.0"
+description = "Unified password vault: local encryption + Proton Pass + Bitwarden + desktop GUI"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
@@ -16,8 +16,24 @@ dependencies = [
     "keyring>=25.0.0",
 ]
 
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.0.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "vault-unified[api]",
+]
+
 [project.scripts]
 vault = "vault_unified.cli:main"
+vault-api = "vault_unified.api.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
