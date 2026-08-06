@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { api, Entry, hasToken } from "./api/client";
+import { ToastProvider } from "./components/Toast";
 import Unlock, { lockApp } from "./pages/Unlock";
 import VaultList from "./pages/VaultList";
 import EntryForm from "./pages/EntryForm";
@@ -9,7 +10,15 @@ import ConflictModal from "./pages/ConflictModal";
 
 type Page = "list" | "add" | "sync" | "settings" | "conflicts";
 
-export default function App() {
+const NAV: { id: Page; label: string }[] = [
+  { id: "list", label: "Vault" },
+  { id: "add", label: "Add" },
+  { id: "sync", label: "Sync" },
+  { id: "conflicts", label: "Conflicts" },
+  { id: "settings", label: "Settings" },
+];
+
+function AppShell() {
   const [unlocked, setUnlocked] = useState(hasToken());
   const [page, setPage] = useState<Page>("list");
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
@@ -36,26 +45,27 @@ export default function App() {
     <div className="app">
       <header className="header">
         <h1>Vault Unified</h1>
-        <nav className="nav">
-          <button className={page === "list" ? "active" : ""} onClick={() => setPage("list")}>
-            Vault
+        <nav className="nav" aria-label="Main navigation">
+          {NAV.map(({ id, label }) => (
+            <button
+              key={id}
+              type="button"
+              className={page === id ? "active" : ""}
+              onClick={() => {
+                if (id === "add") setEditEntry(null);
+                setPage(id);
+              }}
+              aria-current={page === id ? "page" : undefined}
+            >
+              {label}
+            </button>
+          ))}
+          <button type="button" className="nav-lock" onClick={handleLock}>
+            Lock
           </button>
-          <button className={page === "add" ? "active" : ""} onClick={() => { setEditEntry(null); setPage("add"); }}>
-            Add
-          </button>
-          <button className={page === "sync" ? "active" : ""} onClick={() => setPage("sync")}>
-            Sync
-          </button>
-          <button className={page === "conflicts" ? "active" : ""} onClick={() => setPage("conflicts")}>
-            Conflicts
-          </button>
-          <button className={page === "settings" ? "active" : ""} onClick={() => setPage("settings")}>
-            Settings
-          </button>
-          <button onClick={handleLock}>Lock</button>
         </nav>
       </header>
-      <main className="main">
+      <main className="main" id="main-content">
         {page === "list" && (
           <VaultList
             onEdit={(e) => {
@@ -78,5 +88,13 @@ export default function App() {
         {page === "conflicts" && <ConflictModal />}
       </main>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <ToastProvider>
+      <AppShell />
+    </ToastProvider>
   );
 }
