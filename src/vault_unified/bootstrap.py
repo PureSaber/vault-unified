@@ -42,5 +42,5 @@ def import_token_txt(project_root: Path, vault: UnifiedVault) -> int:
             source=Source.LOCAL,
             tags=["imported", "token.txt"],
         )
-    )
+    )[0]
     return 1

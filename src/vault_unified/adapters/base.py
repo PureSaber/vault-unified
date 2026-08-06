@@ -21,9 +21,15 @@ class VaultAdapter(ABC):
         """Fetch all entries from the external vault."""
 
     def status_message(self) -> str:
-        if self.is_available():
-            return f"{self.name}: available"
-        return f"{self.name}: not available (CLI missing or not configured)"
+        if self.is_configured():
+            return f"{self.name}: configured"
+        if shutil.which(getattr(self, "cli_name", "")):
+            return f"{self.name}: CLI found, credentials missing"
+        return f"{self.name}: CLI not installed"
+
+    @abstractmethod
+    def is_configured(self) -> bool:
+        """Return True if CLI is installed and credentials are set."""
 
 
 class CliAdapter(VaultAdapter):

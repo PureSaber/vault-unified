@@ -122,7 +122,9 @@ vault sync
 | `vault status` | 查看本地库与外部集成状态 |
 | `vault add` | 添加本地条目 |
 | `vault list` | 列出条目（密码脱敏） |
-| `vault get <title>` | 查看单条 |
+| `vault copy <标题>` | 复制密码到剪贴板 |
+| `vault edit <标题>` | 编辑条目（可交互） |
+| `vault generate --copy` | 生成强密码并复制 |
 | `vault search <query>` | 搜索 |
 | `vault delete <id>` | 删除 |
 | `vault import proton` | 从 Proton Pass 导入 |

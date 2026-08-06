@@ -22,10 +22,11 @@ class ProtonPassAdapter(CliAdapter):
         env["PROTON_PASS_PERSONAL_ACCESS_TOKEN"] = token
         return env
 
+    def is_configured(self) -> bool:
+        return super().is_available() and self._env() is not None
+
     def is_available(self) -> bool:
-        if not super().is_available():
-            return False
-        return self._env() is not None
+        return self.is_configured()
 
     def list_entries(self) -> list[SecretEntry]:
         env = self._env()

@@ -47,12 +47,20 @@ class LocalVault:
     def get(self, entry_id: str) -> SecretEntry | None:
         return self._entries.get(entry_id)
 
-    def find_by_title(self, title: str) -> SecretEntry | None:
-        title_lower = title.lower()
+    def find_matches(self, identifier: str) -> list[SecretEntry]:
+        """Find entries by exact title (case-insensitive) or id prefix."""
+        identifier_lower = identifier.lower()
+        matches: list[SecretEntry] = []
         for entry in self._entries.values():
-            if entry.title.lower() == title_lower:
-                return entry
-        return None
+            if entry.id == identifier or entry.id.startswith(identifier):
+                matches.append(entry)
+            elif entry.title.lower() == identifier_lower:
+                matches.append(entry)
+        return sorted(matches, key=lambda e: e.title.lower())
+
+    def find_by_title(self, title: str) -> SecretEntry | None:
+        matches = self.find_matches(title)
+        return matches[0] if matches else None
 
     def search(self, query: str) -> list[SecretEntry]:
         q = query.lower()
@@ -72,8 +80,8 @@ class LocalVault:
         self._save()
         return entry
 
-    def upsert(self, entry: SecretEntry) -> SecretEntry:
-        """Insert or update by external_id + source, or by id."""
+    def upsert(self, entry: SecretEntry, *, save: bool = True) -> tuple[SecretEntry, bool]:
+        """Insert or update by external_id + source. Returns (entry, is_new)."""
         existing = None
         if entry.external_id:
             for candidate in self._entries.values():
@@ -83,11 +91,43 @@ class LocalVault:
                 ):
                     existing = candidate
                     break
+        is_new = existing is None
         if existing:
             entry.id = existing.id
             entry.created_at = existing.created_at
         entry.touch()
         self._entries[entry.id] = entry
+        if save:
+            self._save()
+        return entry, is_new
+
+    def update(
+        self,
+        entry_id: str,
+        *,
+        title: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        url: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+    ) -> SecretEntry:
+        entry = self._entries.get(entry_id)
+        if not entry:
+            raise KeyError(entry_id)
+        if title is not None:
+            entry.title = title
+        if username is not None:
+            entry.username = username
+        if password is not None:
+            entry.password = password
+        if url is not None:
+            entry.url = url
+        if notes is not None:
+            entry.notes = notes
+        if tags is not None:
+            entry.tags = tags
+        entry.touch()
         self._save()
         return entry
 
@@ -98,9 +138,15 @@ class LocalVault:
         self._save()
         return True
 
-    def import_entries(self, entries: list[SecretEntry]) -> int:
-        count = 0
+    def import_entries(self, entries: list[SecretEntry]) -> dict[str, int]:
+        added = 0
+        updated = 0
         for entry in entries:
-            self.upsert(entry)
-            count += 1
-        return count
+            _, is_new = self.upsert(entry, save=False)
+            if is_new:
+                added += 1
+            else:
+                updated += 1
+        if entries:
+            self._save()
+        return {"added": added, "updated": updated, "total": len(entries)}

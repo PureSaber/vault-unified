@@ -10,9 +10,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from vault_unified.bootstrap import import_token_txt
+from vault_unified.clipboard import copy_to_clipboard
 from vault_unified.config import get_vault_path
 from vault_unified.crypto import mask_secret
 from vault_unified.env import find_project_root, load_env
+from vault_unified.generator import generate_password
 from vault_unified.keyring_store import (
     clear_master_password,
     get_master_password,
@@ -101,6 +103,15 @@ def _print_entries(entries: list) -> None:
     console.print(table)
 
 
+def _print_sync_results(results: dict[str, dict[str, int]]) -> None:
+    for source, stats in results.items():
+        console.print(
+            f"[green]{source}:[/green] "
+            f"{stats['added']} added, {stats['updated']} updated "
+            f"({stats['total']} total)"
+        )
+
+
 def _interactive_menu(vault_path: Path) -> None:
     vault = _open_vault(vault_path, None)
     console.print(
@@ -111,7 +122,8 @@ def _interactive_menu(vault_path: Path) -> None:
     )
     while True:
         console.print(
-            "\n[1] List  [2] Search  [3] Add  [4] Get  [5] Sync  [6] Status  [0] Exit"
+            "\n[1] List  [2] Search  [3] Add  [4] Get  [5] Copy  "
+            "[6] Edit  [7] Delete  [8] Sync  [9] Status  [0] Exit"
         )
         choice = click.prompt(">", default="1", show_default=False).strip().lower()
 
@@ -135,9 +147,10 @@ def _interactive_menu(vault_path: Path) -> None:
             console.print(f"[green]Added:[/green] {entry.title}")
         elif choice in {"4", "get"}:
             title = click.prompt("Title")
-            entry = vault.get_by_title(title)
-            if not entry:
-                console.print(f"[red]Not found:[/red] {title}")
+            try:
+                entry = vault.resolve(title)
+            except (KeyError, ValueError) as exc:
+                console.print(f"[red]{exc}[/red]")
                 continue
             console.print(f"[bold]{entry.title}[/bold]")
             console.print(f"Username: {entry.username or '-'}")
@@ -145,14 +158,53 @@ def _interactive_menu(vault_path: Path) -> None:
                 console.print(f"Password: {entry.password}")
             else:
                 console.print(f"Password: {mask_secret(entry.password)}")
-        elif choice in {"5", "sync"}:
+        elif choice in {"5", "copy"}:
+            title = click.prompt("Title")
+            try:
+                entry = vault.resolve(title)
+                copy_to_clipboard(entry.password)
+                console.print(f"[green]Password copied for {entry.title}[/green]")
+            except (KeyError, ValueError, RuntimeError) as exc:
+                console.print(f"[red]{exc}[/red]")
+        elif choice in {"6", "edit"}:
+            title = click.prompt("Title")
+            try:
+                entry = vault.resolve(title)
+            except (KeyError, ValueError) as exc:
+                console.print(f"[red]{exc}[/red]")
+                continue
+            new_title = click.prompt("Title", default=entry.title)
+            new_username = click.prompt("Username", default=entry.username, show_default=True)
+            if click.confirm("Change password?", default=False):
+                new_password = getpass.getpass("New password: ")
+            else:
+                new_password = entry.password
+            new_url = click.prompt("URL", default=entry.url, show_default=True)
+            vault.edit(
+                entry.id,
+                title=new_title,
+                username=new_username,
+                password=new_password,
+                url=new_url,
+            )
+            console.print(f"[green]Updated:[/green] {new_title}")
+        elif choice in {"7", "delete"}:
+            title = click.prompt("Title or ID")
+            try:
+                entry = vault.resolve(title)
+            except (KeyError, ValueError) as exc:
+                console.print(f"[red]{exc}[/red]")
+                continue
+            if click.confirm(f"Delete '{entry.title}'?", default=False):
+                vault.delete(entry.id)
+                console.print(f"[green]Deleted:[/green] {entry.title}")
+        elif choice in {"8", "sync"}:
             results = vault.sync_all()
             if not results:
                 console.print("[yellow]No external sources configured.[/yellow]")
             else:
-                for source, count in results.items():
-                    console.print(f"[green]{source}:[/green] {count} imported")
-        elif choice in {"6", "status"}:
+                _print_sync_results(results)
+        elif choice in {"9", "status"}:
             for name, state in vault.status().items():
                 console.print(f"{name}: {state}")
         else:
@@ -202,8 +254,7 @@ def setup(vault_path: Path | None) -> None:
     if click.confirm("\nSync from available external sources now?", default=False):
         results = vault.sync_all()
         if results:
-            for source, count in results.items():
-                console.print(f"[green]{source}:[/green] {count} imported")
+            _print_sync_results(results)
         else:
             console.print("[yellow]No external sources available. Edit .env and run: vault sync[/yellow]")
 
@@ -303,16 +354,17 @@ def add(
 
 
 @main.command()
-@click.argument("title")
+@click.argument("identifier")
 @click.option("--show-password", is_flag=True, help="Print full password to stdout")
 @click.option("--vault-path", type=click.Path(path_type=Path), default=None)
 @_password_option()
-def get(title: str, show_password: bool, vault_path: Path | None, password: str | None) -> None:
-    """Get a secret by title."""
+def get(identifier: str, show_password: bool, vault_path: Path | None, password: str | None) -> None:
+    """Get a secret by title or id."""
     vault = _open_vault(vault_path or get_vault_path(), password)
-    entry = vault.get_by_title(title)
-    if not entry:
-        console.print(f"[red]Not found:[/red] {title}")
+    try:
+        entry = vault.resolve(identifier)
+    except (KeyError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
         sys.exit(1)
     console.print(f"[bold]{entry.title}[/bold]")
     console.print(f"Username: {entry.username or '-'}")
@@ -325,22 +377,110 @@ def get(title: str, show_password: bool, vault_path: Path | None, password: str 
 
 
 @main.command()
-@click.argument("entry_id")
+@click.argument("identifier")
+@click.option(
+    "--field",
+    type=click.Choice(["password", "username"]),
+    default="password",
+    help="Which field to copy",
+)
 @click.option("--vault-path", type=click.Path(path_type=Path), default=None)
 @_password_option()
-def delete(entry_id: str, vault_path: Path | None, password: str | None) -> None:
-    """Delete a secret by id prefix or full id."""
+def copy(identifier: str, field: str, vault_path: Path | None, password: str | None) -> None:
+    """Copy password or username to clipboard."""
     vault = _open_vault(vault_path or get_vault_path(), password)
-    target = None
-    for entry in vault.list_all():
-        if entry.id == entry_id or entry.id.startswith(entry_id):
-            target = entry
-            break
-    if not target:
-        console.print(f"[red]Not found:[/red] {entry_id}")
+    try:
+        entry = vault.resolve(identifier)
+        value = entry.password if field == "password" else entry.username
+        if not value:
+            console.print(f"[red]No {field} stored for {entry.title}[/red]")
+            sys.exit(1)
+        copy_to_clipboard(value)
+        console.print(f"[green]Copied {field} for {entry.title}[/green]")
+    except (KeyError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
         sys.exit(1)
-    vault.delete(target.id)
-    console.print(f"[green]Deleted:[/green] {target.title}")
+    except RuntimeError as exc:
+        console.print(f"[red]Clipboard error:[/red] {exc}")
+        sys.exit(1)
+
+
+@main.command()
+@click.argument("identifier")
+@click.option("--title")
+@click.option("--username")
+@click.option("--password", "new_password", hide_input=True)
+@click.option("--url")
+@click.option("--notes")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option("--vault-password", "VAULT_PASSWORD")
+def edit(
+    identifier: str,
+    title: str | None,
+    username: str | None,
+    new_password: str | None,
+    url: str | None,
+    notes: str | None,
+    vault_path: Path | None,
+    vault_password: str | None,
+) -> None:
+    """Edit a secret by title or id. Omit flags for interactive prompts."""
+    vault = _open_vault(vault_path or get_vault_path(), vault_password)
+    try:
+        entry = vault.resolve(identifier)
+    except (KeyError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if not any([title, username, new_password, url, notes]):
+        title = click.prompt("Title", default=entry.title)
+        username = click.prompt("Username", default=entry.username, show_default=True)
+        if click.confirm("Change password?", default=False):
+            new_password = getpass.getpass("New password: ")
+        url = click.prompt("URL", default=entry.url, show_default=True)
+        notes = click.prompt("Notes", default=entry.notes, show_default=True)
+
+    updated = vault.edit(
+        entry.id,
+        title=title,
+        username=username,
+        password=new_password,
+        url=url,
+        notes=notes,
+    )
+    console.print(f"[green]Updated:[/green] {updated.title} ({updated.id[:8]})")
+
+
+@main.command()
+@click.option("--length", default=20, show_default=True, type=click.IntRange(8, 128))
+@click.option("--no-symbols", is_flag=True, help="Exclude symbols from generated password")
+@click.option("--copy", "copy_flag", is_flag=True, help="Copy generated password to clipboard")
+def generate(length: int, no_symbols: bool, copy_flag: bool) -> None:
+    """Generate a strong random password."""
+    pwd = generate_password(length, symbols=not no_symbols)
+    console.print(pwd)
+    if copy_flag:
+        try:
+            copy_to_clipboard(pwd)
+            console.print("[green]Copied to clipboard.[/green]")
+        except RuntimeError as exc:
+            console.print(f"[yellow]Could not copy:[/yellow] {exc}")
+
+
+@main.command()
+@click.argument("identifier")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def delete(identifier: str, vault_path: Path | None, password: str | None) -> None:
+    """Delete a secret by title or id."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    try:
+        entry = vault.resolve(identifier)
+    except (KeyError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    vault.delete(entry.id)
+    console.print(f"[green]Deleted:[/green] {entry.title}")
 
 
 @main.group()
@@ -361,7 +501,10 @@ def import_proton(vault_path: Path | None, password: str | None) -> None:
         )
         sys.exit(1)
     count = vault.import_from_proton()
-    console.print(f"[green]Imported {count} entries from Proton Pass.[/green]")
+    console.print(
+        f"[green]Proton Pass:[/green] {count['added']} added, "
+        f"{count['updated']} updated ({count['total']} total)"
+    )
 
 
 @import_cmd.command("bitwarden")
@@ -376,7 +519,10 @@ def import_bitwarden(vault_path: Path | None, password: str | None) -> None:
         )
         sys.exit(1)
     count = vault.import_from_bitwarden()
-    console.print(f"[green]Imported {count} entries from Bitwarden.[/green]")
+    console.print(
+        f"[green]Bitwarden:[/green] {count['added']} added, "
+        f"{count['updated']} updated ({count['total']} total)"
+    )
 
 
 @main.command()
@@ -389,8 +535,7 @@ def sync(vault_path: Path | None, password: str | None) -> None:
     if not results:
         console.print("[yellow]No external sources available.[/yellow]")
         return
-    for source, count in results.items():
-        console.print(f"[green]{source}:[/green] {count} entries imported")
+    _print_sync_results(results)
 
 
 if __name__ == "__main__":

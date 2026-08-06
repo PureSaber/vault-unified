@@ -42,8 +42,17 @@ class BitwardenAdapter(CliAdapter):
         self._session = unlock.stdout.strip()
         return self._session
 
-    def is_available(self) -> bool:
+    def is_configured(self) -> bool:
         if not super().is_available():
+            return False
+        return bool(
+            os.environ.get("BW_CLIENTID")
+            and os.environ.get("BW_CLIENTSECRET")
+            and os.environ.get("BW_PASSWORD")
+        )
+
+    def is_available(self) -> bool:
+        if not self.is_configured():
             return False
         return self._ensure_session() is not None
 

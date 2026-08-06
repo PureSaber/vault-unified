@@ -40,6 +40,15 @@ class UnifiedVault:
     def get_by_title(self, title: str) -> SecretEntry | None:
         return self.local.find_by_title(title)
 
+    def resolve(self, identifier: str) -> SecretEntry:
+        matches = self.local.find_matches(identifier)
+        if not matches:
+            raise KeyError(identifier)
+        if len(matches) > 1:
+            names = ", ".join(e.title for e in matches)
+            raise ValueError(f"Multiple matches for '{identifier}': {names}")
+        return matches[0]
+
     def add(
         self,
         title: str,
@@ -60,21 +69,43 @@ class UnifiedVault:
         )
         return self.local.add(entry)
 
+    def edit(
+        self,
+        identifier: str,
+        *,
+        title: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        url: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+    ) -> SecretEntry:
+        entry = self.resolve(identifier)
+        return self.local.update(
+            entry.id,
+            title=title,
+            username=username,
+            password=password,
+            url=url,
+            notes=notes,
+            tags=tags,
+        )
+
     def delete(self, entry_id: str) -> bool:
         return self.local.delete(entry_id)
 
-    def import_from_proton(self) -> int:
+    def import_from_proton(self) -> dict[str, int]:
         entries = self.proton.list_entries()
         return self.local.import_entries(entries)
 
-    def import_from_bitwarden(self) -> int:
+    def import_from_bitwarden(self) -> dict[str, int]:
         entries = self.bitwarden.list_entries()
         return self.local.import_entries(entries)
 
-    def sync_all(self) -> dict[str, int]:
-        results: dict[str, int] = {}
-        if self.proton.is_available():
+    def sync_all(self) -> dict[str, dict[str, int]]:
+        results: dict[str, dict[str, int]] = {}
+        if self.proton.is_configured():
             results["proton_pass"] = self.import_from_proton()
-        if self.bitwarden.is_available():
+        if self.bitwarden.is_configured():
             results["bitwarden"] = self.import_from_bitwarden()
         return results
