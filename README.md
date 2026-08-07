@@ -116,7 +116,7 @@ powershell -ExecutionPolicy Bypass -File configure-integrations.ps1
 
 | 服务 | 获取方式 |
 |------|----------|
-| Proton Pass | [Pass → Settings → Security → Personal access tokens](https://pass.proton.me/) |
+| Proton Pass | [设置 → 访问令牌](https://pass.proton.me/)（需 **Pass Plus**） |
 | Bitwarden | [Security → API Key](https://vault.bitwarden.com/#/settings/security/security-keys) + 主密码 |
 
 **`.env` 示例：**
@@ -132,6 +132,34 @@ BW_SERVER=https://vault.bitwarden.com
 ```
 
 配置完成后：`.\vault.cmd sync` 或 `.\launch-desktop.ps1`。
+
+## 常见问题（FAQ）
+
+### Proton Pass：找不到访问令牌 / 提示要升级？
+
+- 正确位置：**设置 → 访问令牌**（API Tokens），不是「安全」。
+- **免费版（Proton Free）无法创建访问令牌**；CLI 自动化同步需要 **Proton Pass Plus** 付费套餐。
+- 免费用户可：只用本地库、只配 Bitwarden，或在 Proton Pass 网页/App 里手动管理密码。
+
+### Bitwarden：加密密钥设置 vs API 密钥？
+
+- **加密密钥设置**（KDF / 迭代次数）：vault 加密参数，**与 CLI 同步无关**，默认不要改。
+- **API 密钥**（OAuth client_id / client_secret）：**设置 → 安全 → API 密钥**，用于填 `.env` 的 `BW_CLIENTID` / `BW_CLIENTSECRET`。
+- `scope`、`grant_type` 由 Bitwarden 固定，**不用写进 `.env`**；还需本机填 `BW_PASSWORD`（登录主密码）。
+
+### `sync` 显示 `0 added, 0 updated`？
+
+- 连接可能已成功，但**云端保险库是空的**（例如 Proton / Bitwarden 都还没有条目）。
+- 先在对应网页里添加或导入密码，再运行 `.\vault.cmd sync`。
+
+### 什么该进 GitHub，什么不该？
+
+| 可提交 | 不可提交 |
+|--------|----------|
+| README、`.env.example`、`configure-integrations.ps1` | `.env`、`.vault/`、`token.txt` |
+| 源代码、安装说明 | API secret、主密码、真实 token |
+
+凭证泄露后：轮换 Bitwarden API 密钥 / 主密码；Proton token 在控制台撤销并重建。
 
 ## 架构
 
