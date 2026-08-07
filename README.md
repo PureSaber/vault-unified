@@ -1,4 +1,4 @@
-# Vault Unified v1.2
+# Vault Unified v1.0
 
 本地加密密码库 + **Tauri 桌面应用** + 多密码源 **双向同步**（Bitwarden、KeePassXC、gopass；Proton Pass 需 Plus）。
 
@@ -221,10 +221,13 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 
 ## 版本
 
-- v1.2.0 — 可选外源 enabled_sources（勾选参与同步的密码库）
-- v1.1.0 — KeePassXC + gopass 适配器，免费三方同步
-- v1.0.0 — Tauri GUI + 双向同步
-- v0.2.0 — copy / edit / generate
-- v0.1.0 — CLI + 单向导入
+**v1.0.0** — 首个正式版，包含：
+
+- 本地加密库 + CLI（`vault.cmd`）
+- Tauri 桌面应用 + FastAPI sidecar
+- 外部源：Bitwarden、KeePassXC、gopass、Proton Pass（Plus）
+- 双向同步、冲突处理、主数据源设置
+- **可选外源** `enabled_sources`（勾选参与同步的密码库）
+- Windows 初始化脚本（`setup-keepassxc.ps1`、`setup-gopass.ps1`）
 
 GitHub: https://github.com/PureSaber/vault-unified
