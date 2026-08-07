@@ -295,6 +295,179 @@ button:focus-visible {
   box-shadow: var(--focus-ring);
 }
 
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+/* —— Accessibility utilities —— */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-md);
+  top: var(--space-md);
+  z-index: 1000;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-accent);
+  color: #fff;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  font-weight: 500;
+  transform: translateY(-120%);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* —— Loading skeleton —— */
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.skeleton-list {
+  pointer-events: none;
+}
+
+.skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.skeleton-block {
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-raised);
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.skeleton-title {
+  height: 16px;
+  width: 40%;
+}
+
+.skeleton-meta {
+  height: 12px;
+  width: 65%;
+}
+
+/* —— Confirm dialog —— */
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-xl);
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.confirm-dialog {
+  width: 100%;
+  max-width: 420px;
+  margin: 0;
+}
+
+.confirm-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.confirm-message {
+  margin: 0 0 var(--space-lg);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+}
+
+.confirm-actions {
+  margin-top: 0;
+  justify-content: flex-end;
+}
+
+/* —— Sync result summary —— */
+.sync-summary {
+  margin-top: var(--space-md);
+}
+
+.sync-summary-grid {
+  display: grid;
+  gap: var(--space-sm);
+  margin: 0;
+}
+
+.sync-summary-row {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-surface-inset);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+}
+
+.sync-summary-row dt {
+  font-weight: 500;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.sync-summary-row dd {
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.sync-summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sync-summary-list li + li {
+  margin-top: var(--space-xs);
+}
+
+.sync-muted {
+  color: var(--color-text-faint);
+}
+
+.sync-warning {
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.sync-error {
+  color: var(--color-error);
+}
+
+.sync-raw-toggle {
+  margin-top: var(--space-md);
+  font-size: 13px;
+}
+
+
 button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -528,6 +701,21 @@ button.icon-btn {
   text-align: center;
   padding: var(--space-2xl);
   color: var(--color-text-muted);
+}
+
+.empty-state-title {
+  margin: 0 0 var(--space-sm);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+}
+
+.empty-state-hint {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 360px;
+  margin-inline: auto;
 }
 
 .status-grid {

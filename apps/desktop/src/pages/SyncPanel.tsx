@@ -1,17 +1,12 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useToast } from "../components/Toast";
-
-interface SyncResult {
-  pulled?: Record<string, unknown>;
-  pushed?: Record<string, unknown>;
-  conflicts?: unknown[];
-}
+import SyncResultSummary, { type SyncResultData } from "../components/SyncResultSummary";
 
 export default function SyncPanel() {
   const { showToast } = useToast();
   const [status, setStatus] = useState<Record<string, string>>({});
-  const [result, setResult] = useState<SyncResult | null>(null);
+  const [result, setResult] = useState<SyncResultData | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -33,7 +28,7 @@ export default function SyncPanel() {
     setBusy(true);
     try {
       const res = await api.sync();
-      setResult(res as SyncResult);
+      setResult(res as SyncResultData);
       showToast("Sync completed");
       loadStatus();
     } catch (err) {
@@ -50,7 +45,7 @@ export default function SyncPanel() {
     setBusy(true);
     try {
       const res = await api.push();
-      setResult(res as SyncResult);
+      setResult(res as SyncResultData);
       showToast("Push completed");
       loadStatus();
     } catch (err) {
@@ -93,7 +88,7 @@ export default function SyncPanel() {
       {result && (
         <div style={{ marginTop: "var(--space-xl)" }}>
           <p className="section-title">Last operation</p>
-          <div className="result-panel">{JSON.stringify(result, null, 2)}</div>
+          <SyncResultSummary result={result} />
         </div>
       )}
     </div>

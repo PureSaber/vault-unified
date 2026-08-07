@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, Entry, hasToken } from "./api/client";
 import { ToastProvider } from "./components/Toast";
+import SkipLink from "./components/SkipLink";
 import Unlock, { lockApp } from "./pages/Unlock";
 import VaultList from "./pages/VaultList";
 import EntryForm from "./pages/EntryForm";
@@ -43,6 +44,7 @@ function AppShell() {
 
   return (
     <div className="app">
+      <SkipLink />
       <header className="header">
         <h1>Vault Unified</h1>
         <nav className="nav" aria-label="Main navigation">

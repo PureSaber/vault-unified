@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, Entry } from "../api/client";
 import { useToast } from "../components/Toast";
+import LoadingSkeleton from "../components/LoadingSkeleton";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 interface Props {
   onEdit: (entry: Entry) => void;
@@ -23,14 +25,19 @@ export default function VaultList({ onEdit }: Props) {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
 
   async function load(q?: string) {
     try {
       setError("");
+      setLoading(true);
       setEntries(await api.listEntries(q));
     } catch (err) {
       setError(String(err));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -66,7 +73,13 @@ export default function VaultList({ onEdit }: Props) {
   }
 
   async function handleDelete(id: string, title: string) {
-    if (!window.confirm(`Delete "${title}"? This cannot be undone from the vault UI.`)) return;
+    setPendingDelete({ id, title });
+  }
+
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const { id } = pendingDelete;
+    setPendingDelete(null);
     try {
       await api.deleteEntry(id);
       showToast("Entry deleted");
@@ -78,6 +91,19 @@ export default function VaultList({ onEdit }: Props) {
 
   return (
     <div>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Delete entry"
+        message={
+          pendingDelete
+            ? `Delete "${pendingDelete.title}"? This cannot be undone from the vault UI.`
+            : ""
+        }
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
       <div className="list-toolbar">
         <input
           id="vault-search"
@@ -94,8 +120,15 @@ export default function VaultList({ onEdit }: Props) {
 
       {error && <div className="error" role="alert">{error}</div>}
 
-      {entries.length === 0 && !error ? (
-        <div className="empty-state card">No entries found. Add a credential or sync from an external source.</div>
+      {loading && !error ? (
+        <LoadingSkeleton />
+      ) : entries.length === 0 && !error ? (
+        <div className="empty-state card">
+          <p className="empty-state-title">Your vault is empty</p>
+          <p className="empty-state-hint">
+            Add a credential manually or run sync to pull entries from Proton Pass or Bitwarden.
+          </p>
+        </div>
       ) : (
         <ul className="entry-list" aria-label="Vault entries">
           {entries.map((e) => (
