@@ -12,7 +12,7 @@ load_env()
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Vault Unified API", version="1.0.0")
+    app = FastAPI(title="Vault Unified API", version="1.0.2")
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[

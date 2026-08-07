@@ -221,7 +221,7 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 
 ## 版本
 
-**v1.0.0** — 首个正式版，包含：
+**v1.0.2** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）
 - Tauri 桌面应用 + FastAPI sidecar
@@ -229,5 +229,6 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 - 双向同步、冲突处理、主数据源设置
 - **可选外源** `enabled_sources`（勾选参与同步的密码库）
 - Windows 初始化脚本（`setup-keepassxc.ps1`、`setup-gopass.ps1`）
+- 桌面 UI polish（toast、密码显隐、设计 token）
 
 GitHub: https://github.com/PureSaber/vault-unified
