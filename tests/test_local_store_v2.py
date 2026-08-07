@@ -7,6 +7,7 @@ import pytest
 
 from vault_unified.local_store import LocalVault
 from vault_unified.models import PrimarySource, SecretEntry, Source, SyncStatus
+from vault_unified.adapters.registry import REMOTE_SOURCES, get_adapter
 from vault_unified.sync.conflicts import apply_resolution, default_resolution, detect_conflict
 from vault_unified.sync_prefs import load_prefs, save_prefs
 
@@ -99,3 +100,10 @@ def test_sync_preferences_roundtrip(vault_path):
     loaded = load_prefs(vault_path)
     assert loaded.primary == PrimarySource.BITWARDEN
     assert loaded.auto_push_on_edit is False
+
+
+def test_remote_registry_includes_new_sources():
+    assert Source.KEEPASSXC in REMOTE_SOURCES
+    assert Source.GOPASS in REMOTE_SOURCES
+    assert get_adapter(Source.KEEPASSXC).name == "KeePassXC"
+    assert get_adapter(Source.GOPASS).name == "gopass"

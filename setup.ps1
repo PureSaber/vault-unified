@@ -26,6 +26,11 @@ Write-Host "==> Running first-time wizard..."
 .\.venv\Scripts\vault setup
 
 Write-Host ""
+Write-Host "Optional external sources:" -ForegroundColor Yellow
+Write-Host "  powershell -File scripts\setup-keepassxc.ps1"
+Write-Host "  powershell -File scripts\setup-gopass.ps1"
+Write-Host "  powershell -File configure-integrations.ps1"
+Write-Host ""
 Write-Host "Done! Next time just run:" -ForegroundColor Green
 Write-Host "  .\vault.cmd" -ForegroundColor White
 Write-Host "  or double-click vault.cmd" -ForegroundColor White

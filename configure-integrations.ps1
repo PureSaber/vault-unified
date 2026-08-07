@@ -40,6 +40,27 @@ if ($bwClientId) {
     if ($serverInput) { $bwServer = $serverInput }
 }
 
+Write-Host ""
+Write-Host "=== KeePassXC ===" -ForegroundColor Yellow
+Write-Host "Or run: powershell -File scripts\setup-keepassxc.ps1"
+$kpxDb = Read-Host "KEEPASSXC_DATABASE path (.kdbx, Enter to skip)"
+$kpxPass = ""
+$kpxKeyFile = ""
+$kpxGroup = ""
+if ($kpxDb) {
+    $kpxPass = Read-Secret "KEEPASSXC_PASSWORD (database master password)"
+    $kpxKeyFile = Read-Host "KEEPASSXC_KEY_FILE (optional)"
+    $kpxGroup = Read-Host "KEEPASSXC_GROUP (optional)"
+}
+
+Write-Host ""
+Write-Host "=== gopass ===" -ForegroundColor Yellow
+Write-Host "Or run: powershell -File scripts\setup-gopass.ps1"
+$gpStore = Read-Host "GOPASS_STORE (optional, Enter for default)"
+$gpMount = Read-Host "GOPASS_MOUNT (optional)"
+$gpPrefix = Read-Host "GOPASS_PATH_PREFIX [vault]"
+if (-not $gpPrefix) { $gpPrefix = "vault" }
+
 $lines = @(
     "# Vault Unified — local credentials (DO NOT commit)",
     "",
@@ -53,6 +74,17 @@ $lines = @(
     "BW_CLIENTSECRET=$bwSecret",
     "BW_PASSWORD=$bwPassword",
     "BW_SERVER=$bwServer",
+    "",
+    "# KeePassXC CLI",
+    "KEEPASSXC_DATABASE=$kpxDb",
+    "KEEPASSXC_PASSWORD=$kpxPass",
+    "KEEPASSXC_KEY_FILE=$kpxKeyFile",
+    "KEEPASSXC_GROUP=$kpxGroup",
+    "",
+    "# gopass CLI",
+    "GOPASS_STORE=$gpStore",
+    "GOPASS_MOUNT=$gpMount",
+    "GOPASS_PATH_PREFIX=$gpPrefix",
     "",
     "# API server (desktop app sidecar)",
     "VAULT_API_HOST=127.0.0.1",
@@ -92,6 +124,26 @@ if ($bwClientId -and $bwSecret -and $bwPassword) {
         Write-Host "Bitwarden: connected" -ForegroundColor Green
     } else {
         Write-Host "Bitwarden: credentials saved but unlock failed — check API key / password" -ForegroundColor Yellow
+    }
+}
+
+if ($kpxDb -and $kpxPass) {
+    $env:KEEPASSXC_DATABASE = $kpxDb
+    $env:KEEPASSXC_PASSWORD = $kpxPass
+    $test = $kpxPass | keepassxc-cli ls $kpxDb 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "KeePassXC: connected" -ForegroundColor Green
+    } else {
+        Write-Host "KeePassXC: saved but unlock failed — check path/password" -ForegroundColor Yellow
+    }
+}
+
+if (Get-Command gopass -ErrorAction SilentlyContinue) {
+    $gp = gopass ls 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "gopass: store available" -ForegroundColor Green
+    } else {
+        Write-Host "gopass: run scripts\setup-gopass.ps1 to initialize" -ForegroundColor Yellow
     }
 }
 

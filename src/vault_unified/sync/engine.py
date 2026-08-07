@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
-from vault_unified.adapters.registry import get_adapter
+from vault_unified.adapters.registry import REMOTE_SOURCES, get_adapter
 from vault_unified.models import PrimarySource, SecretEntry, Source, SyncStatus
 from vault_unified.sync.conflicts import (
     ConflictRecord,
@@ -114,7 +114,7 @@ class SyncEngine:
             return self._push_delete(entry, targets)
         pushed = 0
         errors = 0
-        target_sources = targets or [Source.PROTON_PASS, Source.BITWARDEN]
+        target_sources = targets or REMOTE_SOURCES
         for source in target_sources:
             adapter = get_adapter(source)
             if not adapter.is_configured() or not adapter.is_available():
@@ -138,7 +138,7 @@ class SyncEngine:
 
     def _push_delete(self, entry: SecretEntry, targets: list[Source] | None) -> dict[str, int]:
         pushed = 0
-        target_sources = targets or [Source.PROTON_PASS, Source.BITWARDEN]
+        target_sources = targets or REMOTE_SOURCES
         for source in target_sources:
             ext_id = entry.get_linked_id(source)
             if not ext_id:
@@ -166,7 +166,7 @@ class SyncEngine:
     def sync_bidirectional(self) -> SyncResult:
         result = SyncResult()
         prefs = self.get_prefs()
-        sources = [Source.PROTON_PASS, Source.BITWARDEN]
+        sources = REMOTE_SOURCES
         if prefs.auto_pull_on_sync:
             for source in sources:
                 try:

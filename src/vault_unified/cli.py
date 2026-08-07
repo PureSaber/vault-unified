@@ -541,6 +541,44 @@ def import_bitwarden(vault_path: Path | None, password: str | None) -> None:
     )
 
 
+@import_cmd.command("keepassxc")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def import_keepassxc(vault_path: Path | None, password: str | None) -> None:
+    """Import from KeePassXC (requires keepassxc-cli + .kdbx path in .env)."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    if not vault.keepassxc.is_available():
+        console.print(
+            "[red]KeePassXC unavailable.[/red] Install KeePassXC and set "
+            "KEEPASSXC_DATABASE / KEEPASSXC_PASSWORD in .env"
+        )
+        sys.exit(1)
+    count = vault.import_from_keepassxc()
+    console.print(
+        f"[green]KeePassXC:[/green] {count['added']} added, "
+        f"{count['updated']} updated ({count['total']} total)"
+    )
+
+
+@import_cmd.command("gopass")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def import_gopass(vault_path: Path | None, password: str | None) -> None:
+    """Import from gopass (requires gopass CLI + initialized store)."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    if not vault.gopass.is_available():
+        console.print(
+            "[red]gopass unavailable.[/red] Run scripts/setup-gopass.ps1 or "
+            "initialize gopass and set GOPASS_* in .env"
+        )
+        sys.exit(1)
+    count = vault.import_from_gopass()
+    console.print(
+        f"[green]gopass:[/green] {count['added']} added, "
+        f"{count['updated']} updated ({count['total']} total)"
+    )
+
+
 @main.command()
 @click.option("--bidirectional", "-b", is_flag=True, help="Pull and push with conflict detection")
 @click.option("--vault-path", type=click.Path(path_type=Path), default=None)

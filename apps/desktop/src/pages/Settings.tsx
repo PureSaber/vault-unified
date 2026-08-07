@@ -53,6 +53,8 @@ export default function Settings() {
               <option value="local">Local vault (default)</option>
               <option value="proton_pass">Proton Pass</option>
               <option value="bitwarden">Bitwarden</option>
+              <option value="keepassxc">KeePassXC</option>
+              <option value="gopass">gopass</option>
             </select>
             <p className="field-hint">
               Daily edits on the primary source win conflicts by default. Local primary enables auto-push on edit.

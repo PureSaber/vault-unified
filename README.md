@@ -1,6 +1,6 @@
-# Vault Unified v1.0
+# Vault Unified v1.1
 
-本地加密密码库 + **Tauri 桌面应用** + Proton Pass / Bitwarden **双向同步**。
+本地加密密码库 + **Tauri 桌面应用** + 多密码源 **双向同步**（Bitwarden、KeePassXC、gopass；Proton Pass 需 Plus）。
 
 ## 功能概览
 
@@ -8,8 +8,8 @@
 |------|------|
 | 本地加密库 | Scrypt + AES-GCM，`.vault/secrets.vault` |
 | 桌面 App | Tauri + React 图形界面 |
-| 双向同步 | 拉取 + 推送到 Proton Pass / Bitwarden |
-| 主数据源 | 可设 local / proton_pass / bitwarden 为日常权威 |
+| 双向同步 | 拉取 + 推送到已配置的外部源 |
+| 主数据源 | 可设 local / bitwarden / keepassxc / gopass / proton_pass |
 | 冲突处理 | 弹窗对比，默认偏向主数据源 |
 | CLI | `vault.cmd` 命令行仍可用 |
 
@@ -67,17 +67,27 @@ powershell -ExecutionPolicy Bypass -File apps\desktop\start-desktop.ps1
 }
 ```
 
-- `primary=local`：本地修改后自动 push 到 Proton/Bitwarden
+- `primary=local`：本地修改后自动 push 到已配置的外部源
 - 冲突时 UI 默认选中主数据源，可手动改选
 
 ## 外部 CLI 安装（Windows）
 
-与 Proton Pass / Bitwarden 同步需要各自官方 CLI。它们是**系统级工具**，装在电脑上即可，**不需要也不应放进本仓库**。
+与外部密码源同步需要各自官方 CLI。它们是**系统级工具**，装在电脑上即可，**不需要也不应放进本仓库**。
 
-| 工具 | 用途 | 安装 |
+| 工具 | 费用 | 安装 |
 |------|------|------|
-| Bitwarden CLI (`bw`) | Bitwarden 导入 / 同步 | `winget install Bitwarden.CLI` |
-| Proton Pass CLI (`pass-cli`) | Proton Pass 导入 / 同步 | 见下方 PowerShell 命令 |
+| Bitwarden CLI (`bw`) | 免费 | `winget install Bitwarden.CLI` |
+| KeePassXC (`keepassxc-cli`) | 免费 | `winget install KeePassXCTeam.KeePassXC` |
+| gopass | 免费 | `winget install Git.Git GnuPG.Gpg4win gopass.gopass` |
+| Proton Pass CLI (`pass-cli`) | Plus 需付费 token | 见下方脚本 |
+
+**一键初始化（推荐）：**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-keepassxc.ps1
+powershell -ExecutionPolicy Bypass -File scripts\setup-gopass.ps1
+powershell -ExecutionPolicy Bypass -File configure-integrations.ps1
+```
 
 **Proton Pass CLI（官方脚本）：**
 
@@ -92,6 +102,8 @@ Invoke-WebRequest -Uri https://proton.me/download/pass-cli/install.ps1 -OutFile 
 
 ```powershell
 bw --version
+keepassxc-cli --version
+gopass version
 pass-cli --version
 .\vault.cmd status
 ```
@@ -116,19 +128,21 @@ powershell -ExecutionPolicy Bypass -File configure-integrations.ps1
 
 | 服务 | 获取方式 |
 |------|----------|
-| Proton Pass | [设置 → 访问令牌](https://pass.proton.me/)（需 **Pass Plus**） |
 | Bitwarden | [Security → API Key](https://vault.bitwarden.com/#/settings/security/security-keys) + 主密码 |
+| KeePassXC | `.kdbx` 路径 + 库主密码（可放 OneDrive 同步文件夹） |
+| gopass | `gopass setup` + GPG 密钥（见 `scripts/setup-gopass.ps1`） |
+| Proton Pass | [设置 → 访问令牌](https://pass.proton.me/)（需 **Pass Plus**） |
 
 **`.env` 示例：**
 
 ```env
-PROTON_PASS_PERSONAL_ACCESS_TOKEN=pst_...
-PROTON_PASS_SHARE_ID=...
-PROTON_PASS_VAULT_NAME=Personal
 BW_CLIENTID=user.xxx
 BW_CLIENTSECRET=xxx
 BW_PASSWORD=your_master_password
-BW_SERVER=https://vault.bitwarden.com
+KEEPASSXC_DATABASE=C:\Users\you\OneDrive\Passwords\vault.kdbx
+KEEPASSXC_PASSWORD=kdbx_master_password
+GOPASS_PATH_PREFIX=vault
+PROTON_PASS_PERSONAL_ACCESS_TOKEN=
 ```
 
 配置完成后：`.\vault.cmd sync` 或 `.\launch-desktop.ps1`。
@@ -139,7 +153,27 @@ BW_SERVER=https://vault.bitwarden.com
 
 - 正确位置：**设置 → 访问令牌**（API Tokens），不是「安全」。
 - **免费版（Proton Free）无法创建访问令牌**；CLI 自动化同步需要 **Proton Pass Plus** 付费套餐。
-- 免费用户可：只用本地库、只配 Bitwarden，或在 Proton Pass 网页/App 里手动管理密码。
+- 免费用户可：用 **Bitwarden + KeePassXC + gopass**（均免费 CLI），或纯本地库。
+
+### KeePassXC：网盘同步注意什么？
+
+- `.kdbx` 是加密文件，可放在 OneDrive/Dropbox 等同步文件夹。
+- **同步前关闭 KeePassXC GUI**，避免文件锁；等网盘同步完成再在另一台打开。
+- 主密码泄露则库可被解开；可选 `KEEPASSXC_KEY_FILE` 增加第二因子。
+
+### gopass：需要什么前提？
+
+- 需 **GPG 密钥** + 已 `gopass setup` 的 store（可用 git 同步）。
+- 运行 `scripts/setup-gopass.ps1` 安装依赖并初始化。
+
+### 免费源对比（替代 Proton Plus）
+
+| 源 | CLI | 免费自动化 | 同步方式 |
+|----|-----|------------|----------|
+| Bitwarden | `bw` | 是 | 官方云 API |
+| KeePassXC | `keepassxc-cli` | 是 | 加密文件 + 网盘 |
+| gopass | `gopass` | 是 | GPG + git |
+| Proton Pass | `pass-cli` | 需 Plus | 访问令牌 |
 
 ### Bitwarden：加密密钥设置 vs API 密钥？
 
@@ -170,8 +204,10 @@ Tauri Desktop (React)
 FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
                 │
                 ├── SyncEngine (bidirectional)
-                ├── Proton Pass (pass-cli)
-                └── Bitwarden (bw CLI)
+                ├── Bitwarden (bw)
+                ├── KeePassXC (keepassxc-cli)
+                ├── gopass
+                └── Proton Pass (pass-cli, Plus)
 ```
 
 ## 安全
@@ -182,6 +218,7 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 
 ## 版本
 
+- v1.1.0 — KeePassXC + gopass 适配器，免费三方同步
 - v1.0.0 — Tauri GUI + 双向同步
 - v0.2.0 — copy / edit / generate
 - v0.1.0 — CLI + 单向导入

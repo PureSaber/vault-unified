@@ -3,7 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from vault_unified.adapters.bitwarden import BitwardenAdapter
+from vault_unified.adapters.gopass import GopassAdapter
+from vault_unified.adapters.keepassxc import KeePassXCAdapter
 from vault_unified.adapters.proton_pass import ProtonPassAdapter
+from vault_unified.adapters.registry import all_remote_adapters
 from vault_unified.local_store import LocalVault
 from vault_unified.models import SecretEntry, Source, SyncPreferences
 from vault_unified.sync.engine import SyncEngine, SyncResult
@@ -11,13 +14,15 @@ from vault_unified.sync_prefs import load_prefs, save_prefs
 
 
 class UnifiedVault:
-    """Local encrypted vault with bidirectional sync to Proton Pass and Bitwarden."""
+    """Local encrypted vault with bidirectional sync to external password managers."""
 
     def __init__(self, vault_path: Path, password: str) -> None:
         self.vault_path = vault_path
         self.local = LocalVault(vault_path, password)
         self.proton = ProtonPassAdapter()
         self.bitwarden = BitwardenAdapter()
+        self.keepassxc = KeePassXCAdapter()
+        self.gopass = GopassAdapter()
         self.sync = SyncEngine(self)
 
     @classmethod
@@ -32,13 +37,14 @@ class UnifiedVault:
         save_prefs(self.vault_path, prefs)
 
     def status(self) -> dict[str, str]:
-        return {
+        result = {
             "local": f"ready ({len(self.local.list_entries())} entries)",
-            "proton_pass": self.proton.status_message(),
-            "bitwarden": self.bitwarden.status_message(),
             "dirty": str(len(self.local.list_dirty())),
             "conflicts": str(len(self.local.list_conflicts())),
         }
+        for adapter in all_remote_adapters():
+            result[adapter.source.value] = adapter.status_message()
+        return result
 
     def list_all(self, source: Source | None = None) -> list[SecretEntry]:
         return self.local.list_entries(source=source)
@@ -126,6 +132,12 @@ class UnifiedVault:
 
     def import_from_bitwarden(self) -> dict[str, int]:
         return self.sync.pull_source(Source.BITWARDEN)
+
+    def import_from_keepassxc(self) -> dict[str, int]:
+        return self.sync.pull_source(Source.KEEPASSXC)
+
+    def import_from_gopass(self) -> dict[str, int]:
+        return self.sync.pull_source(Source.GOPASS)
 
     def sync_all(self) -> dict[str, dict[str, int]]:
         result = self.sync.sync_bidirectional()

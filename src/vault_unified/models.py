@@ -11,6 +11,8 @@ class Source(str, Enum):
     LOCAL = "local"
     PROTON_PASS = "proton_pass"
     BITWARDEN = "bitwarden"
+    KEEPASSXC = "keepassxc"
+    GOPASS = "gopass"
 
 
 class SyncStatus(str, Enum):
@@ -24,6 +26,8 @@ class PrimarySource(str, Enum):
     LOCAL = "local"
     PROTON_PASS = "proton_pass"
     BITWARDEN = "bitwarden"
+    KEEPASSXC = "keepassxc"
+    GOPASS = "gopass"
 
 
 @dataclass
