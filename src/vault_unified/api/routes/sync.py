@@ -34,7 +34,7 @@ def update_preferences(
         data["primary"] = PrimarySource(data["primary"]).value
     updated = SyncPreferences.from_dict(data)
     vault.save_prefs(updated)
-    return SyncPreferencesOut(**updated.to_dict())
+    return SyncPreferencesOut(**vault.get_prefs().to_dict())
 
 
 @router.post("/sync")
@@ -51,7 +51,16 @@ def pull_source(source: str, vault: UnifiedVault = Depends(get_vault)) -> dict:
         src = Source(source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid source") from exc
-    return vault.sync.pull_source(src)
+    prefs = vault.get_prefs()
+    if not prefs.is_source_enabled(src):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Source {source} is disabled in sync preferences",
+        )
+    try:
+        return vault.sync.pull_source(src)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/sync/push")

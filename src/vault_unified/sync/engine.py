@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from uuid import uuid4
 
-from vault_unified.adapters.registry import REMOTE_SOURCES, get_adapter
+from vault_unified.adapters.registry import get_adapter
 from vault_unified.models import PrimarySource, SecretEntry, Source, SyncStatus
 from vault_unified.sync.conflicts import (
     ConflictRecord,
@@ -63,13 +63,15 @@ class SyncEngine:
         return stored
 
     def pull_source(self, source: Source) -> dict[str, int]:
+        prefs = self.get_prefs()
+        if not prefs.is_source_enabled(source):
+            raise RuntimeError(f"Source {source.value} is disabled in sync preferences")
         adapter = get_adapter(source)
         if not adapter.is_configured():
             return {"added": 0, "updated": 0, "conflicts": 0, "total": 0}
         if not adapter.is_available():
             raise RuntimeError(f"{adapter.name} is configured but unavailable")
         remote_entries = adapter.list_entries()
-        prefs = self.get_prefs()
         stats = {"added": 0, "updated": 0, "conflicts": 0, "total": len(remote_entries)}
         for remote in remote_entries:
             local = self.vault.local.find_by_linked_id(source, remote.external_id)
@@ -114,7 +116,8 @@ class SyncEngine:
             return self._push_delete(entry, targets)
         pushed = 0
         errors = 0
-        target_sources = targets or REMOTE_SOURCES
+        prefs = self.get_prefs()
+        target_sources = targets or prefs.get_enabled_sources()
         for source in target_sources:
             adapter = get_adapter(source)
             if not adapter.is_configured() or not adapter.is_available():
@@ -138,7 +141,8 @@ class SyncEngine:
 
     def _push_delete(self, entry: SecretEntry, targets: list[Source] | None) -> dict[str, int]:
         pushed = 0
-        target_sources = targets or REMOTE_SOURCES
+        prefs = self.get_prefs()
+        target_sources = targets or prefs.get_enabled_sources()
         for source in target_sources:
             ext_id = entry.get_linked_id(source)
             if not ext_id:
@@ -166,7 +170,7 @@ class SyncEngine:
     def sync_bidirectional(self) -> SyncResult:
         result = SyncResult()
         prefs = self.get_prefs()
-        sources = REMOTE_SOURCES
+        sources = prefs.get_enabled_sources()
         if prefs.auto_pull_on_sync:
             for source in sources:
                 try:

@@ -107,3 +107,16 @@ def test_remote_registry_includes_new_sources():
     assert Source.GOPASS in REMOTE_SOURCES
     assert get_adapter(Source.KEEPASSXC).name == "KeePassXC"
     assert get_adapter(Source.GOPASS).name == "gopass"
+
+
+def test_enabled_sources_roundtrip(vault_path):
+    from vault_unified.models import SyncPreferences
+
+    prefs = SyncPreferences(
+        enabled_sources=["bitwarden", "keepassxc"],
+        primary=PrimarySource.BITWARDEN,
+    )
+    save_prefs(vault_path, prefs)
+    loaded = load_prefs(vault_path)
+    assert loaded.get_enabled_sources() == [Source.BITWARDEN, Source.KEEPASSXC]
+    assert loaded.primary == PrimarySource.BITWARDEN

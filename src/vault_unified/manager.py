@@ -34,16 +34,19 @@ class UnifiedVault:
         return load_prefs(self.vault_path)
 
     def save_prefs(self, prefs: SyncPreferences) -> None:
-        save_prefs(self.vault_path, prefs)
+        save_prefs(self.vault_path, prefs.normalize())
 
     def status(self) -> dict[str, str]:
+        prefs = self.get_prefs()
+        enabled = {s.value for s in prefs.get_enabled_sources()}
         result = {
             "local": f"ready ({len(self.local.list_entries())} entries)",
             "dirty": str(len(self.local.list_dirty())),
             "conflicts": str(len(self.local.list_conflicts())),
         }
         for adapter in all_remote_adapters():
-            result[adapter.source.value] = adapter.status_message()
+            tag = "enabled" if adapter.source.value in enabled else "disabled"
+            result[adapter.source.value] = f"{adapter.status_message()} ({tag})"
         return result
 
     def list_all(self, source: Source | None = None) -> list[SecretEntry]:

@@ -2,6 +2,45 @@ import { useEffect, useState } from "react";
 import { api, SyncPrefs } from "../api/client";
 import { useToast } from "../components/Toast";
 
+const REMOTE_SOURCES = [
+  { id: "proton_pass", label: "Proton Pass" },
+  { id: "bitwarden", label: "Bitwarden" },
+  { id: "keepassxc", label: "KeePassXC" },
+  { id: "gopass", label: "gopass" },
+] as const;
+
+function allRemoteIds(): string[] {
+  return REMOTE_SOURCES.map((s) => s.id);
+}
+
+function effectiveEnabled(prefs: SyncPrefs): string[] {
+  if (prefs.enabled_sources === null || prefs.enabled_sources === undefined) {
+    return allRemoteIds();
+  }
+  return prefs.enabled_sources;
+}
+
+function isEnabled(prefs: SyncPrefs, id: string): boolean {
+  return effectiveEnabled(prefs).includes(id);
+}
+
+function toggleSource(prefs: SyncPrefs, id: string, checked: boolean): SyncPrefs {
+  const current = new Set(effectiveEnabled(prefs));
+  if (checked) {
+    current.add(id);
+  } else {
+    current.delete(id);
+  }
+  let next: SyncPrefs = {
+    ...prefs,
+    enabled_sources: Array.from(current),
+  };
+  if (next.primary !== "local" && !current.has(next.primary)) {
+    next = { ...next, primary: "local" };
+  }
+  return next;
+}
+
 export default function Settings() {
   const { showToast } = useToast();
   const [prefs, setPrefs] = useState<SyncPrefs | null>(null);
@@ -20,7 +59,8 @@ export default function Settings() {
     setSaving(true);
     setError("");
     try {
-      await api.savePrefs(prefs);
+      const saved = await api.savePrefs(prefs);
+      setPrefs(saved);
       showToast("Settings saved");
     } catch (err) {
       setError(String(err));
@@ -34,11 +74,40 @@ export default function Settings() {
     return <div className="loading-state">Loading settings…</div>;
   }
 
+  const enabledIds = effectiveEnabled(prefs);
+  const primaryOptions = [
+    { value: "local", label: "Local vault (default)" },
+    ...REMOTE_SOURCES.filter((s) => enabledIds.includes(s.id)).map((s) => ({
+      value: s.id,
+      label: s.label,
+    })),
+  ];
+
   return (
     <div className="card">
       <h2>Settings</h2>
 
       <form onSubmit={handleSave}>
+        <section className="settings-section" aria-labelledby="enabled-sources-heading">
+          <h3 id="enabled-sources-heading" className="section-title">
+            Enabled external sources
+          </h3>
+          <p className="field-hint">
+            Only checked sources participate in sync. Unchecked sources keep local links but
+            stop pull/push.
+          </p>
+          {REMOTE_SOURCES.map((src) => (
+            <label className="checkbox-field" key={src.id}>
+              <input
+                type="checkbox"
+                checked={isEnabled(prefs, src.id)}
+                onChange={(e) => setPrefs(toggleSource(prefs, src.id, e.target.checked))}
+              />
+              <span>{src.label}</span>
+            </label>
+          ))}
+        </section>
+
         <section className="settings-section" aria-labelledby="sync-prefs-heading">
           <h3 id="sync-prefs-heading" className="section-title">Sync behavior</h3>
           <div className="field">
@@ -50,14 +119,15 @@ export default function Settings() {
               value={prefs.primary}
               onChange={(e) => setPrefs({ ...prefs, primary: e.target.value })}
             >
-              <option value="local">Local vault (default)</option>
-              <option value="proton_pass">Proton Pass</option>
-              <option value="bitwarden">Bitwarden</option>
-              <option value="keepassxc">KeePassXC</option>
-              <option value="gopass">gopass</option>
+              {primaryOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
             </select>
             <p className="field-hint">
-              Daily edits on the primary source win conflicts by default. Local primary enables auto-push on edit.
+              Daily edits on the primary source win conflicts by default. Local primary enables
+              auto-push on edit.
             </p>
           </div>
           <label className="checkbox-field">

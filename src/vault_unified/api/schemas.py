@@ -55,6 +55,7 @@ class SyncPreferencesOut(BaseModel):
     conflict_default: str
     proton_vault_name: str = ""
     proton_share_id: str = ""
+    enabled_sources: list[str] | None = None
 
 
 class SyncPreferencesIn(BaseModel):
@@ -64,6 +65,7 @@ class SyncPreferencesIn(BaseModel):
     conflict_default: str | None = None
     proton_vault_name: str | None = None
     proton_share_id: str | None = None
+    enabled_sources: list[str] | None = None
 
 
 class ConflictResolveIn(BaseModel):

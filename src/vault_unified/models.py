@@ -121,6 +121,36 @@ class SyncPreferences:
     conflict_default: str = "primary"
     proton_vault_name: str = ""
     proton_share_id: str = ""
+    enabled_sources: list[str] | None = None
+
+    def get_enabled_sources(self) -> list[Source]:
+        remote = [s for s in Source if s != Source.LOCAL]
+        if self.enabled_sources is None:
+            return remote
+        enabled: list[Source] = []
+        for value in self.enabled_sources:
+            try:
+                src = Source(value)
+            except ValueError:
+                continue
+            if src != Source.LOCAL and src not in enabled:
+                enabled.append(src)
+        return enabled
+
+    def is_source_enabled(self, source: Source) -> bool:
+        return source in self.get_enabled_sources()
+
+    def normalize(self) -> SyncPreferences:
+        """Validate enabled_sources and reset primary if its source is disabled."""
+        remote_values = {s.value for s in Source if s != Source.LOCAL}
+        if self.enabled_sources is not None:
+            self.enabled_sources = [
+                v for v in self.enabled_sources if v in remote_values
+            ]
+        enabled = {s.value for s in self.get_enabled_sources()}
+        if self.primary != PrimarySource.LOCAL and self.primary.value not in enabled:
+            self.primary = PrimarySource.LOCAL
+        return self
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -130,6 +160,7 @@ class SyncPreferences:
             "conflict_default": self.conflict_default,
             "proton_vault_name": self.proton_vault_name,
             "proton_share_id": self.proton_share_id,
+            "enabled_sources": self.enabled_sources,
         }
 
     @classmethod
@@ -137,11 +168,17 @@ class SyncPreferences:
         primary = data.get("primary", PrimarySource.LOCAL.value)
         if isinstance(primary, str):
             primary = PrimarySource(primary)
-        return cls(
+        raw_enabled = data.get("enabled_sources")
+        enabled_sources: list[str] | None = None
+        if raw_enabled is not None:
+            enabled_sources = list(raw_enabled) if isinstance(raw_enabled, list) else []
+        prefs = cls(
             primary=primary,
             auto_push_on_edit=bool(data.get("auto_push_on_edit", True)),
             auto_pull_on_sync=bool(data.get("auto_pull_on_sync", True)),
             conflict_default=data.get("conflict_default", "primary"),
             proton_vault_name=data.get("proton_vault_name", ""),
             proton_share_id=data.get("proton_share_id", ""),
+            enabled_sources=enabled_sources,
         )
+        return prefs.normalize()

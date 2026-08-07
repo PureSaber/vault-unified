@@ -21,6 +21,7 @@ from vault_unified.keyring_store import (
     is_remember_enabled,
     save_master_password,
 )
+from vault_unified.adapters.registry import all_remote_adapters
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import Source
 
@@ -664,6 +665,87 @@ def conflicts_resolve(
         console.print(f"[red]Not found:[/red] {exc}")
         sys.exit(1)
     console.print(f"[green]Resolved:[/green] {entry.title}")
+
+
+@main.group()
+def sources() -> None:
+    """Manage which external sources participate in sync."""
+
+
+@sources.command("list")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def sources_list(vault_path: Path | None, password: str | None) -> None:
+    """List external sources with configured and enabled state."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    prefs = vault.get_prefs()
+    enabled = {s.value for s in prefs.get_enabled_sources()}
+    table = Table(title="External Sources")
+    table.add_column("Source")
+    table.add_column("Status")
+    table.add_column("Sync")
+    for adapter in all_remote_adapters():
+        tag = "enabled" if adapter.source.value in enabled else "disabled"
+        table.add_row(adapter.source.value, adapter.status_message(), tag)
+    console.print(table)
+
+
+def _update_enabled_sources(
+    vault: UnifiedVault,
+    names: tuple[str, ...],
+    *,
+    enable: bool,
+) -> None:
+    from vault_unified.models import Source
+
+    prefs = vault.get_prefs()
+    current = {s.value for s in prefs.get_enabled_sources()}
+    if prefs.enabled_sources is None:
+        current = {s.value for s in Source if s != Source.LOCAL}
+    for name in names:
+        try:
+            src = Source(name)
+        except ValueError:
+            console.print(f"[red]Unknown source:[/red] {name}")
+            sys.exit(1)
+        if src == Source.LOCAL:
+            console.print("[red]Cannot enable/disable local source[/red]")
+            sys.exit(1)
+        if enable:
+            current.add(src.value)
+        else:
+            current.discard(src.value)
+    prefs.enabled_sources = sorted(current)
+    vault.save_prefs(prefs.normalize())
+    console.print(f"[green]Updated enabled sources:[/green] {', '.join(prefs.enabled_sources) or '(none)'}")
+
+
+@sources.command("enable")
+@click.argument("names", nargs=-1, required=True)
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def sources_enable(
+    names: tuple[str, ...],
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    """Enable one or more external sources for sync."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    _update_enabled_sources(vault, names, enable=True)
+
+
+@sources.command("disable")
+@click.argument("names", nargs=-1, required=True)
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def sources_disable(
+    names: tuple[str, ...],
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    """Disable one or more external sources (stops pull/push, keeps links)."""
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    _update_enabled_sources(vault, names, enable=False)
 
 
 @main.command("desktop")

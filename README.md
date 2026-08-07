@@ -1,4 +1,4 @@
-# Vault Unified v1.1
+# Vault Unified v1.2
 
 本地加密密码库 + **Tauri 桌面应用** + 多密码源 **双向同步**（Bitwarden、KeePassXC、gopass；Proton Pass 需 Plus）。
 
@@ -61,14 +61,17 @@ powershell -ExecutionPolicy Bypass -File apps\desktop\start-desktop.ps1
 ```json
 {
   "primary": "local",
+  "enabled_sources": ["bitwarden", "keepassxc"],
   "auto_push_on_edit": true,
   "auto_pull_on_sync": true,
   "conflict_default": "primary"
 }
 ```
 
-- `primary=local`：本地修改后自动 push 到已配置的外部源
-- 冲突时 UI 默认选中主数据源，可手动改选
+- `enabled_sources`：勾选参与同步的外源；缺省或 `null` 表示四个外源全部启用；`[]` 表示仅本地库
+- 取消勾选某源会**停止**对该源的 pull/push，但保留本地 `linked_sources`
+- 桌面 App **Settings → Enabled external sources** 或 CLI：`vault sources list|enable|disable`
+- `primary=local`：本地修改后自动 push 到**已启用**的外部源
 
 ## 外部 CLI 安装（Windows）
 
@@ -218,6 +221,7 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 
 ## 版本
 
+- v1.2.0 — 可选外源 enabled_sources（勾选参与同步的密码库）
 - v1.1.0 — KeePassXC + gopass 适配器，免费三方同步
 - v1.0.0 — Tauri GUI + 双向同步
 - v0.2.0 — copy / edit / generate

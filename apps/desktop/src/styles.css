@@ -748,6 +748,11 @@ button.icon-btn {
   word-break: break-word;
 }
 
+.status-row-disabled dt,
+.status-row-disabled dd {
+  color: var(--color-text-faint);
+}
+
 .result-panel {
   margin-top: var(--space-lg);
   padding: var(--space-lg);

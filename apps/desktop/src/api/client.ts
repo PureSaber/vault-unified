@@ -36,6 +36,7 @@ export interface SyncPrefs {
   conflict_default: string;
   proton_vault_name: string;
   proton_share_id: string;
+  enabled_sources?: string[] | null;
 }
 
 export function setToken(t: string) {

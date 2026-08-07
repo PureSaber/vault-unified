@@ -61,17 +61,21 @@ export default function SyncPanel() {
     <div className="card">
       <h2>Sync</h2>
       <p className="field-hint" style={{ marginBottom: "var(--space-xl)" }}>
-        Pull from Proton Pass and Bitwarden, push local changes, and detect conflicts.
+        Pull from and push to enabled external sources. Configure which sources are active in
+        Settings.
       </p>
 
       <p className="section-title">Connection status</p>
       <dl className="status-grid">
-        {Object.entries(status).map(([key, value]) => (
-          <div className="status-row" key={key}>
-            <dt>{key.replace(/_/g, " ")}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
+        {Object.entries(status).map(([key, value]) => {
+          const disabled = value.includes("(disabled)");
+          return (
+            <div className={`status-row${disabled ? " status-row-disabled" : ""}`} key={key}>
+              <dt>{key.replace(/_/g, " ")}</dt>
+              <dd>{value}</dd>
+            </div>
+          );
+        })}
       </dl>
 
       <div className="button-row">
