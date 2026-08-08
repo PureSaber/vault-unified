@@ -16,16 +16,24 @@ _ADAPTERS: dict[Source, type[VaultAdapter]] = {
 
 REMOTE_SOURCES: list[Source] = list(_ADAPTERS.keys())
 
+_instances: dict[Source, VaultAdapter] = {}
+
 
 def get_adapter(source: Source) -> VaultAdapter:
     cls = _ADAPTERS.get(source)
     if cls is None:
         raise ValueError(f"No adapter for source: {source}")
-    return cls()
+    if source not in _instances:
+        _instances[source] = cls()
+    return _instances[source]
+
+
+def clear_adapter_cache() -> None:
+    _instances.clear()
 
 
 def all_remote_adapters() -> list[VaultAdapter]:
-    return [cls() for cls in _ADAPTERS.values()]
+    return [get_adapter(source) for source in REMOTE_SOURCES]
 
 
 def configured_remote_sources() -> list[Source]:

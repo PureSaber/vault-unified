@@ -61,15 +61,20 @@ class CliAdapter(VaultAdapter):
         *,
         input_text: str | None = None,
     ) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            [self.cli_name, *args],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=env,
-            input=input_text,
-            timeout=CLI_TIMEOUT,
-        )
+        try:
+            return subprocess.run(
+                [self.cli_name, *args],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=env,
+                input=input_text,
+                timeout=CLI_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError(
+                f"{self.cli_name} timed out after {CLI_TIMEOUT}s: {' '.join(args[:3])}"
+            ) from exc
 
     def is_configured(self) -> bool:
         return shutil.which(self.cli_name) is not None

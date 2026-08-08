@@ -31,8 +31,14 @@ def update_preferences(
     for key, value in body.model_dump(exclude_none=True).items():
         data[key] = value
     if "primary" in data:
-        data["primary"] = PrimarySource(data["primary"]).value
-    updated = SyncPreferences.from_dict(data)
+        try:
+            data["primary"] = PrimarySource(data["primary"]).value
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid primary source") from exc
+    try:
+        updated = SyncPreferences.from_dict(data)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     vault.save_prefs(updated)
     return SyncPreferencesOut(**vault.get_prefs().to_dict())
 
@@ -77,8 +83,11 @@ def push_entry(entry_id: str, vault: UnifiedVault = Depends(get_vault)) -> dict:
 
 
 @router.get("/sync/conflicts")
-def list_conflicts(vault: UnifiedVault = Depends(get_vault)) -> list:
-    return [c.to_dict() for c in vault.list_conflicts()]
+def list_conflicts(
+    reveal: bool = False,
+    vault: UnifiedVault = Depends(get_vault),
+) -> list:
+    return [c.to_dict(reveal=reveal) for c in vault.list_conflicts()]
 
 
 @router.post("/sync/conflicts/{conflict_id}/resolve")
@@ -88,10 +97,14 @@ def resolve_conflict(
     vault: UnifiedVault = Depends(get_vault),
 ) -> dict:
     merged = None
+    if body.choice == "merge" and not body.merged:
+        raise HTTPException(status_code=400, detail="merged payload required")
     if body.merged:
         merged = SecretEntry.from_dict(body.merged)
     try:
         entry = vault.resolve_conflict(conflict_id, body.choice, merged)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"resolved": entry.title, "id": entry.id}

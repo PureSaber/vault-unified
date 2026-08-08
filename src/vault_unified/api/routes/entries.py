@@ -20,7 +20,7 @@ def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
         username=entry.username,
         password=entry.password if reveal else mask_secret(entry.password),
         url=entry.url,
-        notes=entry.notes,
+        notes=entry.notes if reveal else mask_secret(entry.notes, visible=0),
         source=entry.source.value,
         tags=entry.tags,
         sync_status=entry.sync_status.value,
@@ -28,6 +28,17 @@ def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
         created_at=entry.created_at,
         updated_at=entry.updated_at,
     )
+
+
+@router.get("/tools/generate")
+def generate(
+    length: int = Query(default=20, ge=8, le=128),
+    symbols: bool = Query(default=True),
+    vault: UnifiedVault = Depends(get_vault),
+) -> dict:
+    _ = vault
+    pwd = generate_password(length, symbols=symbols)
+    return {"password": pwd}
 
 
 @router.get("", response_model=list[EntryOut])
@@ -39,7 +50,12 @@ def list_entries(
     if q:
         entries = vault.search(q)
     else:
-        src = Source(source) if source else None
+        src = None
+        if source:
+            try:
+                src = Source(source)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid source") from exc
         entries = vault.list_all(source=src)
     return [_to_out(e) for e in entries]
 
@@ -78,14 +94,23 @@ def update_entry(
     body: EntryUpdate,
     vault: UnifiedVault = Depends(get_vault),
 ) -> EntryOut:
+    password = body.password
+    notes = body.notes
+    # Ignore masked placeholder payloads from the desktop list view.
+    if password is not None and (
+        set(password) <= {"*", "•"} or "****" in password or password.startswith("•")
+    ):
+        password = None
+    if notes is not None and (set(notes) <= {"*", "•"} or notes.startswith("•")):
+        notes = None
     try:
         entry = vault.edit(
             entry_id,
             title=body.title,
             username=body.username,
-            password=body.password,
+            password=password,
             url=body.url,
-            notes=body.notes,
+            notes=notes,
             tags=body.tags,
         )
     except (KeyError, ValueError) as exc:
@@ -109,6 +134,8 @@ def copy_field(
     field: str = Query(default="password"),
     vault: UnifiedVault = Depends(get_vault),
 ) -> dict:
+    if field not in ("password", "username"):
+        raise HTTPException(status_code=400, detail="field must be password or username")
     try:
         entry = vault.resolve(entry_id)
     except (KeyError, ValueError) as exc:
@@ -117,13 +144,4 @@ def copy_field(
     if not value:
         raise HTTPException(status_code=400, detail=f"No {field}")
     copy_to_clipboard(value)
-    return {"copied": field, "title": entry.title}
-
-
-@router.get("/tools/generate")
-def generate(
-    length: int = Query(default=20, ge=8, le=128),
-    symbols: bool = Query(default=True),
-) -> dict:
-    pwd = generate_password(length, symbols=symbols)
-    return {"password": pwd}
+    return {"copied": field, "title": entry.title, "clears_in_seconds": 45}

@@ -68,19 +68,31 @@ class ProtonPassAdapter(CliAdapter):
         args = ["item", "create", "login", "--title", entry.title]
         if entry.username:
             args.extend(["--username", entry.username])
-        if entry.password:
-            args.extend(["--password", entry.password])
-        if entry.url:
-            args.extend(["--url", entry.url])
-        share_id = entry.proton_share_id or self._default_share_id
-        vault_name = self._default_vault_name
-        if share_id:
-            args.extend(["--share-id", share_id])
-        elif vault_name:
-            args.extend(["--vault-name", vault_name])
-        result = self._run(args, env=env)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Failed to create Proton Pass item")
+        password_file = None
+        try:
+            if entry.password:
+                password_file = self._write_secret_file(entry.password)
+                args.extend(["--password-file", password_file])
+            if entry.url:
+                args.extend(["--url", entry.url])
+            share_id = entry.proton_share_id or self._default_share_id
+            vault_name = self._default_vault_name
+            if share_id:
+                args.extend(["--share-id", share_id])
+            elif vault_name:
+                args.extend(["--vault-name", vault_name])
+            result = self._run(args, env=env)
+            if result.returncode != 0:
+                # Fallback for older pass-cli without --password-file.
+                if entry.password and "password-file" in (result.stderr or "").lower():
+                    args = [a for a in args if a != "--password-file" and a != password_file]
+                    args.extend(["--password", entry.password])
+                    result = self._run(args, env=env)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "Failed to create Proton Pass item")
+        finally:
+            if password_file:
+                self._unlink_secret_file(password_file)
         try:
             created = json.loads(result.stdout)
             ext_id = created.get("id") or created.get("itemId", "")
@@ -108,17 +120,45 @@ class ProtonPassAdapter(CliAdapter):
             args.extend(["--share-id", share_id])
         elif self._default_vault_name:
             args.extend(["--vault-name", self._default_vault_name])
-        for field, value in [
-            ("title", entry.title),
-            ("username", entry.username),
-            ("password", entry.password),
-            ("url", entry.url),
-        ]:
-            if value:
-                args.extend(["--field", f"{field}={value}"])
-        result = self._run(args, env=env)
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or "Failed to update Proton Pass item")
+        password_file = None
+        try:
+            for field, value in [
+                ("title", entry.title),
+                ("username", entry.username),
+                ("url", entry.url),
+                ("note", entry.notes),
+            ]:
+                if value:
+                    args.extend(["--field", f"{field}={value}"])
+            if entry.password:
+                password_file = self._write_secret_file(entry.password)
+                args.extend(["--field", f"password=@{password_file}"])
+            result = self._run(args, env=env)
+            if result.returncode != 0 and entry.password:
+                # Fallback: field=password=value (argv exposure — last resort)
+                args = [a for a in args if not a.startswith("password=@")]
+                args = [a for a in args if a != "--field" or True]
+                # Rebuild without password file field
+                args = ["item", "update", "--item-id", ext_id]
+                if share_id:
+                    args.extend(["--share-id", share_id])
+                elif self._default_vault_name:
+                    args.extend(["--vault-name", self._default_vault_name])
+                for field, value in [
+                    ("title", entry.title),
+                    ("username", entry.username),
+                    ("password", entry.password),
+                    ("url", entry.url),
+                    ("note", entry.notes),
+                ]:
+                    if value:
+                        args.extend(["--field", f"{field}={value}"])
+                result = self._run(args, env=env)
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.strip() or "Failed to update Proton Pass item")
+        finally:
+            if password_file:
+                self._unlink_secret_file(password_file)
         return entry
 
     def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
@@ -134,6 +174,30 @@ class ProtonPassAdapter(CliAdapter):
         )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to delete Proton Pass item")
+
+    @staticmethod
+    def _write_secret_file(secret: str) -> str:
+        import tempfile
+
+        fd, path = tempfile.mkstemp(prefix="vault-proton-", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(secret)
+        except Exception:
+            os.close(fd)
+            raise
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+        return path
+
+    @staticmethod
+    def _unlink_secret_file(path: str) -> None:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
     def _item_to_entry(self, item: dict[str, Any], env: dict[str, str]) -> SecretEntry | None:
         item_id = item.get("id") or item.get("itemId") or ""

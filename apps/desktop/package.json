@@ -1,11 +1,12 @@
 {
   "name": "vault-unified-desktop",
   "private": true,
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "lint": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri"
   },

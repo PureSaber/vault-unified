@@ -92,11 +92,47 @@ body {
   letter-spacing: -0.02em;
 }
 
+.header-locale {
+  display: flex;
+  gap: 2px;
+  margin-right: var(--space-sm);
+}
+
+.header-locale button {
+  background: transparent;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.header-locale button.active {
+  background: var(--color-accent-muted);
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+
 .nav {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   flex-wrap: wrap;
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-error);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
 }
 
 .main {
@@ -530,6 +566,12 @@ button.icon-btn {
   justify-content: center;
 }
 
+button.icon-btn-lg {
+  min-width: 48px;
+  min-height: 48px;
+  padding: 10px 12px;
+}
+
 .nav button {
   background: transparent;
   color: var(--color-text-muted);
@@ -646,6 +688,56 @@ button.icon-btn {
   align-items: center;
 }
 
+.entry-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  margin-top: var(--space-sm);
+}
+
+.chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-inset);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.chip-linked {
+  color: #9db4d8;
+  border-color: rgba(43, 108, 176, 0.35);
+}
+
+.generate-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md);
+  align-items: flex-end;
+  margin-bottom: var(--space-lg);
+}
+
+.generate-length {
+  margin-bottom: 0;
+  width: 96px;
+}
+
+.generate-symbols {
+  margin-bottom: 0;
+  align-items: center;
+}
+
+.source-hint-list {
+  margin: 0;
+  padding-left: 1.2em;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.source-hint-list li + li {
+  margin-top: var(--space-sm);
+}
+
 /* —— Badges —— */
 .badge {
   font-size: 11px;
@@ -679,6 +771,56 @@ button.icon-btn {
   color: var(--color-error);
   border-color: rgba(252, 129, 129, 0.25);
   background: var(--color-error-bg);
+}
+
+button.conflict-chip-btn,
+.conflict-chip-btn {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.4;
+  color: var(--color-error);
+  border: 1px solid rgba(252, 129, 129, 0.35);
+  background: var(--color-error-bg);
+}
+
+button.conflict-chip-btn:hover:not(:disabled) {
+  background: rgba(252, 129, 129, 0.18);
+  border-color: var(--color-error);
+}
+
+.conflict-field-picks {
+  margin-bottom: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--color-surface-inset);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.conflict-pick-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.conflict-pick-row:last-child {
+  border-bottom: none;
+}
+
+.conflict-pick-btns {
+  display: flex;
+  gap: var(--space-xs);
+}
+
+.conflict-pick-btns button {
+  padding: 4px 10px;
+  font-size: 12px;
 }
 
 /* —— Status & feedback —— */

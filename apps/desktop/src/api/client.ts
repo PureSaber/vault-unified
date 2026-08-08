@@ -1,20 +1,58 @@
 const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8765/api";
 
 let token: string | null = localStorage.getItem("vault_token");
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
 
 function headers(): HeadersInit {
-  const h: HeadersInit = { "Content-Type": "application/json" };
+  const h: HeadersInit = {
+    "Content-Type": "application/json",
+    "X-Vault-Client": "vault-unified-desktop",
+  };
   if (token) h["Authorization"] = `Bearer ${token}`;
   return h;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { ...options, headers: headers() });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail || res.statusText);
+function formatDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "msg" in item) {
+          return String((item as { msg: unknown }).msg);
+        }
+        return JSON.stringify(item);
+      })
+      .filter(Boolean)
+      .join("; ");
   }
-  return res.json();
+  if (detail != null && typeof detail === "object") {
+    return JSON.stringify(detail);
+  }
+  return fallback;
+}
+
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { ...headers(), ...(options.headers || {}) },
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      clearToken();
+      onUnauthorized?.();
+    }
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(formatDetail(err.detail, res.statusText));
+  }
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 export interface Entry {
@@ -25,6 +63,7 @@ export interface Entry {
   url: string;
   notes: string;
   source: string;
+  tags: string[];
   sync_status: string;
   linked_sources: Record<string, string>;
 }
@@ -59,9 +98,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ password, remember }),
     }),
-  unlockKeyring: () => request<{ token: string }>("/auth/unlock-keyring", { method: "POST" }),
+  unlockKeyring: () =>
+    request<{ token: string }>("/auth/unlock-keyring", { method: "POST" }),
   lock: () => request("/auth/lock", { method: "POST" }),
-  checkKeyring: () => request<{ has_saved_password: boolean }>("/auth/check-keyring"),
+  authStatus: () => request<{ unlocked: boolean }>("/auth/status"),
+  checkKeyring: () =>
+    request<{ has_saved_password: boolean }>("/auth/check-keyring"),
   listEntries: (q?: string) =>
     request<Entry[]>(q ? `/entries?q=${encodeURIComponent(q)}` : "/entries"),
   getEntry: (id: string, reveal = true) =>
@@ -73,7 +115,10 @@ export const api = {
   deleteEntry: (id: string) => request(`/entries/${id}`, { method: "DELETE" }),
   copy: (id: string, field = "password") =>
     request(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
-  generate: (length = 20) => request<{ password: string }>(`/entries/tools/generate?length=${length}`),
+  generate: (length = 20, symbols = true) =>
+    request<{ password: string }>(
+      `/entries/tools/generate?length=${length}&symbols=${symbols}`
+    ),
   status: () => request<{ components: Record<string, string> }>("/status"),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
   savePrefs: (prefs: Partial<SyncPrefs>) =>
@@ -83,7 +128,17 @@ export const api = {
     }),
   sync: () => request("/sync", { method: "POST" }),
   push: () => request("/sync/push", { method: "POST" }),
-  conflicts: () => request<Record<string, unknown>[]>("/sync/conflicts"),
+  pullSource: (source: string) =>
+    request(`/sync/pull/${encodeURIComponent(source)}`, { method: "POST" }),
+  listConflicts: (reveal = false) =>
+    request<Record<string, unknown>[]>(
+      reveal ? "/sync/conflicts?reveal=true" : "/sync/conflicts"
+    ),
+  /** @deprecated prefer listConflicts */
+  conflicts: (reveal = false) =>
+    request<Record<string, unknown>[]>(
+      reveal ? "/sync/conflicts?reveal=true" : "/sync/conflicts"
+    ),
   resolveConflict: (id: string, choice: string, merged?: Record<string, unknown>) =>
     request(`/sync/conflicts/${id}/resolve`, {
       method: "POST",

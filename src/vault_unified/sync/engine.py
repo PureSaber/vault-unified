@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from uuid import uuid4
 
 from vault_unified.adapters.registry import get_adapter
 from vault_unified.models import PrimarySource, SecretEntry, Source, SyncStatus
+from vault_unified.sync.conflict_store import load_conflicts, save_conflicts
 from vault_unified.sync.conflicts import (
     ConflictRecord,
     apply_resolution,
     default_resolution,
     detect_conflict,
+    new_conflict_id,
 )
 from vault_unified.sync_prefs import load_prefs, save_prefs
 
@@ -34,11 +35,16 @@ class SyncResult:
 class SyncEngine:
     def __init__(self, vault) -> None:
         self.vault = vault
-        self._conflicts: dict[str, ConflictRecord] = {}
+        self._conflicts: dict[str, ConflictRecord] = load_conflicts(
+            self.vault_path, self.vault.local.password
+        )
 
     @property
     def vault_path(self) -> Path:
         return self.vault.local.vault_path
+
+    def _persist_conflicts(self) -> None:
+        save_conflicts(self.vault_path, self.vault.local.password, self._conflicts)
 
     def get_prefs(self):
         return load_prefs(self.vault_path)
@@ -47,20 +53,17 @@ class SyncEngine:
         save_prefs(self.vault_path, prefs)
 
     def list_conflicts(self) -> list[ConflictRecord]:
-        stored = [c for c in self._conflicts.values()]
-        for entry in self.vault.local.list_conflicts():
-            if not any(c.entry_id == entry.id for c in stored):
-                stored.append(
-                    ConflictRecord(
-                        id=str(uuid4()),
-                        entry_id=entry.id,
-                        title=entry.title,
-                        local=entry,
-                        remote=entry,
-                        remote_source=entry.source,
-                    )
-                )
-        return stored
+        # Drop stale records whose entry is no longer CONFLICT / missing.
+        stale: list[str] = []
+        for cid, rec in self._conflicts.items():
+            entry = self.vault.local.get(rec.entry_id)
+            if not entry or entry.sync_status != SyncStatus.CONFLICT:
+                stale.append(cid)
+        for cid in stale:
+            del self._conflicts[cid]
+        if stale:
+            self._persist_conflicts()
+        return list(self._conflicts.values())
 
     def pull_source(self, source: Source) -> dict[str, int]:
         prefs = self.get_prefs()
@@ -87,8 +90,12 @@ class SyncEngine:
                 else:
                     local.sync_status = SyncStatus.CONFLICT
                     self.vault.local.replace_entry(local)
+                    # Replace any existing conflict for this entry.
+                    for existing_id, existing in list(self._conflicts.items()):
+                        if existing.entry_id == local.id:
+                            del self._conflicts[existing_id]
                     rec = ConflictRecord(
-                        id=str(uuid4()),
+                        id=new_conflict_id(),
                         entry_id=local.id,
                         title=local.title,
                         local=local,
@@ -106,6 +113,7 @@ class SyncEngine:
                     stats["updated"] += 1
         if remote_entries:
             self.vault.local._save()
+        self._persist_conflicts()
         return stats
 
     def push_entry(self, entry_id: str, targets: list[Source] | None = None) -> dict[str, int]:
@@ -118,10 +126,12 @@ class SyncEngine:
         errors = 0
         prefs = self.get_prefs()
         target_sources = targets or prefs.get_enabled_sources()
+        attempted = 0
         for source in target_sources:
             adapter = get_adapter(source)
             if not adapter.is_configured() or not adapter.is_available():
                 continue
+            attempted += 1
             try:
                 ext_id = entry.get_linked_id(source)
                 if ext_id:
@@ -133,30 +143,46 @@ class SyncEngine:
             except Exception as exc:
                 errors += 1
                 self.vault._last_errors = getattr(self.vault, "_last_errors", [])
-                self.vault._last_errors.append(str(exc))
-        if pushed:
+                self.vault._last_errors.append(f"{source.value}: {exc}")
+        # Only mark clean when every attempted enabled target succeeded.
+        if attempted and pushed == attempted and errors == 0:
             entry.mark_synced()
+            self.vault.local.replace_entry(entry)
+        elif pushed:
+            # Partial success: keep dirty so remaining sources retry.
             self.vault.local.replace_entry(entry)
         return {"pushed": pushed, "errors": errors}
 
     def _push_delete(self, entry: SecretEntry, targets: list[Source] | None) -> dict[str, int]:
         pushed = 0
+        errors = 0
         prefs = self.get_prefs()
         target_sources = targets or prefs.get_enabled_sources()
+        remaining_links = dict(entry.linked_sources)
         for source in target_sources:
             ext_id = entry.get_linked_id(source)
             if not ext_id:
                 continue
             adapter = get_adapter(source)
             if not adapter.is_available():
+                errors += 1
                 continue
             try:
                 adapter.delete_entry(ext_id)
                 pushed += 1
-            except Exception:
-                pass
-        self.vault.local.purge(entry.id)
-        return {"pushed": pushed, "errors": 0}
+                remaining_links.pop(source.value, None)
+            except Exception as exc:
+                errors += 1
+                self.vault._last_errors = getattr(self.vault, "_last_errors", [])
+                self.vault._last_errors.append(f"delete {source.value}: {exc}")
+        entry.linked_sources = remaining_links
+        # Purge local only when no remote links remain (all deletes succeeded or none linked).
+        if not remaining_links:
+            self.vault.local.purge(entry.id)
+        else:
+            entry.sync_status = SyncStatus.DELETED_PENDING
+            self.vault.local.replace_entry(entry)
+        return {"pushed": pushed, "errors": errors}
 
     def push_all_dirty(self) -> dict[str, int]:
         total_pushed = 0
@@ -166,6 +192,20 @@ class SyncEngine:
             total_pushed += result["pushed"]
             total_errors += result["errors"]
         return {"pushed": total_pushed, "errors": total_errors}
+
+    def pull_all_enabled(self) -> dict[str, dict[str, int]]:
+        """Pull-only sync across enabled sources."""
+        result: dict[str, dict[str, int]] = {}
+        prefs = self.get_prefs()
+        for source in prefs.get_enabled_sources():
+            try:
+                adapter = get_adapter(source)
+                if adapter.is_configured():
+                    result[source.value] = self.pull_source(source)
+            except Exception as exc:
+                self.vault._last_errors = getattr(self.vault, "_last_errors", [])
+                self.vault._last_errors.append(f"pull {source.value}: {exc}")
+        return result
 
     def sync_bidirectional(self) -> SyncResult:
         result = SyncResult()
@@ -195,12 +235,24 @@ class SyncEngine:
     ) -> SecretEntry:
         record = self._conflicts.get(conflict_id)
         if not record:
+            # Allow resolving by entry id prefix / full id for CLI convenience.
+            for rec in self._conflicts.values():
+                if rec.id.startswith(conflict_id) or rec.entry_id.startswith(conflict_id):
+                    record = rec
+                    conflict_id = rec.id
+                    break
+        if not record:
             raise KeyError(conflict_id)
+        if choice not in ("local", "remote", "merge"):
+            raise ValueError(f"Invalid choice: {choice}")
+        if choice == "merge" and merged is None:
+            raise ValueError("merged entry required for merge choice")
         resolved = apply_resolution(record.local, record.remote, choice, merged)
         self.vault.local.replace_entry(resolved)
-        if choice == "local" or choice == "merge":
+        if choice in ("local", "merge"):
             self.push_entry(resolved.id, [record.remote_source])
         del self._conflicts[conflict_id]
+        self._persist_conflicts()
         return resolved
 
     def after_local_edit(self, entry_id: str) -> None:

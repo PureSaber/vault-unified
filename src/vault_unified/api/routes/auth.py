@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from vault_unified.api.deps import get_token, get_vault
+from vault_unified.api.deps import get_token, get_vault, require_loopback
 from vault_unified.api.schemas import UnlockRequest, UnlockResponse
-from vault_unified.crypto import mask_secret
-from vault_unified.manager import UnifiedVault
 from vault_unified.session import sessions
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/unlock", response_model=UnlockResponse)
-def unlock(body: UnlockRequest) -> UnlockResponse:
+def unlock(body: UnlockRequest, request: Request) -> UnlockResponse:
+    require_loopback(request)
     try:
         token, _ = sessions.unlock(body.password, remember=body.remember)
     except Exception as exc:
@@ -32,7 +31,8 @@ def auth_status(token: str = Depends(get_token)) -> dict:
 
 
 @router.get("/check-keyring")
-def check_keyring() -> dict:
+def check_keyring(request: Request) -> dict:
+    require_loopback(request)
     from vault_unified.keyring_store import get_master_password
 
     pwd = get_master_password()
@@ -40,7 +40,12 @@ def check_keyring() -> dict:
 
 
 @router.post("/unlock-keyring", response_model=UnlockResponse)
-def unlock_keyring() -> UnlockResponse:
+def unlock_keyring(request: Request) -> UnlockResponse:
+    """Unlock using Windows Credential Manager. Loopback + desktop client header required."""
+    require_loopback(request)
+    client = request.headers.get("x-vault-client", "")
+    if client != "vault-unified-desktop":
+        raise HTTPException(status_code=403, detail="Desktop client required")
     try:
         token, _ = sessions.unlock()
     except Exception as exc:

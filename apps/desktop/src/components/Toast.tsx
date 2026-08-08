@@ -20,11 +20,14 @@ interface ToastContextValue {
 
 const ToastContext = createContext<ToastContextValue | null>(null);
 
+let toastSeq = 0;
+
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
   const showToast = useCallback((message: string, type: ToastType = "success") => {
-    const id = Date.now();
+    toastSeq += 1;
+    const id = toastSeq;
     setToasts((prev) => [...prev, { id, message, type }]);
     window.setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -34,9 +37,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="toast-stack" aria-live="polite" aria-atomic="true">
+      <div className="toast-stack">
         {toasts.map((t) => (
-          <div key={t.id} className={`toast toast-${t.type}`} role="status">
+          <div
+            key={t.id}
+            className={`toast toast-${t.type}`}
+            role={t.type === "error" ? "alert" : "status"}
+            aria-live={t.type === "error" ? "assertive" : "polite"}
+            aria-atomic="true"
+          >
             {t.message}
           </div>
         ))}

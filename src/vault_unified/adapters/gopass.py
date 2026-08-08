@@ -79,7 +79,7 @@ class GopassAdapter(CliAdapter):
         return self.create_entry(entry)
 
     def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
-        result = self._run(["rm", external_id], env=self._env())
+        result = self._run(["rm", "-f", external_id], env=self._env())
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to delete gopass entry")
 

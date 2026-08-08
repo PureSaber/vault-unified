@@ -143,8 +143,8 @@ class UnifiedVault:
         return self.sync.pull_source(Source.GOPASS)
 
     def sync_all(self) -> dict[str, dict[str, int]]:
-        result = self.sync.sync_bidirectional()
-        return result.pulled
+        """Pull-only sync across enabled external sources."""
+        return self.sync.pull_all_enabled()
 
     def sync_bidirectional(self) -> SyncResult:
         return self.sync.sync_bidirectional()

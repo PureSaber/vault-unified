@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useI18n } from "../i18n";
 
 interface Props {
   id: string;
@@ -17,6 +18,7 @@ export default function PasswordField({
   hint,
   required,
 }: Props) {
+  const { t } = useI18n();
   const [visible, setVisible] = useState(false);
 
   return (
@@ -36,10 +38,10 @@ export default function PasswordField({
           type="button"
           className="secondary icon-btn"
           onClick={() => setVisible((v) => !v)}
-          aria-label={visible ? "Hide password" : "Show password"}
+          aria-label={visible ? t("list.hidePassword") : t("list.showPassword")}
           aria-pressed={visible}
         >
-          {visible ? "Hide" : "Show"}
+          {visible ? t("list.hide") : t("list.show")}
         </button>
       </div>
       {hint && <p className="field-hint">{hint}</p>}

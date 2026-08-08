@@ -609,7 +609,7 @@ def push(
     vault_path: Path | None,
     password: str | None,
 ) -> None:
-    """Push local changes to Proton Pass and Bitwarden."""
+    """Push local changes to all enabled external sources."""
     vault = _open_vault(vault_path or get_vault_path(), password)
     if push_all:
         result = vault.push_all_dirty()
@@ -751,6 +751,7 @@ def sources_disable(
 @main.command("desktop")
 def desktop_cmd() -> None:
     """Start the Tauri desktop app (requires npm install in apps/desktop)."""
+    import shutil
     import subprocess
     from vault_unified.env import find_project_root
 
@@ -759,12 +760,12 @@ def desktop_cmd() -> None:
     if not (desktop / "package.json").exists():
         console.print("[red]Desktop app not found.[/red]")
         sys.exit(1)
+    npm = shutil.which("npm.cmd") or shutil.which("npm")
+    if not npm:
+        console.print("[red]npm not found in PATH.[/red]")
+        sys.exit(1)
     console.print("[cyan]Starting Vault Unified desktop...[/cyan]")
-    subprocess.Popen(
-        ["npm", "run", "tauri", "dev"],
-        cwd=desktop,
-        shell=True,
-    )
+    subprocess.Popen([npm, "run", "tauri", "dev"], cwd=str(desktop))
 
 
 if __name__ == "__main__":

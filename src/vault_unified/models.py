@@ -167,16 +167,22 @@ class SyncPreferences:
     def from_dict(cls, data: dict[str, Any]) -> SyncPreferences:
         primary = data.get("primary", PrimarySource.LOCAL.value)
         if isinstance(primary, str):
-            primary = PrimarySource(primary)
+            try:
+                primary = PrimarySource(primary)
+            except ValueError:
+                primary = PrimarySource.LOCAL
         raw_enabled = data.get("enabled_sources")
         enabled_sources: list[str] | None = None
         if raw_enabled is not None:
             enabled_sources = list(raw_enabled) if isinstance(raw_enabled, list) else []
+        conflict_default = data.get("conflict_default", "primary")
+        if conflict_default not in ("primary", "manual"):
+            conflict_default = "primary"
         prefs = cls(
             primary=primary,
             auto_push_on_edit=bool(data.get("auto_push_on_edit", True)),
             auto_pull_on_sync=bool(data.get("auto_pull_on_sync", True)),
-            conflict_default=data.get("conflict_default", "primary"),
+            conflict_default=conflict_default,
             proton_vault_name=data.get("proton_vault_name", ""),
             proton_share_id=data.get("proton_share_id", ""),
             enabled_sources=enabled_sources,

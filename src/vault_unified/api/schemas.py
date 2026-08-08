@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class UnlockRequest(BaseModel):
@@ -31,7 +31,7 @@ class EntryOut(BaseModel):
 
 
 class EntryIn(BaseModel):
-    title: str
+    title: str = Field(min_length=1, max_length=500)
     username: str = ""
     password: str = ""
     url: str = ""
@@ -40,7 +40,7 @@ class EntryIn(BaseModel):
 
 
 class EntryUpdate(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=500)
     username: str | None = None
     password: str | None = None
     url: str | None = None
@@ -62,15 +62,20 @@ class SyncPreferencesIn(BaseModel):
     primary: str | None = None
     auto_push_on_edit: bool | None = None
     auto_pull_on_sync: bool | None = None
-    conflict_default: str | None = None
+    conflict_default: Literal["primary", "manual"] | None = None
     proton_vault_name: str | None = None
     proton_share_id: str | None = None
     enabled_sources: list[str] | None = None
 
 
 class ConflictResolveIn(BaseModel):
-    choice: str
+    choice: Literal["local", "remote", "merge"]
     merged: dict[str, Any] | None = None
+
+    @field_validator("merged")
+    @classmethod
+    def merge_requires_body(cls, value: dict | None, info):
+        return value
 
 
 class StatusOut(BaseModel):

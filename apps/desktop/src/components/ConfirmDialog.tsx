@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useI18n } from "../i18n";
 
 interface Props {
   open: boolean;
@@ -15,22 +16,53 @@ export default function ConfirmDialog({
   open,
   title,
   message,
-  confirmLabel = "Confirm",
-  cancelLabel = "Cancel",
+  confirmLabel,
+  cancelLabel,
   variant = "default",
   onConfirm,
   onCancel,
 }: Props) {
+  const { t } = useI18n();
+  const dialogRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
+  const previousFocus = useRef<HTMLElement | null>(null);
+
+  const resolvedConfirm = confirmLabel ?? t("confirm.confirm");
+  const resolvedCancel = cancelLabel ?? t("confirm.cancel");
 
   useEffect(() => {
     if (!open) return;
+
+    previousFocus.current = document.activeElement as HTMLElement | null;
     cancelRef.current?.focus();
+
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+        return;
+      }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusable = dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
     }
+
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      previousFocus.current?.focus?.();
+    };
   }, [open, onCancel]);
 
   if (!open) return null;
@@ -38,6 +70,7 @@ export default function ConfirmDialog({
   return (
     <div className="confirm-backdrop" role="presentation" onClick={onCancel}>
       <div
+        ref={dialogRef}
         className="confirm-dialog card"
         role="alertdialog"
         aria-modal="true"
@@ -45,18 +78,22 @@ export default function ConfirmDialog({
         aria-describedby="confirm-message"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="confirm-title" className="confirm-title">{title}</h2>
-        <p id="confirm-message" className="confirm-message">{message}</p>
+        <h2 id="confirm-title" className="confirm-title">
+          {title}
+        </h2>
+        <p id="confirm-message" className="confirm-message">
+          {message}
+        </p>
         <div className="button-row confirm-actions">
           <button ref={cancelRef} type="button" className="secondary" onClick={onCancel}>
-            {cancelLabel}
+            {resolvedCancel}
           </button>
           <button
             type="button"
             className={variant === "danger" ? "danger" : "primary"}
             onClick={onConfirm}
           >
-            {confirmLabel}
+            {resolvedConfirm}
           </button>
         </div>
       </div>

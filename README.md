@@ -43,15 +43,29 @@ npm run tauri dev
 powershell -ExecutionPolicy Bypass -File apps\desktop\start-desktop.ps1
 ```
 
+**发布安装包（含 API sidecar）：**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build-desktop-release.ps1
+```
+
+仅构建 sidecar：`scripts\build-api-sidecar.ps1`（输出到 `apps/desktop/src-tauri/binaries/`）。安装版默认把库写在 `%LOCALAPPDATA%\VaultUnified\.vault\secrets.vault`（可用 `VAULT_DATA_DIR` / `VAULT_FILE` 覆盖）；源码开发时仍用仓库根目录 `.vault`。
+
 ## 同步命令
 
 ```powershell
 .\vault.cmd sync              # 仅从外部拉取
 .\vault.cmd sync -b           # 双向同步（拉取 + 推送 + 冲突检测）
-.\vault.cmd push "GitHub"     # 推送单条到云端
+.\vault.cmd push "GitHub"     # 推送单条到已启用的外部源
 .\vault.cmd push --all        # 推送所有 dirty 条目
+.\vault.cmd sources list      # 查看外源启用状态
+.\vault.cmd sources enable bitwarden
+.\vault.cmd sources disable proton_pass
 .\vault.cmd conflicts list    # 查看冲突
 .\vault.cmd conflicts resolve <id> --choice local
+.\vault.cmd import keepassxc  # 从 KeePassXC 拉取
+.\vault.cmd import gopass
+.\vault.cmd desktop           # 启动桌面开发模式
 ```
 
 ## 主数据源设置
@@ -221,14 +235,13 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 
 ## 版本
 
-**v1.0.2** — 当前版，包含：
+**v1.0.3** — 当前版，包含：
 
-- 本地加密库 + CLI（`vault.cmd`）
-- Tauri 桌面应用 + FastAPI sidecar
+- 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
+- **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
 - 外部源：Bitwarden、KeePassXC、gopass、Proton Pass（Plus）
-- 双向同步、冲突处理、主数据源设置
-- **可选外源** `enabled_sources`（勾选参与同步的密码库）
-- Windows 初始化脚本（`setup-keepassxc.ps1`、`setup-gopass.ps1`）
-- 桌面 UI polish（toast、密码显隐、设计 token）
+- 双向同步、冲突持久化、主数据源、`enabled_sources`
+- 安全加固：loopback 绑定、unlock-keyring / generate 鉴权、冲突密码脱敏、剪贴板自动清空
+- 同步正确性：无时间戳外源不再覆盖 dirty 本地；部分 push / 删除失败不误标干净
 
 GitHub: https://github.com/PureSaber/vault-unified

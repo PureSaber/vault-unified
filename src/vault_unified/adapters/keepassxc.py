@@ -76,7 +76,8 @@ class KeePassXCAdapter(CliAdapter):
     def get_entry(self, external_id: str) -> SecretEntry | None:
         db = self._db_path()
         assert db is not None
-        result = self._run_db(["show", "-a", str(db), external_id])
+        # -s/--show-protected reveals Password; -a alone may return PROTECTED.
+        result = self._run_db(["show", "-s", "-a", str(db), external_id])
         if result.returncode != 0:
             return None
         return self._parse_show(external_id, result.stdout)

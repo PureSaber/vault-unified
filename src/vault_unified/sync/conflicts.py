@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from uuid import uuid4
 
+from vault_unified.crypto import mask_secret
 from vault_unified.models import PrimarySource, SecretEntry, Source, SyncStatus
 
 
@@ -16,26 +17,51 @@ class ConflictRecord:
     remote_source: Source
     default_choice: str = "local"
 
-    def to_dict(self) -> dict:
+    def to_dict(self, *, reveal: bool = False) -> dict:
+        def side(entry: SecretEntry) -> dict:
+            data = entry.to_dict()
+            if not reveal:
+                data["password"] = mask_secret(entry.password, visible=0)
+                if entry.notes:
+                    data["notes"] = mask_secret(entry.notes, visible=0)
+            return data
+
         return {
             "id": self.id,
             "entry_id": self.entry_id,
             "title": self.title,
             "remote_source": self.remote_source.value,
             "default_choice": self.default_choice,
-            "local": self.local.to_dict(),
-            "remote": self.remote.to_dict(),
+            "local": side(self.local),
+            "remote": side(self.remote),
         }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> ConflictRecord:
+        return cls(
+            id=data["id"],
+            entry_id=data["entry_id"],
+            title=data.get("title", ""),
+            local=SecretEntry.from_dict(data["local"]),
+            remote=SecretEntry.from_dict(data["remote"]),
+            remote_source=Source(data["remote_source"]),
+            default_choice=data.get("default_choice", "local"),
+        )
 
 
 def detect_conflict(local: SecretEntry, remote: SecretEntry) -> bool:
-    if local.sync_status == SyncStatus.DIRTY and local.last_synced_at:
-        if remote.remote_updated_at and remote.remote_updated_at > local.last_synced_at:
-            if _fields_differ(local, remote):
-                return True
+    """Return True when pull must not silently overwrite local edits."""
     if local.sync_status == SyncStatus.CONFLICT:
         return True
-    return False
+    if local.sync_status != SyncStatus.DIRTY:
+        return False
+    if not _fields_differ(local, remote):
+        return False
+    # Timestamped remotes: conflict only if remote changed after last sync.
+    if remote.remote_updated_at and local.last_synced_at:
+        return remote.remote_updated_at > local.last_synced_at
+    # KeePassXC / gopass (and any source without timestamps): dirty + differ = conflict.
+    return True
 
 
 def _fields_differ(a: SecretEntry, b: SecretEntry) -> bool:
@@ -76,3 +102,7 @@ def apply_resolution(
         winner = local
     winner.mark_synced(remote.remote_updated_at or winner.remote_updated_at)
     return winner
+
+
+def new_conflict_id() -> str:
+    return str(uuid4())

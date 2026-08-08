@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, Entry } from "../api/client";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
+import { useI18n } from "../i18n";
 
 interface Props {
   entry?: Entry | null;
@@ -9,22 +10,64 @@ interface Props {
 }
 
 export default function EntryForm({ entry, onDone }: Props) {
+  const { t } = useI18n();
   const { showToast } = useToast();
-  const [title, setTitle] = useState(entry?.title || "");
-  const [username, setUsername] = useState(entry?.username || "");
-  const [password, setPassword] = useState(entry?.password || "");
-  const [url, setUrl] = useState(entry?.url || "");
-  const [notes, setNotes] = useState(entry?.notes || "");
+  const isEdit = !!entry;
+  const [loading, setLoading] = useState(isEdit);
+  const [title, setTitle] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [url, setUrl] = useState("");
+  const [notes, setNotes] = useState("");
+  const [genLength, setGenLength] = useState(20);
+  const [genSymbols, setGenSymbols] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  useEffect(() => {
+    if (!entry) {
+      setLoading(false);
+      setTitle("");
+      setUsername("");
+      setPassword("");
+      setUrl("");
+      setNotes("");
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError("");
+    api
+      .getEntry(entry.id, true)
+      .then((full) => {
+        if (cancelled) return;
+        setTitle(full.title || "");
+        setUsername(full.username || "");
+        setPassword(full.password || "");
+        setUrl(full.url || "");
+        setNotes(full.notes || "");
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        const msg = String(err).replace(/^Error:\s*/, "");
+        setError(msg);
+        showToast(msg, "error");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [entry, showToast]);
+
   async function handleGenerate() {
     try {
-      const res = await api.generate(20);
+      const res = await api.generate(genLength, genSymbols);
       setPassword(res.password);
-      showToast("Password generated");
+      showToast(t("form.generated"));
     } catch (err) {
-      showToast(String(err), "error");
+      showToast(String(err).replace(/^Error:\s*/, ""), "error");
     }
   }
 
@@ -35,57 +78,92 @@ export default function EntryForm({ entry, onDone }: Props) {
     try {
       if (entry) {
         await api.updateEntry(entry.id, { title, username, password, url, notes });
-        showToast("Entry updated");
+        showToast(t("form.updated"));
       } else {
         await api.createEntry({ title, username, password, url, notes });
-        showToast("Entry added");
+        showToast(t("form.added"));
       }
       onDone();
     } catch (err) {
-      setError(String(err));
+      const msg = String(err).replace(/^Error:\s*/, "");
+      setError(msg);
+      showToast(msg || t("form.saveError"), "error");
     } finally {
       setSaving(false);
     }
   }
 
+  if (loading) {
+    return <div className="loading-state">{t("form.loading")}</div>;
+  }
+
   return (
     <div className="card">
-      <h2>{entry ? "Edit entry" : "Add entry"}</h2>
+      <h2>{isEdit ? t("form.edit") : t("form.add")}</h2>
       <form onSubmit={handleSave}>
         <div className="field">
-          <label className="field-label" htmlFor="entry-title">Title</label>
+          <label className="field-label" htmlFor="entry-title">
+            {t("form.title")}
+          </label>
           <input
             id="entry-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             required
-            placeholder="e.g. GitHub"
+            placeholder={t("form.titlePlaceholder")}
           />
         </div>
         <div className="field">
-          <label className="field-label" htmlFor="entry-username">Username</label>
+          <label className="field-label" htmlFor="entry-username">
+            {t("form.username")}
+          </label>
           <input
             id="entry-username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            placeholder="email or username"
+            placeholder={t("form.usernamePlaceholder")}
             autoComplete="off"
           />
         </div>
         <PasswordField
           id="entry-password"
-          label="Password"
+          label={t("form.password")}
           value={password}
           onChange={setPassword}
-          hint="Masked by default. Use Generate for a strong random password."
+          hint={t("form.passwordHint")}
         />
-        <div className="input-row" style={{ marginBottom: "var(--space-lg)" }}>
+        <div className="generate-row">
+          <div className="field generate-length">
+            <label className="field-label" htmlFor="gen-length">
+              {t("form.genLength")}
+            </label>
+            <input
+              id="gen-length"
+              type="number"
+              min={12}
+              max={64}
+              value={genLength}
+              onChange={(e) =>
+                setGenLength(Math.min(64, Math.max(12, Number(e.target.value) || 12)))
+              }
+            />
+          </div>
+          <label className="checkbox-field generate-symbols">
+            <input
+              type="checkbox"
+              checked={genSymbols}
+              onChange={(e) => setGenSymbols(e.target.checked)}
+            />
+            <span>{t("form.genSymbols")}</span>
+          </label>
           <button type="button" className="secondary" onClick={handleGenerate}>
-            Generate password
+            {t("form.generate")}
           </button>
         </div>
         <div className="field">
-          <label className="field-label" htmlFor="entry-url">URL</label>
+          <label className="field-label" htmlFor="entry-url">
+            {t("form.url")}
+          </label>
           <input
             id="entry-url"
             type="url"
@@ -95,13 +173,15 @@ export default function EntryForm({ entry, onDone }: Props) {
           />
         </div>
         <div className="field">
-          <label className="field-label" htmlFor="entry-notes">Notes</label>
+          <label className="field-label" htmlFor="entry-notes">
+            {t("form.notes")}
+          </label>
           <textarea
             id="entry-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={3}
-            placeholder="Optional notes"
+            placeholder={t("form.notesPlaceholder")}
           />
         </div>
         {error && (
@@ -111,10 +191,10 @@ export default function EntryForm({ entry, onDone }: Props) {
         )}
         <div className="button-row">
           <button className="primary" type="submit" disabled={saving}>
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("form.saving") : t("form.save")}
           </button>
           <button className="secondary" type="button" onClick={onDone}>
-            Cancel
+            {t("form.cancel")}
           </button>
         </div>
       </form>

@@ -1,15 +1,45 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, clearToken, setToken } from "../api/client";
+import { useI18n } from "../i18n";
 
 interface Props {
   onUnlock: () => void;
 }
 
 export default function Unlock({ onUnlock }: Props) {
+  const { t } = useI18n();
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [hasKeyring, setHasKeyring] = useState(false);
+  const [keyringChecked, setKeyringChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .checkKeyring()
+      .then((res) => {
+        if (!cancelled) {
+          setHasKeyring(!!res.has_saved_password);
+          setKeyringChecked(true);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setKeyringChecked(true);
+          const msg = String(err);
+          setError(
+            msg.includes("Failed to fetch") || msg.includes("NetworkError")
+              ? t("unlock.apiUnreachable")
+              : msg
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
@@ -22,9 +52,9 @@ export default function Unlock({ onUnlock }: Props) {
     } catch (err) {
       const msg = String(err);
       setError(
-        msg.includes("Failed to fetch")
-          ? "Cannot reach vault API. Ensure the app started the Python service (port 8765)."
-          : msg
+        msg.includes("Failed to fetch") || msg.includes("NetworkError")
+          ? t("unlock.apiUnreachable")
+          : msg.replace(/^Error:\s*/, "")
       );
     } finally {
       setLoading(false);
@@ -39,7 +69,12 @@ export default function Unlock({ onUnlock }: Props) {
       setToken(res.token);
       onUnlock();
     } catch (err) {
-      setError(String(err));
+      const msg = String(err);
+      setError(
+        msg.includes("Failed to fetch") || msg.includes("NetworkError")
+          ? t("unlock.apiUnreachable")
+          : msg.replace(/^Error:\s*/, "")
+      );
     } finally {
       setLoading(false);
     }
@@ -48,11 +83,13 @@ export default function Unlock({ onUnlock }: Props) {
   return (
     <div className="unlock-shell">
       <div className="unlock-card card">
-        <h1>Vault Unified</h1>
-        <p className="unlock-subtitle">Enter your master password to unlock the encrypted vault.</p>
+        <h1>{t("app.title")}</h1>
+        <p className="unlock-subtitle">{t("unlock.subtitle")}</p>
         <form onSubmit={handleUnlock} noValidate>
           <div className="field">
-            <label className="field-label" htmlFor="master-password">Master password</label>
+            <label className="field-label" htmlFor="master-password">
+              {t("unlock.password")}
+            </label>
             <input
               id="master-password"
               type="password"
@@ -71,7 +108,7 @@ export default function Unlock({ onUnlock }: Props) {
               checked={remember}
               onChange={(e) => setRemember(e.target.checked)}
             />
-            <span>Remember on this PC (Windows Credential Manager)</span>
+            <span>{t("unlock.remember")}</span>
           </label>
           {error && (
             <div id="unlock-error" className="error" role="alert">
@@ -80,16 +117,18 @@ export default function Unlock({ onUnlock }: Props) {
           )}
           <div className="button-row">
             <button className="primary" type="submit" disabled={loading}>
-              {loading ? "Unlocking…" : "Unlock"}
+              {loading ? t("unlock.unlocking") : t("unlock.submit")}
             </button>
-            <button
-              className="secondary"
-              type="button"
-              onClick={handleKeyring}
-              disabled={loading}
-            >
-              Use saved password
-            </button>
+            {keyringChecked && hasKeyring && (
+              <button
+                className="secondary"
+                type="button"
+                onClick={handleKeyring}
+                disabled={loading}
+              >
+                {t("unlock.useSaved")}
+              </button>
+            )}
           </div>
         </form>
       </div>

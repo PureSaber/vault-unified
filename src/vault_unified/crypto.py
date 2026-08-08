@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import os
 from pathlib import Path
@@ -8,6 +7,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+# Interactive local vault KDF (must stay stable — params are not stored in blob).
 SCRYPT_N = 2**14
 SCRYPT_R = 8
 SCRYPT_P = 1
@@ -56,9 +56,11 @@ def read_encrypted_file(path: Path, password: str) -> dict:
     return decrypt_payload(password, path.read_bytes())
 
 
-def mask_secret(value: str, visible: int = 4) -> str:
+def mask_secret(value: str, visible: int = 0) -> str:
     if not value:
         return ""
+    if visible <= 0:
+        return "•" * min(len(value), 8)
     if len(value) <= visible:
         return "*" * len(value)
     return value[:visible] + "*" * (len(value) - visible)
