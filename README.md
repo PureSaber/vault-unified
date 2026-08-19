@@ -24,23 +24,19 @@ powershell -ExecutionPolicy Bypass -File setup.ps1
 
 ### 桌面应用
 
-```powershell
-# 安装 API 依赖
-.venv\Scripts\pip install -e ".[api]"
-
-# 启动 API（调试）
-vault-api
-
-# 启动桌面 App（另开终端）
-cd apps\desktop
-npm install
-npm run tauri dev
-```
-
-或一键脚本：
+推荐使用一键脚本：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File apps\desktop\start-desktop.ps1
+```
+
+源码开发也可以手动启动 Tauri；**不要预先启动固定端口 API**。Tauri 会独占启动 sidecar，由 sidecar 绑定系统分配的随机 loopback 端口并生成一次性启动密钥：
+
+```powershell
+.venv\Scripts\pip install -e ".[api]"
+cd apps\desktop
+npm install
+npm run tauri dev
 ```
 
 **发布安装包（含 API sidecar）：**
@@ -50,6 +46,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build-desktop-release.ps1
 ```
 
 仅构建 sidecar：`scripts\build-api-sidecar.ps1`（输出到 `apps/desktop/src-tauri/binaries/`）。安装版默认把库写在 `%LOCALAPPDATA%\VaultUnified\.vault\secrets.vault`（可用 `VAULT_DATA_DIR` / `VAULT_FILE` 覆盖）；源码开发时仍用仓库根目录 `.vault`。
+
+桌面 sidecar 的身份验证、随机端口和会话令牌边界见 [`docs/sidecar-security.md`](docs/sidecar-security.md)。
 
 ## 同步命令
 
@@ -214,22 +212,27 @@ PROTON_PASS_PERSONAL_ACCESS_TOKEN=
 
 ## 架构
 
-```
+```text
 Tauri Desktop (React)
-       │ HTTP localhost:8765
+       │ Tauri IPC：获取本次运行的 endpoint + bootstrap secret
        ▼
-FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
-                │
-                ├── SyncEngine (bidirectional)
-                ├── Bitwarden (bw)
-                ├── KeePassXC (keepassxc-cli)
-                ├── gopass
-                └── Proton Pass (pass-cli, Plus)
+FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
+       │
+       └──► UnifiedVault ──► LocalVault (encrypted)
+                    │
+                    ├── SyncEngine (bidirectional)
+                    ├── Bitwarden (bw)
+                    ├── KeePassXC (keepassxc-cli)
+                    ├── gopass
+                    └── Proton Pass (pass-cli, Plus)
 ```
 
 ## 安全
 
-- API 仅绑定 `127.0.0.1`
+- Tauri 每次启动自己拥有的 API sidecar，不复用固定 localhost 端口上的已有进程
+- sidecar 先绑定系统分配的随机 `127.0.0.1` 端口，再通过私有 stdout pipe 返回实例 ID 和高熵 bootstrap secret
+- 所有 API 请求（包括 health 与 unlock）必须携带 `X-Vault-Bootstrap`，父进程还会核对实例 ID
+- Bearer Session 仅保存在渲染进程内存；刷新、锁定或退出后失效，不写入 `localStorage`
 - `.vault/`、`.env`、`token.txt` 不提交 Git
 - 密码 API 响应默认脱敏
 
@@ -243,5 +246,7 @@ FastAPI ──► UnifiedVault ──► LocalVault (encrypted)
 - 双向同步、冲突持久化、主数据源、`enabled_sources`
 - 安全加固：loopback 绑定、unlock-keyring / generate 鉴权、冲突密码脱敏、剪贴板自动清空
 - 同步正确性：无时间戳外源不再覆盖 dirty 本地；部分 push / 删除失败不误标干净
+
+当前开发分支进一步加入随机端口、sidecar 实例握手、每进程 bootstrap secret 和内存 Session Token；正式发布时应同步更新版本号与 Release Notes。
 
 GitHub: https://github.com/PureSaber/vault-unified
