@@ -37,6 +37,12 @@ jobs:
           npm ci
           npm run lint
           npm run build
+      - name: Prepare externalBin placeholder for Rust tests
+        shell: pwsh
+        run: |
+          $path = "apps/desktop/src-tauri/binaries/vault-api-sidecar-x86_64-pc-windows-msvc.exe"
+          New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+          New-Item -ItemType File -Force -Path $path | Out-Null
       - name: Check authenticated sidecar launcher
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 
