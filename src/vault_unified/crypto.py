@@ -7,6 +7,14 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from vault_unified.storage import (
+    RecoveryPlan,
+    atomic_write_bytes,
+    inspect_recovery,
+    recover_atomic_file,
+    require_clean_storage,
+)
+
 # Interactive local vault KDF (must stay stable — params are not stored in blob).
 SCRYPT_N = 2**14
 SCRYPT_R = 8
@@ -48,12 +56,37 @@ def decrypt_payload(password: str, blob: bytes) -> dict:
 
 
 def write_encrypted_file(path: Path, password: str, payload: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(encrypt_payload(password, payload))
+    blob = encrypt_payload(password, payload)
+
+    def validate(candidate: bytes) -> None:
+        if decrypt_payload(password, candidate) != payload:
+            raise ValueError("Encrypted write did not round-trip")
+
+    atomic_write_bytes(path, blob, validator=validate)
 
 
 def read_encrypted_file(path: Path, password: str) -> dict:
+    require_clean_storage(path)
     return decrypt_payload(password, path.read_bytes())
+
+
+def inspect_encrypted_file_recovery(path: Path, password: str) -> list[RecoveryPlan]:
+    return inspect_recovery(path, validator=lambda candidate: decrypt_payload(password, candidate))
+
+
+def recover_encrypted_file(
+    path: Path,
+    password: str,
+    *,
+    transaction_id: str | None = None,
+    dry_run: bool = True,
+) -> RecoveryPlan:
+    return recover_atomic_file(
+        path,
+        validator=lambda candidate: decrypt_payload(password, candidate),
+        transaction_id=transaction_id,
+        dry_run=dry_run,
+    )
 
 
 def mask_secret(value: str, visible: int = 0) -> str:

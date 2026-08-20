@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import socket
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +10,7 @@ from fastapi.testclient import TestClient
 pytest.importorskip("fastapi")
 
 from vault_unified.api.app import _bind_server_socket, create_app
+from vault_unified.storage import RecoveryRequiredError
 
 SECRET = "bootstrap-secret-for-tests-0123456789abcdef"
 INSTANCE_ID = "sidecar-test-instance"
@@ -80,3 +83,21 @@ def test_random_port_is_bound_by_the_sidecar_before_it_is_announced():
 def test_explicit_weak_bootstrap_secret_is_rejected():
     with pytest.raises(ValueError, match="at least 32"):
         create_app(bootstrap_secret="too-short", instance_id=INSTANCE_ID)
+
+
+def test_unlock_reports_interrupted_storage_without_calling_it_bad_password():
+    app = create_app(bootstrap_secret=SECRET, instance_id=INSTANCE_ID)
+    recovery_error = RecoveryRequiredError(
+        Path("generated-fake.vault"),
+        ("0123456789abcdef0123456789abcdef",),
+    )
+    with patch("vault_unified.api.routes.auth.sessions.unlock", side_effect=recovery_error):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/auth/unlock",
+                headers={"X-Vault-Bootstrap": SECRET},
+                json={"password": "generated-fake-password", "remember": False},
+            )
+
+    assert response.status_code == 409
+    assert "Storage recovery required" in response.json()["detail"]

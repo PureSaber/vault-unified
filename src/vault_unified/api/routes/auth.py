@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from vault_unified.api.deps import get_token, get_vault, require_loopback
 from vault_unified.api.schemas import UnlockRequest, UnlockResponse
 from vault_unified.session import sessions
+from vault_unified.storage import RecoveryRequiredError
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -14,6 +15,8 @@ def unlock(body: UnlockRequest, request: Request) -> UnlockResponse:
     require_loopback(request)
     try:
         token, _ = sessions.unlock(body.password, remember=body.remember)
+    except RecoveryRequiredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid password or vault") from exc
     return UnlockResponse(token=token)
@@ -48,6 +51,8 @@ def unlock_keyring(request: Request) -> UnlockResponse:
         raise HTTPException(status_code=403, detail="Desktop client required")
     try:
         token, _ = sessions.unlock()
+    except RecoveryRequiredError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     return UnlockResponse(token=token)

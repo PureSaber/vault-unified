@@ -12,7 +12,11 @@ from rich.table import Table
 from vault_unified.bootstrap import import_token_txt
 from vault_unified.clipboard import copy_to_clipboard
 from vault_unified.config import get_vault_path
-from vault_unified.crypto import mask_secret
+from vault_unified.crypto import (
+    inspect_encrypted_file_recovery,
+    mask_secret,
+    recover_encrypted_file,
+)
 from vault_unified.env import find_project_root, load_env
 from vault_unified.generator import generate_password
 from vault_unified.keyring_store import (
@@ -24,6 +28,11 @@ from vault_unified.keyring_store import (
 from vault_unified.adapters.registry import all_remote_adapters
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import Source
+from vault_unified.storage import (
+    RecoveryRequiredError,
+    quarantine_stale_lock,
+    require_clean_storage,
+)
 
 load_env()
 console = Console()
@@ -50,6 +59,12 @@ def _read_password(prompt: str = "Master password", confirm: bool = False) -> st
 
 
 def _ensure_vault(path: Path, password: str | None) -> UnifiedVault:
+    try:
+        require_clean_storage(path)
+    except RecoveryRequiredError as exc:
+        console.print(f"[red]{exc}[/red]")
+        console.print("Run: vault storage inspect")
+        sys.exit(2)
     if not path.exists():
         console.print("[yellow]Vault not found — creating one now...[/yellow]")
         pwd = password or _read_password("Create master password", confirm=True)
@@ -62,6 +77,10 @@ def _ensure_vault(path: Path, password: str | None) -> UnifiedVault:
     pwd = password or _read_password()
     try:
         return UnifiedVault(path, pwd)
+    except RecoveryRequiredError as exc:
+        console.print(f"[red]{exc}[/red]")
+        console.print("Run: vault storage inspect")
+        sys.exit(2)
     except Exception:
         if is_remember_enabled():
             clear_master_password()
@@ -298,6 +317,79 @@ def forget_password() -> None:
     """Remove saved master password from Windows Credential Manager."""
     clear_master_password()
     console.print("[green]Saved master password removed.[/green]")
+
+
+@main.group()
+def storage() -> None:
+    """Inspect and explicitly recover interrupted local writes."""
+
+
+@storage.command("inspect")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def storage_inspect(vault_path: Path | None, password: str | None) -> None:
+    """Read recovery plans without modifying any file."""
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password()
+    plans = inspect_encrypted_file_recovery(path, pwd)
+    if not plans:
+        console.print("[green]No interrupted storage transaction found.[/green]")
+        return
+    table = Table(title="Storage recovery (read-only)")
+    table.add_column("Transaction")
+    table.add_column("Action")
+    table.add_column("Backup")
+    for plan in plans:
+        table.add_row(
+            plan.transaction_id,
+            plan.action,
+            plan.backup_path.name if plan.backup_path else "-",
+        )
+    console.print(table)
+
+
+@storage.command("recover")
+@click.option("--transaction-id", default=None)
+@click.option("--apply", "apply_change", is_flag=True, help="Apply the inspected recovery plan")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def storage_recover(
+    transaction_id: str | None,
+    apply_change: bool,
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    """Dry-run by default; --apply performs one deterministic recovery."""
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password()
+    plan = recover_encrypted_file(
+        path,
+        pwd,
+        transaction_id=transaction_id,
+        dry_run=not apply_change,
+    )
+    mode = "applied" if apply_change else "dry-run"
+    console.print(f"[green]{mode}:[/green] {plan.transaction_id} -> {plan.action}")
+
+
+@storage.command("quarantine-stale-lock")
+@click.option("--min-age-seconds", default=600, type=click.IntRange(min=60))
+@click.option("--apply", "apply_change", is_flag=True, help="Quarantine the stale lock")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+def storage_quarantine_stale_lock(
+    min_age_seconds: int,
+    apply_change: bool,
+    vault_path: Path | None,
+) -> None:
+    """Dry-run by default; never deletes the stale lock evidence."""
+    path = vault_path or get_vault_path()
+    result = quarantine_stale_lock(
+        path,
+        min_age_seconds=min_age_seconds,
+        dry_run=not apply_change,
+    )
+    mode = "quarantined" if apply_change else "would quarantine"
+    console.print(f"[green]{mode}:[/green] {result.name}")
 
 
 @main.command("status")

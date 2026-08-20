@@ -9,6 +9,7 @@ from uuid import uuid4
 from vault_unified.config import get_vault_path
 from vault_unified.keyring_store import get_master_password, save_master_password
 from vault_unified.manager import UnifiedVault
+from vault_unified.storage import require_clean_storage
 
 SESSION_IDLE_SECONDS = 30 * 60
 
@@ -41,6 +42,7 @@ class SessionManager:
         pwd = password or os.environ.get("VAULT_PASSWORD") or get_master_password()
         if not pwd:
             raise ValueError("Master password required")
+        require_clean_storage(path)
         if not path.exists():
             vault = UnifiedVault.create(path, pwd)
         else:

@@ -48,6 +48,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-desktop-release.ps1
 仅构建 sidecar：`scripts\build-api-sidecar.ps1`（输出到 `apps/desktop/src-tauri/binaries/`）。安装版默认把库写在 `%LOCALAPPDATA%\VaultUnified\.vault\secrets.vault`（可用 `VAULT_DATA_DIR` / `VAULT_FILE` 覆盖）；源码开发时仍用仓库根目录 `.vault`。
 
 桌面 sidecar 的身份验证、随机端口和会话令牌边界见 [`docs/sidecar-security.md`](docs/sidecar-security.md)。
+本地文件的原子替换、备份和显式崩溃恢复见 [`docs/atomic-storage-recovery.md`](docs/atomic-storage-recovery.md)。
 
 ## 同步命令
 
