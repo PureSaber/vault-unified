@@ -72,7 +72,7 @@ def test_ci_trigger_and_release_job_contract():
 
     release = _block(lines, "release-desktop", 2)
     assert "    if: startsWith(github.ref, 'refs/tags/v')" in release
-    assert "    needs: [python, desktop]" in release
+    assert "    needs: [python, desktop, rustsec]" in release
 
     cases = [
         ("push", "refs/heads/main", True, False),
@@ -98,7 +98,7 @@ def test_ci_action_and_permission_contract():
     ]
     expected = Counter(
         {
-            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1": 3,
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1": 4,
             "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97": 2,
             "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020": 2,
             "dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c": 2,
@@ -114,4 +114,14 @@ def test_ci_action_and_permission_contract():
     release = _block(lines, "release-desktop", 2)
     release_permissions = _block(release, "permissions", 4)
     assert release_permissions == ["      contents: write"]
-    assert sum("persist-credentials: false" in line for line in lines) == 3
+    assert sum("persist-credentials: false" in line for line in lines) == 4
+
+    rustsec = _block(lines, "rustsec", 2)
+    assert any("cargo-audit/v0.22.2/" in line for line in rustsec)
+    assert any(
+        "0a7316540862c13d954f648917ceacca593747baed6eec180fafa590be2710ab"
+        in line
+        for line in rustsec
+    )
+    assert any("RustSec/advisory-db.git" in line for line in rustsec)
+    assert not any("--ignore" in line for line in rustsec)

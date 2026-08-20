@@ -54,9 +54,33 @@ jobs:
       - name: Check authenticated sidecar launcher
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
 
+  rustsec:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Audit Rust dependencies
+        shell: pwsh
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP "cargo-audit-0.22.2.zip"
+          $toolRoot = Join-Path $env:RUNNER_TEMP "cargo-audit-0.22.2"
+          Invoke-WebRequest -Uri "https://github.com/RustSec/rustsec/releases/download/cargo-audit/v0.22.2/cargo-audit-x86_64-pc-windows-msvc-v0.22.2.zip" -OutFile $archive
+          $expected = "0a7316540862c13d954f648917ceacca593747baed6eec180fafa590be2710ab"
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "cargo-audit archive digest mismatch: $actual"
+          }
+          Expand-Archive -LiteralPath $archive -DestinationPath $toolRoot
+          $audit = Get-ChildItem -LiteralPath $toolRoot -Filter cargo-audit.exe -Recurse | Select-Object -First 1
+          if (-not $audit) {
+            throw "cargo-audit.exe was not present in the verified archive"
+          }
+          & $audit.FullName audit --url https://github.com/RustSec/advisory-db.git --file apps/desktop/src-tauri/Cargo.lock
+
   release-desktop:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [python, desktop]
+    needs: [python, desktop, rustsec]
     runs-on: windows-latest
     permissions:
       contents: write
