@@ -6,7 +6,7 @@
 
 | 功能 | 说明 |
 |------|------|
-| 本地加密库 | Scrypt + AES-GCM，`.vault/secrets.vault` |
+| 本地加密库 | 兼容 Scrypt + AES-GCM；显式可选 Argon2id + KEK/DEK v3 |
 | 桌面 App | Tauri + React 图形界面 |
 | 双向同步 | 拉取 + 推送到已配置的外部源 |
 | 主数据源 | 可设 local / bitwarden / keepassxc / gopass / proton_pass |
@@ -49,7 +49,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-desktop-release.ps1
 
 桌面 sidecar 的身份验证、随机端口和会话令牌边界见 [`docs/sidecar-security.md`](docs/sidecar-security.md)。
 本地文件的原子替换、备份和显式崩溃恢复见 [`docs/atomic-storage-recovery.md`](docs/atomic-storage-recovery.md)。
-Vault Format v3 的只读识别与兼容边界见 [`docs/vault-format-compatibility.md`](docs/vault-format-compatibility.md)。
+Vault Format v3 的兼容边界见 [`docs/vault-format-compatibility.md`](docs/vault-format-compatibility.md)，显式创建、加密与密钥轮换见 [`docs/vault-v3-cryptography.md`](docs/vault-v3-cryptography.md)。
 
 ## 同步命令
 

@@ -6,7 +6,10 @@ this does **not** change the legacy vault format or KDF.
 
 ## Write protocol
 
-1. Acquire a per-target exclusive lock.
+1. Acquire a per-target exclusive lock. Replacement callers may require the locked live
+   SHA-256 to match the bytes used to build their candidate, and create-only callers may
+   require the destination to remain absent; either mismatch fails instead of overwriting a
+   concurrent writer.
 2. Write a random, owner-only temporary file in the target directory, flush, and fsync it.
 3. Read it back and run the format-specific validator.
 4. Write and fsync a secret-free transaction journal containing names and SHA-256 digests.
@@ -40,7 +43,10 @@ Recovery validates transaction IDs, bounded journal structure, digests, encrypti
 payload parsing. It can finalize an already committed replacement, discard an uncommitted
 candidate while retaining the old live file, restore a synced new candidate, or restore the
 last backup. An unexpected live file is first preserved as
-`<file>.pre-recovery.<transaction-id>`. Ambiguous/corrupt evidence stops for manual recovery.
+`<file>.pre-recovery.<transaction-id>`. When the format validator proves that a live file is
+valid but its digest is neither the recorded old nor new digest, it is a concurrent version
+and always stops for manual recovery; it is never silently replaced by a temp or backup.
+Other ambiguous/corrupt evidence also stops.
 
 Locks are never silently broken. A lock at least ten minutes old can be inspected and then
 explicitly quarantined; it is renamed rather than deleted:

@@ -76,8 +76,9 @@ namespaced and size-bounded. A parser never repairs a source file.
 
 The header carries at least:
 
-- `format_version=3`, `vault_id`, `generation`, and `payload_schema`;
-- the payload cipher identifier, fresh 96-bit payload nonce, and ciphertext length;
+- `format_version=3`, `vault_id`, content `generation`, `key_generation`, and `payload_schema`;
+- the payload cipher identifier, fresh 96-bit payload nonce, and exact plaintext/ciphertext
+  lengths;
 - a random `dek_id` and one or more typed DEK wrapping slots;
 - for a password slot: slot ID, Argon2 version/parameters, salt, wrap cipher identifier,
   fresh 96-bit wrap nonce, and wrapped DEK with tag.
@@ -94,10 +95,11 @@ AAD is a deterministic, length-prefixed binary encoding of validated typed field
 re-serialization of JSON.
 
 - Each wrap slot authenticates the domain string `vault-unified:v3:wrap`, format and cipher
-  IDs, `vault_id`, `dek_id`, slot ID/type, and every KDF parameter including salt.
+  IDs, `vault_id`, `dek_id`, `key_generation`, slot ID/type, and every KDF parameter including
+  salt and the wrap nonce.
 - The payload authenticates `vault-unified:v3:payload`, format and cipher IDs, `vault_id`,
   `dek_id`, `generation`, `payload_schema`, payload nonce, and declared plaintext/ciphertext
-  lengths.
+  lengths, plus a digest of canonical namespaced extensions.
 
 Thus changing a KDF parameter, swapping a slot across vaults, changing a generation, or
 splicing ciphertext fails authentication. Slot removal can still cause denial of service but

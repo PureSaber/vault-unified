@@ -1,0 +1,39 @@
+{
+  "description": "Synthetic Vault Format v3 known-answer vector; contains no real credentials or user data.",
+  "password": "correct horse fake fixture",
+  "payload": {
+    "version": 2,
+    "entries": {
+      "fake-entry": {
+        "title": "Synthetic only",
+        "username": "nobody@example.invalid",
+        "password": "not-a-real-secret"
+      }
+    }
+  },
+  "materials": {
+    "vault_id": "11111111-1111-4111-8111-111111111111",
+    "dek_id": "22222222-2222-4222-8222-222222222222",
+    "slot_id": "33333333-3333-4333-8333-333333333333",
+    "salt_hex": "000102030405060708090a0b0c0d0e0f",
+    "wrap_nonce_hex": "101112131415161718191a1b",
+    "payload_nonce_hex": "1c1d1e1f2021222324252627",
+    "dek_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+  },
+  "parameters": {
+    "kdf": "argon2id",
+    "argon2_version": 19,
+    "memory_kib": 65536,
+    "passes": 3,
+    "lanes": 4,
+    "cipher": "AES-256-GCM"
+  },
+  "extensions": {
+    "example.org:fixture": true
+  },
+  "expected": {
+    "bytes": 831,
+    "sha256": "17af88aecd69bc1be5dbaa9c559fea52b9b2f19043c5fa12efec7b9c2b98a40b",
+    "frame_base64": "VkxUVVYzDQoAAAKfeyJjaXBoZXIiOiJBRVMtMjU2LUdDTSIsImNpcGhlcnRleHRfbGVuZ3RoIjoxNDgsImRla19pZCI6IjIyMjIyMjIyLTIyMjItNDIyMi04MjIyLTIyMjIyMjIyMjIyMiIsImV4dGVuc2lvbnMiOnsiZXhhbXBsZS5vcmc6Zml4dHVyZSI6dHJ1ZX0sImZvcm1hdF92ZXJzaW9uIjozLCJnZW5lcmF0aW9uIjoxLCJrZXlfZ2VuZXJhdGlvbiI6MSwia2V5X3Nsb3RzIjpbeyJrZGYiOnsibGFuZXMiOjQsIm1lbW9yeV9raWIiOjY1NTM2LCJuYW1lIjoiYXJnb24yaWQiLCJvdXRwdXRfYnl0ZXMiOjMyLCJwYXNzZXMiOjMsInNhbHQiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3IiwidmVyc2lvbiI6MTl9LCJzbG90X2lkIjoiMzMzMzMzMzMtMzMzMy00MzMzLTgzMzMtMzMzMzMzMzMzMzMzIiwidHlwZSI6InBhc3N3b3JkIiwid3JhcF9jaXBoZXIiOiJBRVMtMjU2LUdDTSIsIndyYXBfbm9uY2UiOiJFQkVTRXhRVkZoY1lHUm9iIiwid3JhcHBlZF9kZWsiOiJCaktHMXVJbkRkLWs3UklzZHZjNEFqRTBCVVlRUWpVQ0FRRGZmUERFajQxcmNxYWdSVDRlZ0J3OUhOdWxWU1FuIn1dLCJwYXlsb2FkX25vbmNlIjoiSEIwZUh5QWhJaU1rSlNZbiIsInBheWxvYWRfc2NoZW1hIjoyLCJwbGFpbnRleHRfbGVuZ3RoIjoxMzIsInZhdWx0X2lkIjoiMTExMTExMTEtMTExMS00MTExLTgxMTEtMTExMTExMTExMTExIn05HzgJRGJKSNno9izraw+pwTGLxM0p2Ti74hNUdap5+g6eFea2uWXAzMwMaKhmTfWNc2cHbW34cZTAi09lzbMevnorkgp1qk327vIggFBnMLkBU633DmxFAYb9vpA0XspalCwGe5buLDklOZk+3qIYYF2Xrt/UqyfAxdGESz7E3NruBAnsTerCzbjT+N5VK9bMtyNY"
+  }
+}

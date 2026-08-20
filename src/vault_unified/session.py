@@ -10,6 +10,7 @@ from vault_unified.config import get_vault_path
 from vault_unified.keyring_store import get_master_password, save_master_password
 from vault_unified.manager import UnifiedVault
 from vault_unified.storage import require_clean_storage
+from vault_unified.vault_format import is_framed_vault_file
 
 SESSION_IDLE_SECONDS = 30 * 60
 
@@ -39,10 +40,17 @@ class SessionManager:
         remember: bool = False,
     ) -> tuple[str, UnifiedVault]:
         path = vault_path or get_vault_path()
-        pwd = password or os.environ.get("VAULT_PASSWORD") or get_master_password()
+        require_clean_storage(path)
+        is_framed = is_framed_vault_file(path)
+        if remember and is_framed:
+            raise ValueError(
+                "Remembering a raw V3 password is disabled until reviewed device slots ship in 5e"
+            )
+        pwd = password or os.environ.get("VAULT_PASSWORD")
+        if not pwd and not is_framed:
+            pwd = get_master_password()
         if not pwd:
             raise ValueError("Master password required")
-        require_clean_storage(path)
         if not path.exists():
             vault = UnifiedVault.create(path, pwd)
         else:

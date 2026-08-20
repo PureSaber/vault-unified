@@ -11,16 +11,17 @@ from click.testing import CliRunner
 
 from vault_unified.cli import main
 from vault_unified.crypto import decrypt_payload, encrypt_payload, write_encrypted_file
+from vault_unified.v3_crypto import V3AuthenticationError
 from vault_unified.vault_format import (
     V3_MAGIC,
     LegacyContainer,
     UnsupportedVaultVersion,
     V3Container,
-    V3ReadOnlyError,
     VaultFormatError,
     VaultKind,
     describe_vault_container,
     inspect_vault_format_file,
+    is_framed_vault_file,
     parse_vault_container,
 )
 
@@ -34,14 +35,16 @@ def _b64(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
 
-def _valid_header(ciphertext_length: int = 16) -> dict:
+def _valid_header(ciphertext_length: int = 18) -> dict:
     return {
         "format_version": 3,
         "vault_id": FAKE_VAULT_ID,
         "generation": 1,
+        "key_generation": 1,
         "payload_schema": 2,
         "cipher": "AES-256-GCM",
         "payload_nonce": _b64(b"p" * 12),
+        "plaintext_length": ciphertext_length - 16,
         "ciphertext_length": ciphertext_length,
         "dek_id": FAKE_DEK_ID,
         "key_slots": [
@@ -65,7 +68,7 @@ def _valid_header(ciphertext_length: int = 16) -> dict:
     }
 
 
-def _frame(header: dict | None = None, ciphertext: bytes = b"c" * 16) -> bytes:
+def _frame(header: dict | None = None, ciphertext: bytes = b"c" * 18) -> bytes:
     value = copy.deepcopy(header if header is not None else _valid_header(len(ciphertext)))
     raw_header = json.dumps(
         value,
@@ -75,7 +78,7 @@ def _frame(header: dict | None = None, ciphertext: bytes = b"c" * 16) -> bytes:
     return V3_MAGIC + len(raw_header).to_bytes(4, "big") + raw_header + ciphertext
 
 
-def _raw_frame(raw_header: bytes, ciphertext: bytes = b"c" * 16) -> bytes:
+def _raw_frame(raw_header: bytes, ciphertext: bytes = b"c" * 18) -> bytes:
     return V3_MAGIC + len(raw_header).to_bytes(4, "big") + raw_header + ciphertext
 
 
@@ -93,7 +96,7 @@ def test_legacy_bytes_are_classified_without_modification() -> None:
     }
 
 
-def test_valid_v3_frame_is_structurally_parsed_read_only() -> None:
+def test_valid_v3_frame_is_structurally_parsed_without_decrypting() -> None:
     parsed = parse_vault_container(_frame())
 
     assert isinstance(parsed, V3Container)
@@ -101,22 +104,22 @@ def test_valid_v3_frame_is_structurally_parsed_read_only() -> None:
     assert parsed.header.vault_id == FAKE_VAULT_ID
     assert parsed.header.generation == 1
     assert parsed.header.key_slots[0].kdf.memory_kib == 65_536
-    assert parsed.ciphertext == b"c" * 16
+    assert parsed.ciphertext == b"c" * 18
 
 
-def test_v3_decryption_stops_before_legacy_kdf() -> None:
+def test_v3_decryption_never_falls_back_to_legacy_kdf() -> None:
     with patch("vault_unified.crypto.derive_key") as derive:
-        with pytest.raises(V3ReadOnlyError, match="5c"):
+        with pytest.raises(V3AuthenticationError):
             decrypt_payload("generated-fake-password", _frame())
     derive.assert_not_called()
 
 
-def test_legacy_writer_refuses_to_overwrite_v3(tmp_path: Path) -> None:
+def test_writer_refuses_unauthenticated_v3_update(tmp_path: Path) -> None:
     path = tmp_path / "fake.vault"
     frame = _frame()
     path.write_bytes(frame)
 
-    with pytest.raises(V3ReadOnlyError, match="Refusing"):
+    with pytest.raises(V3AuthenticationError):
         write_encrypted_file(
             path,
             "generated-fake-password",
@@ -236,11 +239,12 @@ def test_file_inspection_and_description_are_read_only_and_non_secret(tmp_path: 
     assert path.read_bytes() == frame
     assert after.st_mtime_ns == before.st_mtime_ns
     assert description == {
-        "kind": "v3-read-only",
+        "kind": "v3",
         "container_version": 3,
         "authenticated": False,
         "payload_schema": 2,
         "generation": 1,
+        "key_generation": 1,
         "vault_id": FAKE_VAULT_ID,
         "cipher": "AES-256-GCM",
         "key_slot_count": 1,
@@ -260,7 +264,7 @@ def test_cli_format_inspect_needs_no_password_and_writes_nothing(tmp_path: Path)
     result = CliRunner().invoke(main, ["format", "inspect", "--vault-path", str(path)])
 
     assert result.exit_code == 0, result.output
-    assert "v3-read-only" in result.output
+    assert "v3" in result.output
     assert FAKE_VAULT_ID in result.output
     assert path.read_bytes() == frame
 
@@ -269,3 +273,16 @@ def test_complete_file_limit_is_checked_before_classification(monkeypatch) -> No
     monkeypatch.setattr("vault_unified.vault_format.MAX_VAULT_BYTES", 64)
     with pytest.raises(VaultFormatError, match="hard limit"):
         parse_vault_container(b"legacy" * 11)
+
+
+def test_family_prefix_detection_for_keyring_boundary_is_read_only(tmp_path: Path) -> None:
+    path = tmp_path / "unknown-framed.vault"
+    value = b"VLTUV9 synthetic unknown version"
+    path.write_bytes(value)
+
+    assert is_framed_vault_file(path) is True
+    assert path.read_bytes() == value
+
+    legacy = tmp_path / "legacy.vault"
+    legacy.write_bytes(b"synthetic legacy bytes")
+    assert is_framed_vault_file(legacy) is False

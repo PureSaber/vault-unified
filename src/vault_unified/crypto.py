@@ -7,6 +7,7 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
+from vault_unified.v3_crypto import decrypt_v3_payload, update_v3_file
 from vault_unified.storage import (
     RecoveryPlan,
     atomic_write_bytes,
@@ -16,7 +17,6 @@ from vault_unified.storage import (
 )
 from vault_unified.vault_format import (
     V3Container,
-    V3ReadOnlyError,
     inspect_vault_format_file,
     parse_vault_container,
 )
@@ -53,9 +53,7 @@ def encrypt_payload(password: str, payload: dict) -> bytes:
 def decrypt_payload(password: str, blob: bytes) -> dict:
     container = parse_vault_container(blob)
     if isinstance(container, V3Container):
-        raise V3ReadOnlyError(
-            "Vault Format v3 is recognized read-only; cryptographic opening ships in 5c"
-        )
+        return decrypt_v3_payload(password, container)
     blob = container.blob
     if len(blob) < SALT_BYTES + NONCE_BYTES + 16:
         raise ValueError("Invalid vault file or corrupted data")
@@ -70,7 +68,8 @@ def decrypt_payload(password: str, blob: bytes) -> dict:
 def write_encrypted_file(path: Path, password: str, payload: dict) -> None:
     require_clean_storage(path)
     if path.exists() and isinstance(inspect_vault_format_file(path), V3Container):
-        raise V3ReadOnlyError("Refusing to overwrite a read-only Vault Format v3 file")
+        update_v3_file(path, password, payload)
+        return
     blob = encrypt_payload(password, payload)
 
     def validate(candidate: bytes) -> None:

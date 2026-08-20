@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
+from vault_unified.config import get_vault_path
 from vault_unified.api.deps import get_token, get_vault, require_loopback
 from vault_unified.api.schemas import UnlockRequest, UnlockResponse
 from vault_unified.session import sessions
 from vault_unified.storage import RecoveryRequiredError
+from vault_unified.vault_format import is_framed_vault_file
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -36,6 +38,9 @@ def auth_status(token: str = Depends(get_token)) -> dict:
 @router.get("/check-keyring")
 def check_keyring(request: Request) -> dict:
     require_loopback(request)
+    path = get_vault_path()
+    if is_framed_vault_file(path):
+        return {"has_saved_password": False}
     from vault_unified.keyring_store import get_master_password
 
     pwd = get_master_password()
