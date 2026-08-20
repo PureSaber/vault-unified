@@ -30,19 +30,38 @@ from vault_unified.manager import UnifiedVault
 from vault_unified.models import Source
 from vault_unified.storage import (
     RecoveryRequiredError,
+    StorageError,
     quarantine_stale_lock,
     require_clean_storage,
 )
-from vault_unified.vault_format import describe_vault_container, inspect_vault_format_file
+from vault_unified.v3_crypto import (
+    V3CryptoError,
+    create_v3_file,
+    rotate_v3_dek_file,
+    rotate_v3_password_file,
+)
+from vault_unified.vault_format import (
+    V3Container,
+    VaultFormatError,
+    describe_vault_container,
+    inspect_vault_format_file,
+    is_framed_vault_file,
+)
 
 load_env()
 console = Console()
 
 
-def _read_password(prompt: str = "Master password", confirm: bool = False) -> str:
-    saved = get_master_password()
-    if saved:
-        return saved
+def _read_password(
+    prompt: str = "Master password",
+    confirm: bool = False,
+    *,
+    allow_saved: bool = True,
+) -> str:
+    if allow_saved:
+        saved = get_master_password()
+        if saved:
+            return saved
 
     env_key = "VAULT_PASSWORD"
     import os
@@ -75,7 +94,8 @@ def _ensure_vault(path: Path, password: str | None) -> UnifiedVault:
             console.print("[green]Master password saved to Windows Credential Manager.[/green]")
         return vault
 
-    pwd = password or _read_password()
+    is_v3 = isinstance(inspect_vault_format_file(path), V3Container)
+    pwd = password or _read_password(allow_saved=not is_framed_vault_file(path))
     try:
         return UnifiedVault(path, pwd)
     except RecoveryRequiredError as exc:
@@ -83,7 +103,7 @@ def _ensure_vault(path: Path, password: str | None) -> UnifiedVault:
         console.print("Run: vault storage inspect")
         sys.exit(2)
     except Exception:
-        if is_remember_enabled():
+        if not is_v3 and is_remember_enabled():
             clear_master_password()
             console.print("[red]Wrong password (cleared saved password).[/red]")
         else:
@@ -313,6 +333,85 @@ def init(vault_path: Path | None) -> None:
     console.print(f"[green]Vault created:[/green] {path}")
 
 
+@main.command("init-v3")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--password",
+    envvar="VAULT_PASSWORD",
+    help="V3 master password; omit to use a hidden prompt",
+)
+def init_v3(vault_path: Path | None, password: str | None) -> None:
+    """Explicitly create a new Vault Format v3 file; never reads or writes keyring state."""
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password(
+        "Create V3 master password",
+        confirm=True,
+        allow_saved=False,
+    )
+    try:
+        create_v3_file(path, pwd, {"version": 2, "entries": {}})
+    except (OSError, StorageError, V3CryptoError, VaultFormatError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(f"[green]Vault Format v3 created:[/green] {path}")
+    console.print("[dim]Raw V3 passwords are not stored in Windows Credential Manager.[/dim]")
+
+
+@main.group("v3")
+def v3_group() -> None:
+    """Explicit Vault Format v3 key operations; never uses raw-password keyring state."""
+
+
+@v3_group.command("rotate-password")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--old-password",
+    envvar="VAULT_PASSWORD",
+    help="Current V3 password; omit to use a hidden prompt",
+)
+@click.option(
+    "--new-password",
+    envvar="VAULT_NEW_PASSWORD",
+    help="New V3 password; omit to use a hidden confirmation prompt",
+)
+def v3_rotate_password(
+    vault_path: Path | None,
+    old_password: str | None,
+    new_password: str | None,
+) -> None:
+    """Atomically rewrap the existing data key under a new password."""
+    path = vault_path or get_vault_path()
+    old = old_password or _read_password("Current V3 password", allow_saved=False)
+    new = new_password or _read_password(
+        "New V3 password",
+        confirm=True,
+        allow_saved=False,
+    )
+    try:
+        rotate_v3_password_file(path, old, new)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print("[green]V3 password slot rotated atomically.[/green]")
+    console.print("[yellow]The retained backup remains decryptable with the old password.[/yellow]")
+
+
+@v3_group.command("rotate-dek")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--password",
+    envvar="VAULT_PASSWORD",
+    help="V3 password; omit to use a hidden prompt",
+)
+def v3_rotate_dek(vault_path: Path | None, password: str | None) -> None:
+    """Atomically replace the data key and re-encrypt the authenticated payload."""
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password("V3 password", allow_saved=False)
+    try:
+        rotate_v3_dek_file(path, pwd)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print("[green]V3 data key rotated atomically.[/green]")
+
+
 @main.command("forget")
 def forget_password() -> None:
     """Remove saved master password from Windows Credential Manager."""
@@ -331,7 +430,7 @@ def storage() -> None:
 def storage_inspect(vault_path: Path | None, password: str | None) -> None:
     """Read recovery plans without modifying any file."""
     path = vault_path or get_vault_path()
-    pwd = password or _read_password()
+    pwd = password or _read_password(allow_saved=not is_framed_vault_file(path))
     plans = inspect_encrypted_file_recovery(path, pwd)
     if not plans:
         console.print("[green]No interrupted storage transaction found.[/green]")
@@ -362,7 +461,7 @@ def storage_recover(
 ) -> None:
     """Dry-run by default; --apply performs one deterministic recovery."""
     path = vault_path or get_vault_path()
-    pwd = password or _read_password()
+    pwd = password or _read_password(allow_saved=not is_framed_vault_file(path))
     plan = recover_encrypted_file(
         path,
         pwd,
@@ -417,13 +516,17 @@ def format_inspect(vault_path: Path | None) -> None:
 @_password_option()
 def status_cmd(vault_path: Path | None, password: str | None) -> None:
     """Show vault and integration status."""
-    vault = _open_vault(vault_path or get_vault_path(), password)
+    path = vault_path or get_vault_path()
+    vault = _open_vault(path, password)
     table = Table(title="Vault Status")
     table.add_column("Component")
     table.add_column("State")
     for name, state in vault.status().items():
         table.add_row(name, state)
-    remember = "yes" if is_remember_enabled() else "no"
+    if is_framed_vault_file(path):
+        remember = "disabled for v3 until device slots ship"
+    else:
+        remember = "yes" if is_remember_enabled() else "no"
     table.add_row("remember_password", remember)
     console.print(table)
 

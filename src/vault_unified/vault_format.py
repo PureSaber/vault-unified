@@ -32,7 +32,7 @@ _EXTENSION_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]*:[a-z0-9_.-]+$")
 
 class VaultKind(str, Enum):
     LEGACY = "legacy-v1-v2"
-    V3 = "v3-read-only"
+    V3 = "v3"
 
 
 class VaultFormatError(ValueError):
@@ -44,7 +44,7 @@ class UnsupportedVaultVersion(VaultFormatError):
 
 
 class V3ReadOnlyError(VaultFormatError):
-    """The v3 structure is recognized but cryptographic opening is not implemented yet."""
+    """Deprecated compatibility exception retained for callers of the 5b preview."""
 
 
 @dataclass(frozen=True)
@@ -77,9 +77,11 @@ class V3Header:
     format_version: int
     vault_id: str
     generation: int
+    key_generation: int
     payload_schema: int
     cipher: str
     payload_nonce: bytes
+    plaintext_length: int
     ciphertext_length: int
     dek_id: str
     key_slots: tuple[PasswordSlotHeader, ...]
@@ -168,7 +170,13 @@ def _parse_extensions(value: Any) -> dict[str, str | int | bool]:
         if not isinstance(key, str) or not _EXTENSION_KEY_RE.fullmatch(key):
             raise VaultFormatError("extension names must be lowercase and namespace-qualified")
         if isinstance(item, str):
-            if len(item.encode("utf-8")) > 1024:
+            try:
+                encoded = item.encode("utf-8")
+            except UnicodeEncodeError as exc:
+                raise VaultFormatError(
+                    f"extension value is not valid Unicode: {key}"
+                ) from exc
+            if len(encoded) > 1024:
                 raise VaultFormatError(f"extension value is oversized: {key}")
         elif isinstance(item, bool):
             pass
@@ -266,9 +274,11 @@ def _parse_v3_header(raw_header: bytes, ciphertext_length: int) -> V3Header:
             "format_version",
             "vault_id",
             "generation",
+            "key_generation",
             "payload_schema",
             "cipher",
             "payload_nonce",
+            "plaintext_length",
             "ciphertext_length",
             "dek_id",
             "key_slots",
@@ -281,6 +291,9 @@ def _parse_v3_header(raw_header: bytes, ciphertext_length: int) -> V3Header:
     )
     generation = _integer(
         value["generation"], name="generation", minimum=1, maximum=2**63 - 1
+    )
+    key_generation = _integer(
+        value["key_generation"], name="key_generation", minimum=1, maximum=2**63 - 1
     )
     payload_schema = _integer(
         value["payload_schema"], name="payload_schema", minimum=1, maximum=2**31 - 1
@@ -297,6 +310,14 @@ def _parse_v3_header(raw_header: bytes, ciphertext_length: int) -> V3Header:
     )
     if declared_length != ciphertext_length:
         raise VaultFormatError("Declared ciphertext length does not match the frame")
+    plaintext_length = _integer(
+        value["plaintext_length"],
+        name="plaintext_length",
+        minimum=2,
+        maximum=MAX_VAULT_BYTES,
+    )
+    if plaintext_length + 16 != declared_length:
+        raise VaultFormatError("Plaintext and ciphertext lengths are inconsistent")
     if not isinstance(value["key_slots"], list):
         raise VaultFormatError("key_slots must be an array")
     if not 1 <= len(value["key_slots"]) <= MAX_KEY_SLOTS:
@@ -309,11 +330,13 @@ def _parse_v3_header(raw_header: bytes, ciphertext_length: int) -> V3Header:
         format_version=format_version,
         vault_id=_canonical_uuid(value["vault_id"], name="vault_id"),
         generation=generation,
+        key_generation=key_generation,
         payload_schema=payload_schema,
         cipher="AES-256-GCM",
         payload_nonce=_decode_base64url(
             value["payload_nonce"], name="payload nonce", minimum=12, maximum=12
         ),
+        plaintext_length=plaintext_length,
         ciphertext_length=declared_length,
         dek_id=_canonical_uuid(value["dek_id"], name="dek_id"),
         key_slots=slots,
@@ -361,6 +384,16 @@ def inspect_vault_format_file(path: Path) -> VaultContainer:
     return parse_vault_container(path.read_bytes())
 
 
+def is_framed_vault_file(path: Path) -> bool:
+    """Classify only the family prefix for keyring-boundary decisions; never writes."""
+
+    path = Path(path)
+    if not path.exists():
+        return False
+    with path.open("rb") as handle:
+        return handle.read(len(VAULT_FAMILY_PREFIX)) == VAULT_FAMILY_PREFIX
+
+
 def describe_vault_container(container: VaultContainer) -> dict[str, Any]:
     """Return non-secret format metadata suitable for CLI/API diagnostics."""
 
@@ -376,6 +409,7 @@ def describe_vault_container(container: VaultContainer) -> dict[str, Any]:
         "authenticated": False,
         "payload_schema": container.header.payload_schema,
         "generation": container.header.generation,
+        "key_generation": container.header.key_generation,
         "vault_id": container.header.vault_id,
         "cipher": container.header.cipher,
         "key_slot_count": len(container.header.key_slots),

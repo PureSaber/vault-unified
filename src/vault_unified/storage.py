@@ -45,6 +45,10 @@ class RecoveryAmbiguousError(StorageError):
     """Recovery cannot safely choose one durable candidate."""
 
 
+class ConcurrentStorageChangeError(StorageError):
+    """The live file changed after a caller built its replacement candidate."""
+
+
 @dataclass(frozen=True)
 class AtomicWriteReceipt:
     transaction_id: str
@@ -259,6 +263,8 @@ def atomic_write_bytes(
     data: bytes,
     *,
     validator: Validator | None = None,
+    expected_old_sha256: str | None = None,
+    must_not_exist: bool = False,
     _fault: FaultHook | None = None,
 ) -> AtomicWriteReceipt:
     """Durably replace *path* without modifying its bytes in place.
@@ -285,6 +291,12 @@ def atomic_write_bytes(
             raise StorageError(f"Refusing to replace a symbolic link: {path}")
         had_live = path.exists()
         old_digest = _sha256(path.read_bytes()) if had_live else None
+        if must_not_exist and had_live:
+            raise FileExistsError(f"Target appeared before atomic create: {path}")
+        if expected_old_sha256 is not None and old_digest != expected_old_sha256:
+            raise ConcurrentStorageChangeError(
+                f"Target changed while replacement was being prepared: {path}"
+            )
         backup = _backup_path(path, transaction_id) if had_live else None
         new_digest = _sha256(data)
         try:
@@ -317,6 +329,12 @@ def atomic_write_bytes(
             _sync_directory(path.parent)
             journal_created = True
             _invoke_fault(_fault, "after_journal_sync")
+
+            current_digest = _sha256(path.read_bytes()) if path.exists() else None
+            if current_digest != old_digest:
+                raise ConcurrentStorageChangeError(
+                    f"Target changed immediately before atomic replacement: {path}"
+                )
 
             _replace_with_backup(path, temp, backup)
             _invoke_fault(_fault, "after_replace")
@@ -406,6 +424,20 @@ def _candidate_matches(
         return False
 
 
+def _candidate_is_valid(candidate: Path, validator: Validator | None) -> bool:
+    if validator is None:
+        return False
+    if not candidate.exists() or candidate.is_symlink() or not candidate.is_file():
+        return False
+    try:
+        data = candidate.read_bytes()
+        if validator is not None:
+            validator(data)
+        return True
+    except Exception:
+        return False
+
+
 def inspect_recovery(path: Path, *, validator: Validator | None = None) -> list[RecoveryPlan]:
     """Read recovery metadata without changing files."""
 
@@ -419,9 +451,15 @@ def inspect_recovery(path: Path, *, validator: Validator | None = None) -> list[
             backup = path.parent / record["backup"] if record["backup"] else None
             old_digest = record["old_sha256"]
             new_digest = record["new_sha256"]
-            if _candidate_matches(path, new_digest, validator):
+            live_is_new = _candidate_matches(path, new_digest, validator)
+            live_is_old = _candidate_matches(path, old_digest, validator)
+            if path.exists() and not live_is_new and not live_is_old and _candidate_is_valid(
+                path, validator
+            ):
+                action = "manual"
+            elif live_is_new:
                 action = "finalize_committed"
-            elif _candidate_matches(path, old_digest, validator):
+            elif live_is_old:
                 action = "discard_uncommitted"
             elif _candidate_matches(temp, new_digest, validator):
                 action = "restore_new"
