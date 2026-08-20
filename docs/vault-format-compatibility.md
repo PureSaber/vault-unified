@@ -19,7 +19,8 @@ or overwrite v3 files. Argon2id and KEK/DEK cryptography arrive in the separate 
 ```
 
 The command reports only kind/version, payload schema, generation, vault ID, cipher, slot
-count/types, and KDF name.
+count/types, and KDF name. It also reports `authenticated: false`: without a password this
+metadata is untrusted structural input, not proof of vault identity, freshness, or integrity.
 
 ## Parser limits
 

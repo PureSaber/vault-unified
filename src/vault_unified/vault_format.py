@@ -365,10 +365,15 @@ def describe_vault_container(container: VaultContainer) -> dict[str, Any]:
     """Return non-secret format metadata suitable for CLI/API diagnostics."""
 
     if isinstance(container, LegacyContainer):
-        return {"kind": container.kind.value, "container_version": "legacy"}
+        return {
+            "kind": container.kind.value,
+            "container_version": "legacy",
+            "authenticated": False,
+        }
     return {
         "kind": container.kind.value,
         "container_version": container.header.format_version,
+        "authenticated": False,
         "payload_schema": container.header.payload_schema,
         "generation": container.header.generation,
         "vault_id": container.header.vault_id,

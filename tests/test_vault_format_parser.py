@@ -238,6 +238,7 @@ def test_file_inspection_and_description_are_read_only_and_non_secret(tmp_path: 
     assert description == {
         "kind": "v3-read-only",
         "container_version": 3,
+        "authenticated": False,
         "payload_schema": 2,
         "generation": 1,
         "vault_id": FAKE_VAULT_ID,
