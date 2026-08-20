@@ -14,6 +14,12 @@ from vault_unified.storage import (
     recover_atomic_file,
     require_clean_storage,
 )
+from vault_unified.vault_format import (
+    V3Container,
+    V3ReadOnlyError,
+    inspect_vault_format_file,
+    parse_vault_container,
+)
 
 # Interactive local vault KDF (must stay stable — params are not stored in blob).
 SCRYPT_N = 2**14
@@ -45,6 +51,12 @@ def encrypt_payload(password: str, payload: dict) -> bytes:
 
 
 def decrypt_payload(password: str, blob: bytes) -> dict:
+    container = parse_vault_container(blob)
+    if isinstance(container, V3Container):
+        raise V3ReadOnlyError(
+            "Vault Format v3 is recognized read-only; cryptographic opening ships in 5c"
+        )
+    blob = container.blob
     if len(blob) < SALT_BYTES + NONCE_BYTES + 16:
         raise ValueError("Invalid vault file or corrupted data")
     salt = blob[:SALT_BYTES]
@@ -56,6 +68,9 @@ def decrypt_payload(password: str, blob: bytes) -> dict:
 
 
 def write_encrypted_file(path: Path, password: str, payload: dict) -> None:
+    require_clean_storage(path)
+    if path.exists() and isinstance(inspect_vault_format_file(path), V3Container):
+        raise V3ReadOnlyError("Refusing to overwrite a read-only Vault Format v3 file")
     blob = encrypt_payload(password, payload)
 
     def validate(candidate: bytes) -> None:

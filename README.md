@@ -49,6 +49,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-desktop-release.ps1
 
 桌面 sidecar 的身份验证、随机端口和会话令牌边界见 [`docs/sidecar-security.md`](docs/sidecar-security.md)。
 本地文件的原子替换、备份和显式崩溃恢复见 [`docs/atomic-storage-recovery.md`](docs/atomic-storage-recovery.md)。
+Vault Format v3 的只读识别与兼容边界见 [`docs/vault-format-compatibility.md`](docs/vault-format-compatibility.md)。
 
 ## 同步命令
 

@@ -33,6 +33,7 @@ from vault_unified.storage import (
     quarantine_stale_lock,
     require_clean_storage,
 )
+from vault_unified.vault_format import describe_vault_container, inspect_vault_format_file
 
 load_env()
 console = Console()
@@ -390,6 +391,25 @@ def storage_quarantine_stale_lock(
     )
     mode = "quarantined" if apply_change else "would quarantine"
     console.print(f"[green]{mode}:[/green] {result.name}")
+
+
+@main.group("format")
+def format_group() -> None:
+    """Inspect vault container metadata without decrypting or writing it."""
+
+
+@format_group.command("inspect")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+def format_inspect(vault_path: Path | None) -> None:
+    """Show only non-secret format/version metadata."""
+    path = vault_path or get_vault_path()
+    metadata = describe_vault_container(inspect_vault_format_file(path))
+    table = Table(title="Vault format (read-only)")
+    table.add_column("Field")
+    table.add_column("Value")
+    for key, value in metadata.items():
+        table.add_row(key, ", ".join(value) if isinstance(value, list) else str(value))
+    console.print(table)
 
 
 @main.command("status")
