@@ -6,11 +6,18 @@ import os
 import re
 from pathlib import Path
 
-from vault_unified.adapters.base import CliAdapter
+from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
 from vault_unified.models import SecretEntry, Source
 
 
 class KeePassXCAdapter(CliAdapter):
+    capabilities = AdapterCapabilities(
+        authoritative_list=True,
+        revision_token=False,
+        idempotent_create=False,
+        delete_confirm=True,
+        absence_is_delete=False,
+    )
     name = "KeePassXC"
     cli_name = "keepassxc-cli"
     source = Source.KEEPASSXC
@@ -82,7 +89,9 @@ class KeePassXCAdapter(CliAdapter):
             return None
         return self._parse_show(external_id, result.stdout)
 
-    def create_entry(self, entry: SecretEntry) -> SecretEntry:
+    def create_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         db = self._db_path()
         assert db is not None
         path = self._entry_path(entry)
@@ -99,12 +108,14 @@ class KeePassXCAdapter(CliAdapter):
         entry.external_id = path
         return entry
 
-    def update_entry(self, entry: SecretEntry) -> SecretEntry:
+    def update_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         db = self._db_path()
         assert db is not None
         path = entry.get_linked_id(Source.KEEPASSXC) or entry.external_id
         if not path:
-            return self.create_entry(entry)
+            return self.create_entry(entry, operation_id=operation_id)
         args = ["edit", str(db), path, "-u", entry.username or ""]
         if entry.url:
             args.extend(["--url", entry.url])
@@ -118,7 +129,13 @@ class KeePassXCAdapter(CliAdapter):
         entry.external_id = path
         return entry
 
-    def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
+    def delete_entry(
+        self,
+        external_id: str,
+        *,
+        permanent: bool = False,
+        operation_id: str | None = None,
+    ) -> None:
         db = self._db_path()
         assert db is not None
         result = self._run_db(["rm", str(db), external_id])

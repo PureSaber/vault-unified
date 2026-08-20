@@ -6,6 +6,8 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
+from vault_unified.sync.ledger import EntrySyncLedger
+
 
 class Source(str, Enum):
     LOCAL = "local"
@@ -54,9 +56,11 @@ class SecretEntry:
     remote_updated_at: str = ""
     proton_share_id: str = ""
     linked_sources: dict[str, str] = field(default_factory=dict)
+    sync_ledger: EntrySyncLedger = field(default_factory=EntrySyncLedger)
 
     def touch(self) -> None:
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.sync_ledger.new_content_revision()
         if self.sync_status == SyncStatus.CLEAN:
             self.sync_status = SyncStatus.DIRTY
 
@@ -68,6 +72,7 @@ class SecretEntry:
 
     def mark_dirty(self) -> None:
         self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.sync_ledger.new_content_revision()
         self.sync_status = SyncStatus.DIRTY
 
     def link_source(self, source: Source, external_id: str) -> None:
@@ -80,6 +85,7 @@ class SecretEntry:
         data = asdict(self)
         data["source"] = self.source.value
         data["sync_status"] = self.sync_status.value
+        data["sync_ledger"] = self.sync_ledger.to_dict()
         return data
 
     @classmethod
@@ -110,6 +116,7 @@ class SecretEntry:
             remote_updated_at=data.get("remote_updated_at", ""),
             proton_share_id=data.get("proton_share_id", ""),
             linked_sources=dict(linked),
+            sync_ledger=EntrySyncLedger.from_dict(data.get("sync_ledger")),
         )
 
 

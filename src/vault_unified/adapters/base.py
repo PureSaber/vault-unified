@@ -5,6 +5,7 @@ import subprocess
 from abc import ABC, abstractmethod
 
 from vault_unified.models import SecretEntry, Source
+from vault_unified.sync.ledger import AdapterCapabilities
 
 CLI_TIMEOUT = 30
 
@@ -14,6 +15,7 @@ class VaultAdapter(ABC):
 
     name: str = "base"
     source: Source = Source.LOCAL
+    capabilities = AdapterCapabilities()
 
     @abstractmethod
     def is_available(self) -> bool:
@@ -32,15 +34,25 @@ class VaultAdapter(ABC):
         """Fetch a single entry by remote ID."""
 
     @abstractmethod
-    def create_entry(self, entry: SecretEntry) -> SecretEntry:
+    def create_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         """Create remote entry; mutates entry with external_id."""
 
     @abstractmethod
-    def update_entry(self, entry: SecretEntry) -> SecretEntry:
+    def update_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         """Update existing remote entry."""
 
     @abstractmethod
-    def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
+    def delete_entry(
+        self,
+        external_id: str,
+        *,
+        permanent: bool = False,
+        operation_id: str | None = None,
+    ) -> None:
         """Delete remote entry."""
 
     def status_message(self) -> str:

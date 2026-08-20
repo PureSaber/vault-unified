@@ -8,10 +8,11 @@ from vault_unified.adapters.keepassxc import KeePassXCAdapter
 from vault_unified.adapters.proton_pass import ProtonPassAdapter
 from vault_unified.adapters.registry import all_remote_adapters
 from vault_unified.local_store import LocalVault
-from vault_unified.models import SecretEntry, Source, SyncPreferences
+from vault_unified.models import SecretEntry, Source, SyncPreferences, SyncStatus
 from vault_unified.sync.engine import SyncEngine, SyncResult
 from vault_unified.sync_prefs import load_prefs, save_prefs
 from vault_unified.v3_crypto import V3Credential
+from vault_unified.sync.ledger import Tombstone
 
 
 class UnifiedVault:
@@ -124,11 +125,20 @@ class UnifiedVault:
 
     def delete(self, entry_id: str, *, soft: bool = True) -> bool:
         prefs = self.get_prefs()
-        if soft and prefs.auto_push_on_edit:
-            ok = self.local.delete(entry_id, soft=True)
-            if ok:
+        if soft:
+            entry = self.local.get(entry_id)
+            if entry is None:
+                return False
+            if entry.sync_ledger.tombstone is None:
+                entry.sync_ledger.tombstone = Tombstone.create(
+                    list(entry.linked_sources)
+                )
+            entry.sync_status = SyncStatus.DELETED_PENDING
+            entry.mark_dirty()
+            self.local.replace_entry(entry)
+            if prefs.auto_push_on_edit:
                 self.sync.push_entry(entry_id)
-            return ok
+            return True
         return self.local.delete(entry_id, soft=False)
 
     def import_from_proton(self) -> dict[str, int]:
@@ -155,6 +165,12 @@ class UnifiedVault:
 
     def push_all_dirty(self) -> dict[str, int]:
         return self.sync.push_all_dirty()
+
+    def abandon_tombstone_source(self, entry_id: str, source: Source) -> None:
+        self.sync.abandon_tombstone_source(entry_id, source)
+
+    def purge_tombstone(self, entry_id: str) -> None:
+        self.sync.purge_tombstone(entry_id)
 
     def list_conflicts(self):
         return self.sync.list_conflicts()

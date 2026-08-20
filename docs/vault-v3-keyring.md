@@ -41,10 +41,11 @@ the device backend/slot/generation in AES-GCM AAD, and preserve the payload ciph
 requires at least one password recovery slot and permits at most one device slot. Password and
 DEK rotation fail closed while a device slot exists; explicitly disable, rotate, and re-enable.
 
-The legacy encrypted `conflicts.vault` sidecar still requires the master password. A device-only
-session refuses to open when this sidecar exists and refuses to create/update it, rather than
-silently dropping conflict state. Consolidating that state into the reviewed sync/conflict data
-model belongs to 5f; use a password session for sync workflows until then.
+The 5f sync ledger embeds new conflict snapshots in the main encrypted vault. A password session
+imports an existing legacy `conflicts.vault` exactly once, preserves its bytes as evidence, and
+writes a non-secret digest-bound migration marker. A device-only session refuses an unmarked
+legacy sidecar so it cannot silently skip conflicts; after the password-authenticated import it
+uses the embedded ledger. See [`sync-ledger.md`](sync-ledger.md).
 
 ## Optional rollback anchor
 

@@ -6,6 +6,7 @@ from vault_unified.crypto import read_encrypted_file, write_encrypted_file
 from vault_unified.models import SecretEntry, Source, SyncStatus
 from vault_unified.storage import require_clean_storage
 from vault_unified.v3_crypto import V3Credential
+from vault_unified.sync.ledger import Tombstone
 
 VAULT_VERSION = 2
 
@@ -226,6 +227,10 @@ class LocalVault:
             return False
         if soft:
             entry = self._entries[entry_id]
+            if entry.sync_ledger.tombstone is None:
+                entry.sync_ledger.tombstone = Tombstone.create(
+                    list(entry.linked_sources)
+                )
             entry.sync_status = SyncStatus.DELETED_PENDING
             entry.mark_dirty()
             self._save()

@@ -266,7 +266,7 @@ def test_session_remember_and_passwordless_unlock_use_device_credential(
     assert len(decrypt_v3_payload(FAKE_PASSWORD, v3_path.read_bytes())["entries"]) == 1
 
 
-def test_device_session_fails_closed_for_legacy_conflict_sidecar(
+def test_device_session_requires_password_authenticated_sidecar_import(
     v3_path: Path, backend: MemoryBackend
 ) -> None:
     sidecar = v3_path.parent / "conflicts.vault"
@@ -275,8 +275,11 @@ def test_device_session_fails_closed_for_legacy_conflict_sidecar(
         enable_device_unlock(v3_path, FAKE_PASSWORD)
         with pytest.raises(ValueError, match="legacy conflict sidecar"):
             SessionManager().unlock(vault_path=v3_path)
+        UnifiedVault(v3_path, FAKE_PASSWORD)
+        token, _ = SessionManager().unlock(vault_path=v3_path)
 
     assert read_encrypted_file(sidecar, FAKE_PASSWORD) == {"conflicts": []}
+    assert token
 
 
 def test_anchor_advances_and_blocks_older_authenticated_file(
