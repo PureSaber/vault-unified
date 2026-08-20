@@ -238,7 +238,7 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 
 ## 版本
 
-**v1.0.3** — 当前版，包含：
+**v1.0.4** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
 - **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
@@ -246,7 +246,10 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 - 双向同步、冲突持久化、主数据源、`enabled_sources`
 - 安全加固：loopback 绑定、unlock-keyring / generate 鉴权、冲突密码脱敏、剪贴板自动清空
 - 同步正确性：无时间戳外源不再覆盖 dirty 本地；部分 push / 删除失败不误标干净
+- 桌面端不再复用固定端口服务；每次启动均由 Tauri 拥有随机 loopback 端口的 sidecar
+- 每个 API 请求均需携带本次启动生成的 bootstrap secret，Tauri 同时验证实例 ID
+- Bearer Session Token 仅保存在渲染进程内存中；Windows 进程树随桌面应用一同退出
 
-当前开发分支进一步加入随机端口、sidecar 实例握手、每进程 bootstrap secret 和内存 Session Token；正式发布时应同步更新版本号与 Release Notes。
+v1.0.4 不迁移或改写现有加密保险库格式。
 
 GitHub: https://github.com/PureSaber/vault-unified
