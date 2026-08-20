@@ -24,6 +24,7 @@ build/
 *.egg-info/
 .pytest_cache/
 .mypy_cache/
+.codex-tmp/
 
 # OS / IDE
 .DS_Store

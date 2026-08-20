@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from vault_unified.crypto import read_encrypted_file, write_encrypted_file
+from vault_unified.storage import require_clean_storage
 from vault_unified.sync.conflicts import ConflictRecord
 
 CONFLICTS_FILENAME = "conflicts.vault"
@@ -14,6 +15,7 @@ def conflicts_path(vault_path: Path) -> Path:
 
 def load_conflicts(vault_path: Path, password: str) -> dict[str, ConflictRecord]:
     path = conflicts_path(vault_path)
+    require_clean_storage(path)
     if not path.exists():
         return {}
     try:

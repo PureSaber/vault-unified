@@ -4,6 +4,7 @@ from pathlib import Path
 
 from vault_unified.crypto import read_encrypted_file, write_encrypted_file
 from vault_unified.models import SecretEntry, Source, SyncStatus
+from vault_unified.storage import require_clean_storage
 
 VAULT_VERSION = 2
 
@@ -15,6 +16,7 @@ class LocalVault:
         self.vault_path = vault_path
         self.password = password
         self._entries: dict[str, SecretEntry] = {}
+        require_clean_storage(vault_path)
         if vault_path.exists():
             self._load()
 
