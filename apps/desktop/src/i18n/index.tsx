@@ -32,7 +32,7 @@ const zh: Dict = {
   "unlock.unlocking": "解锁中…",
   "unlock.useSaved": "使用已保存密码",
   "unlock.apiUnreachable":
-    "无法连接保险库 API。请确认应用已启动 Python 服务（端口 8765）。",
+    "无法连接保险库 API。请确认应用已成功启动其安全 sidecar。",
 
   "list.searchPlaceholder": "按标题、用户名或 URL 搜索…",
   "list.search": "搜索",
@@ -191,7 +191,7 @@ const en: Dict = {
   "unlock.unlocking": "Unlocking…",
   "unlock.useSaved": "Use saved password",
   "unlock.apiUnreachable":
-    "Cannot reach vault API. Ensure the app started the Python service (port 8765).",
+    "Cannot reach the vault API. Ensure the app started its secure sidecar.",
 
   "list.searchPlaceholder": "Search by title, username, or URL…",
   "list.search": "Search",

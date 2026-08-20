@@ -13,7 +13,7 @@ For every desktop launch:
 5. The parent verifies `/api/health` with both the bootstrap secret and the expected instance ID.
 6. The renderer receives the runtime endpoint through a Tauri command and includes `X-Vault-Bootstrap` on every API request.
 7. Bearer session tokens remain in renderer memory and are discarded on reload, lock, or exit.
-8. The Tauri parent terminates the sidecar when the desktop process exits.
+8. On Windows, Tauri starts the sidecar suspended, assigns it to a kill-on-close Job Object, and only then resumes it. Closing or crashing the parent therefore terminates the PyInstaller bootloader and worker process tree.
 
 This prevents an unrelated local process from occupying a predictable port and impersonating the vault API to capture the master password or a bearer token.
 

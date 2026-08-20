@@ -8,6 +8,27 @@ use std::thread;
 use std::time::Duration;
 use tauri::Manager;
 
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, INVALID_HANDLE_VALUE};
+#[cfg(windows)]
+use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+};
+#[cfg(windows)]
+use windows_sys::Win32::System::JobObjects::{
+    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+};
+#[cfg(windows)]
+use windows_sys::Win32::System::Threading::{
+    OpenThread, ResumeThread, CREATE_SUSPENDED, THREAD_SUSPEND_RESUME,
+};
+
 const READY_PREFIX: &str = "VAULT_API_READY ";
 const MIN_BOOTSTRAP_SECRET_LENGTH: usize = 32;
 
@@ -28,7 +49,180 @@ struct SidecarReady {
 
 struct ApiSidecar {
     child: Mutex<Option<Child>>,
+    job: Mutex<Option<SidecarJob>>,
     config: ApiRuntimeConfig,
+}
+
+#[cfg(windows)]
+struct SidecarJob {
+    handle: isize,
+}
+
+#[cfg(not(windows))]
+struct SidecarJob;
+
+#[cfg(windows)]
+impl SidecarJob {
+    fn create() -> Result<Self, String> {
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle.is_null() {
+            return Err(format!(
+                "failed to create sidecar job object: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+
+        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let configured = unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                &limits as *const _ as *const core::ffi::c_void,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            )
+        };
+        if configured == 0 {
+            let err = std::io::Error::last_os_error();
+            unsafe {
+                CloseHandle(handle);
+            }
+            return Err(format!("failed to configure sidecar job object: {err}"));
+        }
+
+        Ok(Self {
+            handle: handle as isize,
+        })
+    }
+
+    fn raw(&self) -> HANDLE {
+        self.handle as HANDLE
+    }
+
+    fn assign(&self, child: &Child) -> Result<(), String> {
+        let assigned =
+            unsafe { AssignProcessToJobObject(self.raw(), child.as_raw_handle() as HANDLE) };
+        if assigned == 0 {
+            return Err(format!(
+                "failed to assign sidecar to job object: {}",
+                std::io::Error::last_os_error()
+            ));
+        }
+        Ok(())
+    }
+
+    fn terminate(&self) {
+        unsafe {
+            TerminateJobObject(self.raw(), 1);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+impl SidecarJob {
+    fn terminate(&self) {}
+}
+
+#[cfg(windows)]
+impl Drop for SidecarJob {
+    fn drop(&mut self) {
+        if self.handle != 0 {
+            unsafe {
+                CloseHandle(self.raw());
+            }
+            self.handle = 0;
+        }
+    }
+}
+
+#[cfg(windows)]
+fn resume_suspended_process(process_id: u32) -> Result<(), String> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) };
+    if snapshot == INVALID_HANDLE_VALUE {
+        return Err(format!(
+            "failed to enumerate suspended sidecar threads: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+
+    let result = (|| {
+        let mut entry = THREADENTRY32::default();
+        entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+        let mut found = unsafe { Thread32First(snapshot, &mut entry) } != 0;
+        while found {
+            if entry.th32OwnerProcessID == process_id {
+                let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, 0, entry.th32ThreadID) };
+                if thread.is_null() {
+                    return Err(format!(
+                        "failed to open suspended sidecar thread: {}",
+                        std::io::Error::last_os_error()
+                    ));
+                }
+                let resumed = unsafe { ResumeThread(thread) };
+                unsafe {
+                    CloseHandle(thread);
+                }
+                if resumed == u32::MAX {
+                    return Err(format!(
+                        "failed to resume sidecar process: {}",
+                        std::io::Error::last_os_error()
+                    ));
+                }
+                return Ok(());
+            }
+            found = unsafe { Thread32Next(snapshot, &mut entry) } != 0;
+        }
+        Err("suspended sidecar primary thread was not found".to_string())
+    })();
+
+    unsafe {
+        CloseHandle(snapshot);
+    }
+    result
+}
+
+fn spawn_sidecar_process(
+    mut command: Command,
+    label: &str,
+) -> Result<(Child, Option<SidecarJob>), String> {
+    #[cfg(windows)]
+    {
+        // PyInstaller one-file executables spawn a worker process. Create the
+        // direct child suspended, assign it to a kill-on-close Job Object, and
+        // only then resume it so every descendant inherits the job boundary.
+        let job = SidecarJob::create()?;
+        command.creation_flags(CREATE_SUSPENDED);
+        let mut child = command
+            .spawn()
+            .map_err(|err| format!("failed to spawn {label}: {err}"))?;
+        if let Err(err) = job
+            .assign(&child)
+            .and_then(|_| resume_suspended_process(child.id()))
+        {
+            job.terminate();
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(err);
+        }
+        return Ok((child, Some(job)));
+    }
+
+    #[cfg(not(windows))]
+    {
+        let child = command
+            .spawn()
+            .map_err(|err| format!("failed to spawn {label}: {err}"))?;
+        Ok((child, None))
+    }
+}
+
+fn terminate_sidecar(child: &mut Child, job: &mut Option<SidecarJob>) {
+    if let Some(owned_job) = job.as_ref() {
+        owned_job.terminate();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    job.take();
 }
 
 #[tauri::command]
@@ -178,9 +372,7 @@ fn health_ok(ready: &SidecarReady) -> bool {
     if ready.host != "127.0.0.1" || ready.port == 0 {
         return false;
     }
-    if ready.bootstrap_secret.len() < MIN_BOOTSTRAP_SECRET_LENGTH
-        || ready.instance_id.is_empty()
-    {
+    if ready.bootstrap_secret.len() < MIN_BOOTSTRAP_SECRET_LENGTH || ready.instance_id.is_empty() {
         return false;
     }
 
@@ -219,9 +411,7 @@ fn health_ok(ready: &SidecarReady) -> bool {
         Err(_) => return false,
     };
     payload.get("status").and_then(|value| value.as_str()) == Some("ok")
-        && payload
-            .get("instance_id")
-            .and_then(|value| value.as_str())
+        && payload.get("instance_id").and_then(|value| value.as_str())
             == Some(ready.instance_id.as_str())
 }
 
@@ -236,24 +426,23 @@ fn wait_for_health(ready: &SidecarReady, timeout_secs: u64) -> bool {
     false
 }
 
-fn spawn_api(mut command: Command, label: &str) -> Result<(Child, ApiRuntimeConfig), String> {
+fn spawn_api(
+    mut command: Command,
+    label: &str,
+) -> Result<(Child, ApiRuntimeConfig, Option<SidecarJob>), String> {
     apply_api_env(&mut command);
-    let mut child = command
-        .spawn()
-        .map_err(|err| format!("failed to spawn {label}: {err}"))?;
+    let (mut child, mut job) = spawn_sidecar_process(command, label)?;
 
     let ready = match read_sidecar_ready(&mut child, 20) {
         Ok(value) => value,
         Err(err) => {
-            let _ = child.kill();
-            let _ = child.wait();
+            terminate_sidecar(&mut child, &mut job);
             return Err(err);
         }
     };
 
     if !wait_for_health(&ready, 20) {
-        let _ = child.kill();
-        let _ = child.wait();
+        terminate_sidecar(&mut child, &mut job);
         return Err(
             "sidecar handshake was received, but authenticated health verification failed"
                 .to_string(),
@@ -265,10 +454,12 @@ fn spawn_api(mut command: Command, label: &str) -> Result<(Child, ApiRuntimeConf
         bootstrap_secret: ready.bootstrap_secret,
         instance_id: ready.instance_id,
     };
-    Ok((child, config))
+    Ok((child, config, job))
 }
 
-fn start_api(resource_dir: Option<PathBuf>) -> Result<(Child, ApiRuntimeConfig), String> {
+fn start_api(
+    resource_dir: Option<PathBuf>,
+) -> Result<(Child, ApiRuntimeConfig, Option<SidecarJob>), String> {
     let exe = exe_dir();
 
     if let Some(sidecar) = find_sidecar_binary(&exe, resource_dir.as_deref()) {
@@ -302,6 +493,22 @@ fn start_api(resource_dir: Option<PathBuf>) -> Result<(Child, ApiRuntimeConfig),
     spawn_api(command, &format!("python API {}", python.display()))
 }
 
+fn shutdown_api_sidecar(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<ApiSidecar>() {
+        let mut owned_job = state.job.lock().ok().and_then(|mut guard| guard.take());
+        if let Some(job) = owned_job.as_ref() {
+            job.terminate();
+        }
+        if let Ok(mut guard) = state.child.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+        owned_job.take();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -309,28 +516,28 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![get_api_runtime_config])
         .setup(|app| {
             let resource_dir = app.path().resource_dir().ok();
-            let (child, config) = start_api(resource_dir).map_err(|message| {
-                std::io::Error::new(std::io::ErrorKind::Other, message)
-            })?;
+            let (child, config, job) = start_api(resource_dir)
+                .map_err(|message| std::io::Error::new(std::io::ErrorKind::Other, message))?;
             app.manage(ApiSidecar {
                 child: Mutex::new(Some(child)),
+                job: Mutex::new(job),
                 config,
             });
             Ok(())
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
-                if let Some(state) = app.try_state::<ApiSidecar>() {
-                    if let Ok(mut guard) = state.child.lock() {
-                        if let Some(mut child) = guard.take() {
-                            let _ = child.kill();
-                            let _ = child.wait();
-                        }
-                    }
-                }
+        .run(|app, event| match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::Destroyed,
+                ..
+            } if label == "main" => {
+                shutdown_api_sidecar(app);
+                app.exit(0);
             }
+            tauri::RunEvent::Exit => shutdown_api_sidecar(app),
+            _ => {}
         });
 }
 

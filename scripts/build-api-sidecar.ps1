@@ -18,12 +18,24 @@ Write-Host "Installing API deps + PyInstaller ..."
 $OutDir = Join-Path $RepoRoot "apps\desktop\src-tauri\binaries"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 
-# Unlock previous build artifacts if a sidecar is still running.
-Get-Process -ErrorAction SilentlyContinue |
-    Where-Object { $_.ProcessName -like "vault-api-sidecar*" } |
+# Unlock previous build artifacts only when the process executable is one of
+# this checkout's build outputs. Never stop an installed or unrelated sidecar.
+$OutDirFull = [System.IO.Path]::GetFullPath($OutDir).TrimEnd('\')
+Get-Process -Name "vault-api-sidecar*" -ErrorAction SilentlyContinue |
     ForEach-Object {
-        Write-Host "Stopping running $($_.ProcessName) (PID $($_.Id)) ..."
-        Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+        $ProcessPath = $null
+        try { $ProcessPath = $_.Path } catch { }
+        if ($ProcessPath) {
+            $ProcessDir = [System.IO.Path]::GetDirectoryName(
+                [System.IO.Path]::GetFullPath($ProcessPath)
+            ).TrimEnd('\')
+            if ($ProcessDir -eq $OutDirFull) {
+                Write-Host "Stopping checkout sidecar $($_.ProcessName) (PID $($_.Id)) ..."
+                Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+            } else {
+                Write-Host "Leaving unrelated sidecar running: $ProcessPath"
+            }
+        }
     }
 Start-Sleep -Seconds 1
 Get-ChildItem -LiteralPath $OutDir -Filter "vault-api-sidecar*.exe" -ErrorAction SilentlyContinue |
