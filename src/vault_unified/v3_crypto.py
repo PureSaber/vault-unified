@@ -295,6 +295,12 @@ def _serialize_payload(payload: dict) -> bytes:
     return plaintext
 
 
+def validate_v3_payload(payload: dict) -> int:
+    """Validate without deriving a key or writing; return canonical plaintext byte length."""
+
+    return len(_serialize_payload(payload))
+
+
 def _reject_duplicate_payload_fields(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     result: dict[str, Any] = {}
     for key, value in pairs:

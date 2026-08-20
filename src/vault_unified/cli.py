@@ -27,6 +27,17 @@ from vault_unified.keyring_store import (
 )
 from vault_unified.adapters.registry import all_remote_adapters
 from vault_unified.manager import UnifiedVault
+from vault_unified.migration import (
+    MigrationError,
+    MigrationOutcome,
+    apply_v3_migration,
+    discover_migration_receipts,
+    inspect_v3_migration,
+    recover_migration_receipt,
+    plan_v3_migration,
+    resume_v3_migration,
+    rollback_v3_migration,
+)
 from vault_unified.models import Source
 from vault_unified.storage import (
     RecoveryRequiredError,
@@ -57,17 +68,17 @@ def _read_password(
     confirm: bool = False,
     *,
     allow_saved: bool = True,
+    envvar: str | None = "VAULT_PASSWORD",
 ) -> str:
     if allow_saved:
         saved = get_master_password()
         if saved:
             return saved
 
-    env_key = "VAULT_PASSWORD"
     import os
 
-    if os.environ.get(env_key):
-        return os.environ[env_key]
+    if envvar and os.environ.get(envvar):
+        return os.environ[envvar]
 
     pwd = getpass.getpass(f"{prompt}: ")
     if confirm:
@@ -385,6 +396,7 @@ def v3_rotate_password(
         "New V3 password",
         confirm=True,
         allow_saved=False,
+        envvar="VAULT_NEW_PASSWORD",
     )
     try:
         rotate_v3_password_file(path, old, new)
@@ -410,6 +422,212 @@ def v3_rotate_dek(vault_path: Path | None, password: str | None) -> None:
     except (OSError, StorageError, V3CryptoError, VaultFormatError) as exc:
         raise click.ClickException(str(exc)) from exc
     console.print("[green]V3 data key rotated atomically.[/green]")
+
+
+def _print_migration_outcome(outcome: MigrationOutcome) -> None:
+    table = Table(title="Vault Format v3 migration")
+    table.add_column("Field")
+    table.add_column("Value")
+    table.add_row("action", outcome.action)
+    table.add_row("state", outcome.state)
+    table.add_row("changed", str(outcome.changed).lower())
+    table.add_row("target", str(outcome.target_path))
+    table.add_row("entries", str(outcome.entry_count))
+    table.add_row("legacy_sha256", outcome.legacy_sha256)
+    table.add_row("candidate_sha256", outcome.candidate_sha256 or "-")
+    table.add_row("vault_id", outcome.vault_id or "-")
+    table.add_row("required_free_bytes", str(outcome.required_free_bytes))
+    table.add_row("available_free_bytes", str(outcome.available_free_bytes))
+    table.add_row("receipt", str(outcome.receipt_path) if outcome.receipt_path else "-")
+    table.add_row("legacy_backup", str(outcome.backup_path) if outcome.backup_path else "-")
+    table.add_row("candidate", str(outcome.candidate_path) if outcome.candidate_path else "-")
+    console.print(table)
+
+
+@main.command("migrate-v3")
+@click.option("--apply", "apply_change", is_flag=True, help="Create evidence and activate V3")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--legacy-password",
+    envvar="VAULT_PASSWORD",
+    help="Legacy password; omit to use a hidden prompt",
+)
+@click.option(
+    "--v3-password",
+    envvar="VAULT_NEW_PASSWORD",
+    help="New V3 password for --apply; omit to use a hidden confirmation prompt",
+)
+def migrate_v3_cmd(
+    apply_change: bool,
+    vault_path: Path | None,
+    legacy_password: str | None,
+    v3_password: str | None,
+) -> None:
+    """Dry-run legacy-to-V3 migration by default; --apply is explicit and recoverable."""
+    path = vault_path or get_vault_path()
+    legacy = legacy_password or _read_password(
+        "Legacy vault password",
+        allow_saved=False,
+        envvar="VAULT_PASSWORD",
+    )
+    try:
+        if apply_change:
+            new = v3_password or _read_password(
+                "New V3 password",
+                confirm=True,
+                allow_saved=False,
+                envvar="VAULT_NEW_PASSWORD",
+            )
+            outcome = apply_v3_migration(path, legacy, new)
+        else:
+            outcome = plan_v3_migration(path, legacy)
+    except (MigrationError, StorageError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _print_migration_outcome(outcome)
+    if not apply_change:
+        console.print("[yellow]Dry-run only; no file or receipt was written.[/yellow]")
+    else:
+        console.print("[yellow]Retain the immutable legacy backup and receipt.[/yellow]")
+
+
+@main.group("migration")
+def migration_group() -> None:
+    """Inspect and explicitly resume interrupted V3 migrations."""
+
+
+@migration_group.command("list")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+def migration_list_cmd(vault_path: Path | None) -> None:
+    """List live and journal-referenced migration receipts without writing."""
+    path = vault_path or get_vault_path()
+    receipts = discover_migration_receipts(path)
+    if not receipts:
+        console.print("[green]No migration receipts found.[/green]")
+        return
+    console.print("[bold]Vault Format v3 migration receipts[/bold]")
+    for receipt in receipts:
+        state = "live" if receipt.exists() else "receipt recovery required"
+        console.print(str(receipt), soft_wrap=True)
+        console.print(f"  state: {state}")
+
+
+def _migration_password_options(function):
+    function = click.option(
+        "--v3-password",
+        envvar="VAULT_NEW_PASSWORD",
+        help="V3 password; omit to use a hidden prompt",
+    )(function)
+    function = click.option(
+        "--legacy-password",
+        envvar="VAULT_PASSWORD",
+        help="Legacy password; omit to use a hidden prompt",
+    )(function)
+    return function
+
+
+def _migration_passwords(
+    legacy_password: str | None,
+    v3_password: str | None,
+) -> tuple[str, str]:
+    legacy = legacy_password or _read_password(
+        "Legacy vault password",
+        allow_saved=False,
+        envvar="VAULT_PASSWORD",
+    )
+    v3 = v3_password or _read_password(
+        "V3 password",
+        allow_saved=False,
+        envvar="VAULT_NEW_PASSWORD",
+    )
+    return legacy, v3
+
+
+@migration_group.command("inspect")
+@click.option("--receipt", type=click.Path(path_type=Path, exists=True), required=True)
+@_migration_password_options
+def migration_inspect_cmd(
+    receipt: Path,
+    legacy_password: str | None,
+    v3_password: str | None,
+) -> None:
+    """Authenticate all durable evidence and report the next safe action without writing."""
+    legacy, v3 = _migration_passwords(legacy_password, v3_password)
+    try:
+        outcome = inspect_v3_migration(receipt, legacy, v3)
+    except (MigrationError, StorageError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _print_migration_outcome(outcome)
+
+
+@migration_group.command("resume")
+@click.option("--apply", "apply_change", is_flag=True, help="Apply the inspected next step")
+@click.option("--receipt", type=click.Path(path_type=Path, exists=True), required=True)
+@_migration_password_options
+def migration_resume_cmd(
+    apply_change: bool,
+    receipt: Path,
+    legacy_password: str | None,
+    v3_password: str | None,
+) -> None:
+    """Dry-run by default; explicitly resume a durable migration receipt with --apply."""
+    legacy, v3 = _migration_passwords(legacy_password, v3_password)
+    try:
+        outcome = resume_v3_migration(receipt, legacy, v3, apply=apply_change)
+    except (MigrationError, StorageError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _print_migration_outcome(outcome)
+    if not apply_change:
+        console.print("[yellow]Dry-run only; use --apply after reviewing this action.[/yellow]")
+
+
+@migration_group.command("receipt-recover")
+@click.option("--transaction-id", default=None)
+@click.option("--apply", "apply_change", is_flag=True, help="Apply the receipt recovery plan")
+@click.option("--receipt", type=click.Path(path_type=Path), required=True)
+def migration_receipt_recover_cmd(
+    transaction_id: str | None,
+    apply_change: bool,
+    receipt: Path,
+) -> None:
+    """Dry-run by default; recover an interrupted secret-free receipt write."""
+    try:
+        plan = recover_migration_receipt(
+            receipt,
+            transaction_id=transaction_id,
+            apply=apply_change,
+        )
+    except (MigrationError, StorageError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    mode = "applied" if apply_change else "dry-run"
+    console.print(f"[green]{mode}:[/green] {plan.transaction_id} -> {plan.action}")
+
+
+@main.command("rollback-v3")
+@click.option("--apply", "apply_change", is_flag=True, help="Restore the immutable legacy bytes")
+@click.option("--receipt", type=click.Path(path_type=Path, exists=True), required=True)
+@_migration_password_options
+def rollback_v3_cmd(
+    apply_change: bool,
+    receipt: Path,
+    legacy_password: str | None,
+    v3_password: str | None,
+) -> None:
+    """Dry-run by default; restore exact legacy bytes and preserve current V3 with --apply."""
+    legacy, v3 = _migration_passwords(legacy_password, v3_password)
+    try:
+        outcome = rollback_v3_migration(
+            receipt,
+            legacy,
+            v3,
+            apply=apply_change,
+        )
+    except (MigrationError, StorageError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    _print_migration_outcome(outcome)
+    if not apply_change:
+        console.print("[yellow]Dry-run only; use --apply after reviewing this action.[/yellow]")
+    else:
+        console.print("[yellow]The pre-rollback V3 bytes remain in an atomic backup.[/yellow]")
 
 
 @main.command("forget")

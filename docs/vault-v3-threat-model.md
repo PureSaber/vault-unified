@@ -272,6 +272,12 @@ file as evidence; and atomically restores a copy of the legacy bytes. Missing/mi
 artifacts stop for manual recovery. No release may auto-run migration, remove a backup, or
 change the default creation format without separate authorization and release review.
 
+The 5d implementation persists the planned receipt, non-overwriting legacy backup, and
+authenticated candidate as separate adjacent artifacts. `migration inspect` and dry-run-first
+`migration resume` reconcile an interruption at every phase; `rollback-v3` preserves current
+v3 bytes before restoring the exact legacy digest. Automatic evidence retirement remains out
+of scope.
+
 ## 10. Required tests and implementation sequence
 
 Every implementation PR uses only generated fake vault fixtures in isolated temporary
