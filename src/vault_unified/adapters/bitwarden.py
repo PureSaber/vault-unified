@@ -7,11 +7,18 @@ import os
 import subprocess
 from typing import Any
 
-from vault_unified.adapters.base import CliAdapter
+from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
 from vault_unified.models import SecretEntry, Source
 
 
 class BitwardenAdapter(CliAdapter):
+    capabilities = AdapterCapabilities(
+        authoritative_list=True,
+        revision_token=True,
+        idempotent_create=False,
+        delete_confirm=True,
+        absence_is_delete=False,
+    )
     name = "Bitwarden"
     cli_name = "bw"
     source = Source.BITWARDEN
@@ -93,7 +100,9 @@ class BitwardenAdapter(CliAdapter):
         item = json.loads(result.stdout)
         return self._item_to_entry(item)
 
-    def create_entry(self, entry: SecretEntry) -> SecretEntry:
+    def create_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         template = self._login_template(entry)
         encoded = self._encode(template)
         result = self._bw(["create", "item", encoded])
@@ -106,10 +115,12 @@ class BitwardenAdapter(CliAdapter):
         entry.remote_updated_at = created.get("revisionDate", "")
         return entry
 
-    def update_entry(self, entry: SecretEntry) -> SecretEntry:
+    def update_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         ext_id = entry.get_linked_id(Source.BITWARDEN) or entry.external_id
         if not ext_id:
-            return self.create_entry(entry)
+            return self.create_entry(entry, operation_id=operation_id)
         result = self._bw(["get", "item", ext_id])
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to get Bitwarden item")
@@ -129,7 +140,13 @@ class BitwardenAdapter(CliAdapter):
         entry.remote_updated_at = updated.get("revisionDate", entry.remote_updated_at)
         return entry
 
-    def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
+    def delete_entry(
+        self,
+        external_id: str,
+        *,
+        permanent: bool = False,
+        operation_id: str | None = None,
+    ) -> None:
         args = ["delete", "item", external_id]
         if permanent:
             args.append("--permanent")

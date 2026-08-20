@@ -1215,6 +1215,98 @@ def conflicts_resolve(
 
 
 @main.group()
+def tombstones() -> None:
+    """Inspect and explicitly retire retained deletion tombstones."""
+
+
+@tombstones.command("list")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def tombstones_list(vault_path: Path | None, password: str | None) -> None:
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    entries = [
+        entry
+        for entry in vault.local.list_entries(include_deleted=True)
+        if entry.sync_ledger.tombstone is not None
+    ]
+    if not entries:
+        console.print("[dim]No retained tombstones.[/dim]")
+        return
+    table = Table(title="Retained deletion tombstones")
+    table.add_column("Entry")
+    table.add_column("Title")
+    table.add_column("Pending replicas")
+    table.add_column("Retention deadline")
+    for entry in entries:
+        tombstone = entry.sync_ledger.tombstone
+        table.add_row(
+            entry.id[:8],
+            entry.title,
+            ", ".join(tombstone.pending_sources()) or "none",
+            tombstone.retention_deadline,
+        )
+    console.print(table)
+
+
+@tombstones.command("abandon")
+@click.argument("entry_id")
+@click.option(
+    "--source",
+    type=click.Choice([source.value for source in Source if source != Source.LOCAL]),
+    required=True,
+)
+@click.option(
+    "--confirm-abandon",
+    is_flag=True,
+    help="Acknowledge that this replica may retain the deleted credential",
+)
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def tombstones_abandon(
+    entry_id: str,
+    source: str,
+    confirm_abandon: bool,
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    if not confirm_abandon:
+        raise click.ClickException("--confirm-abandon is required")
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    try:
+        vault.abandon_tombstone_source(entry_id, Source(source))
+    except (KeyError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(
+        f"[yellow]Replica abandoned:[/yellow] {source}; local tombstone remains retained"
+    )
+
+
+@tombstones.command("purge")
+@click.argument("entry_id")
+@click.option(
+    "--confirm-purge",
+    is_flag=True,
+    help="Confirm permanent local purge after acknowledgements and retention",
+)
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@_password_option()
+def tombstones_purge(
+    entry_id: str,
+    confirm_purge: bool,
+    vault_path: Path | None,
+    password: str | None,
+) -> None:
+    if not confirm_purge:
+        raise click.ClickException("--confirm-purge is required")
+    vault = _open_vault(vault_path or get_vault_path(), password)
+    try:
+        vault.purge_tombstone(entry_id)
+    except (KeyError, ValueError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print("[green]Retained tombstone purged atomically.[/green]")
+
+
+@main.group()
 def sources() -> None:
     """Manage which external sources participate in sync."""
 

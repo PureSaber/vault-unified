@@ -1,8 +1,8 @@
 # Vault Format v3 design and threat model
 
-Status: accepted design target, not an implemented or released format. This document is the
-gate for the ordered 5a-5f implementation series. No implementation PR may weaken a `MUST`
-without a new design review.
+Status: accepted design target, implemented through the ordered 5a-5f series. V3 remains
+explicit opt-in and has not been made the default or published in a post-v1.0.4 release. No
+implementation PR may weaken a `MUST` without a new design review.
 
 ## 1. Scope and current compatibility boundary
 
@@ -306,7 +306,7 @@ Required gates include:
 - log/API/exception snapshots prove no password, entry secret, KEK, DEK, keyring secret, or
   decrypted conflict escapes.
 
-Implementation remains six independently reviewed and merged PRs, in order:
+The implementation was split across six independently reviewed and merged PRs, in order:
 
 1. **5a atomic storage and crash recovery** for legacy vault/conflict/prefs writes; no format
    or KDF change.
@@ -316,6 +316,11 @@ Implementation remains six independently reviewed and merged PRs, in order:
 4. **5d explicit migration, backup, dry-run, activation, and rollback**, never startup-driven.
 5. **5e keyring boundary**, device slot, legacy-keyring transition, and rollback anchor.
 6. **5f sync/conflict/deletion model** with adapter capabilities and durable operation ledger.
+
+The 5f implementation is documented in [`sync-ledger.md`](sync-ledger.md). Production adapters
+currently keep remote-absence deletion inference disabled; only a separately reviewed adapter
+that declares both an authoritative listing and documented absence-as-delete semantics may create
+a remote-deletion observation.
 
 Each PR runs Python tests/audit, frontend lint/build/audit, Rust test/check/audit, Windows
 target checks, and GitHub CI. An irreversible migration, real-vault operation, default-format

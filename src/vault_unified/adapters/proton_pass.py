@@ -6,11 +6,18 @@ import json
 import os
 from typing import Any
 
-from vault_unified.adapters.base import CliAdapter
+from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
 from vault_unified.models import SecretEntry, Source
 
 
 class ProtonPassAdapter(CliAdapter):
+    capabilities = AdapterCapabilities(
+        authoritative_list=True,
+        revision_token=True,
+        idempotent_create=False,
+        delete_confirm=False,
+        absence_is_delete=False,
+    )
     name = "Proton Pass"
     cli_name = "pass-cli"
     source = Source.PROTON_PASS
@@ -61,7 +68,9 @@ class ProtonPassAdapter(CliAdapter):
         detail = json.loads(view.stdout)
         return self._parse_detail(detail, external_id)
 
-    def create_entry(self, entry: SecretEntry) -> SecretEntry:
+    def create_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         env = self._env()
         if not env:
             raise RuntimeError("Proton Pass not configured")
@@ -107,13 +116,15 @@ class ProtonPassAdapter(CliAdapter):
             entry.proton_share_id = share
         return entry
 
-    def update_entry(self, entry: SecretEntry) -> SecretEntry:
+    def update_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         env = self._env()
         if not env:
             raise RuntimeError("Proton Pass not configured")
         ext_id = entry.get_linked_id(Source.PROTON_PASS) or entry.external_id
         if not ext_id:
-            return self.create_entry(entry)
+            return self.create_entry(entry, operation_id=operation_id)
         args = ["item", "update", "--item-id", ext_id]
         share_id = entry.proton_share_id or self._default_share_id
         if share_id:
@@ -161,7 +172,13 @@ class ProtonPassAdapter(CliAdapter):
                 self._unlink_secret_file(password_file)
         return entry
 
-    def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
+    def delete_entry(
+        self,
+        external_id: str,
+        *,
+        permanent: bool = False,
+        operation_id: str | None = None,
+    ) -> None:
         env = self._env()
         if not env:
             raise RuntimeError("Proton Pass not configured")

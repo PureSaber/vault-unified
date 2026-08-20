@@ -5,11 +5,18 @@ from __future__ import annotations
 import os
 import re
 
-from vault_unified.adapters.base import CliAdapter
+from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
 from vault_unified.models import SecretEntry, Source
 
 
 class GopassAdapter(CliAdapter):
+    capabilities = AdapterCapabilities(
+        authoritative_list=True,
+        revision_token=False,
+        idempotent_create=False,
+        delete_confirm=True,
+        absence_is_delete=False,
+    )
     name = "gopass"
     cli_name = "gopass"
     source = Source.GOPASS
@@ -61,7 +68,9 @@ class GopassAdapter(CliAdapter):
             return None
         return self._parse_show(external_id, result.stdout)
 
-    def create_entry(self, entry: SecretEntry) -> SecretEntry:
+    def create_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
         path = self._entry_path(entry)
         body = self._format_body(entry)
         result = self._run(
@@ -75,10 +84,18 @@ class GopassAdapter(CliAdapter):
         entry.external_id = path
         return entry
 
-    def update_entry(self, entry: SecretEntry) -> SecretEntry:
-        return self.create_entry(entry)
+    def update_entry(
+        self, entry: SecretEntry, *, operation_id: str | None = None
+    ) -> SecretEntry:
+        return self.create_entry(entry, operation_id=operation_id)
 
-    def delete_entry(self, external_id: str, *, permanent: bool = False) -> None:
+    def delete_entry(
+        self,
+        external_id: str,
+        *,
+        permanent: bool = False,
+        operation_id: str | None = None,
+    ) -> None:
         result = self._run(["rm", "-f", external_id], env=self._env())
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to delete gopass entry")

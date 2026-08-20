@@ -52,6 +52,7 @@ powershell -ExecutionPolicy Bypass -File scripts\build-desktop-release.ps1
 Vault Format v3 的兼容边界见 [`docs/vault-format-compatibility.md`](docs/vault-format-compatibility.md)，显式创建、加密与密钥轮换见 [`docs/vault-v3-cryptography.md`](docs/vault-v3-cryptography.md)。
 Legacy → v3 的 dry-run、显式迁移、崩溃续作与逐字节回滚见 [`docs/vault-v3-migration.md`](docs/vault-v3-migration.md)。
 V3 设备解锁、Windows keyring allowlist 与可选回滚锚点见 [`docs/vault-v3-keyring.md`](docs/vault-v3-keyring.md)。
+多来源三方比较、durable saga、冲突快照与删除 tombstone 见 [`docs/sync-ledger.md`](docs/sync-ledger.md)。
 
 ## 同步命令
 

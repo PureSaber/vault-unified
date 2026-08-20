@@ -126,7 +126,16 @@ def test_partial_push_keeps_dirty(vault_setup):
     ok = MagicMock()
     ok.is_configured.return_value = True
     ok.is_available.return_value = True
-    ok.create_entry.side_effect = lambda e: e
+    created: dict[str, SecretEntry] = {}
+
+    def create_ok(e, *, operation_id=None):
+        e.external_id = "bw-created"
+        e.link_source(Source.BITWARDEN, "bw-created")
+        created["entry"] = e
+        return e
+
+    ok.create_entry.side_effect = create_ok
+    ok.get_entry.side_effect = lambda external_id: created.get("entry")
 
     fail = MagicMock()
     fail.is_configured.return_value = True
