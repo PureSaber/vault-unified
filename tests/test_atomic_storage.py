@@ -163,7 +163,7 @@ def test_recovery_preserves_unexpected_live_as_pre_recovery_evidence(tmp_path: P
     recover_atomic_file(target, transaction_id=plan.transaction_id, dry_run=False)
 
     assert target.read_bytes() == b"new"
-    evidence = tmp_path / f"fake.vault.pre-recovery.{plan.transaction_id}"
+    evidence = tmp_path / f".pre-recovery.{plan.transaction_id}"
     assert evidence.read_bytes() == b"unexpected-corrupt-evidence"
 
 

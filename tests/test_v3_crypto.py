@@ -588,3 +588,31 @@ def test_cli_v3_open_failure_and_status_never_read_legacy_keyring(tmp_path: Path
     assert "disabled for v3 until device slots ship" in status.output
     get_saved.assert_not_called()
     remember.assert_not_called()
+
+
+def test_new_password_prompt_never_reuses_legacy_password_environment(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    path = tmp_path / "environment-boundary-v3.vault"
+    create_v3_file(path, FAKE_PASSWORD, {"version": 2, "entries": {}})
+    monkeypatch.setenv("VAULT_PASSWORD", FAKE_PASSWORD)
+    monkeypatch.delenv("VAULT_NEW_PASSWORD", raising=False)
+
+    with patch(
+        "vault_unified.cli.getpass.getpass",
+        side_effect=[FAKE_NEW_PASSWORD, FAKE_NEW_PASSWORD],
+    ) as prompt:
+        result = CliRunner().invoke(
+            main,
+            ["v3", "rotate-password", "--vault-path", str(path)],
+        )
+
+    assert result.exit_code == 0, result.output
+    assert prompt.call_count == 2
+    assert decrypt_v3_payload(FAKE_NEW_PASSWORD, path.read_bytes()) == {
+        "version": 2,
+        "entries": {},
+    }
+    with pytest.raises(V3AuthenticationError):
+        decrypt_v3_payload(FAKE_PASSWORD, path.read_bytes())

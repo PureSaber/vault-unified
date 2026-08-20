@@ -92,9 +92,9 @@ an explicit future decision; SSD secure deletion is not claimed.
   minimized, but a compromised unlocked process remains outside this protection boundary.
 - Only one password slot is accepted for unlock until reviewed slot selection and the 5e
   device-keyring design ship. A multi-slot file fails closed instead of guessing a slot.
-- There is no legacy-to-v3 migration command in this stage. The separately reviewed 5d stage
-  must provide dry-run, immutable backup, payload equivalence, activation receipt, and
-  rollback before any legacy file can be converted.
+- Legacy conversion is available only through the separately reviewed, dry-run-first 5d
+  workflow in [`vault-v3-migration.md`](vault-v3-migration.md). It preserves exact legacy
+  bytes, a validated candidate, a recovery receipt, and an explicit rollback path.
 
 The broader compatibility, rollback, storage, and threat assumptions remain normative in
 [`vault-v3-threat-model.md`](vault-v3-threat-model.md) and

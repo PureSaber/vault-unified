@@ -43,7 +43,7 @@ Recovery validates transaction IDs, bounded journal structure, digests, encrypti
 payload parsing. It can finalize an already committed replacement, discard an uncommitted
 candidate while retaining the old live file, restore a synced new candidate, or restore the
 last backup. An unexpected live file is first preserved as
-`<file>.pre-recovery.<transaction-id>`. When the format validator proves that a live file is
+`.pre-recovery.<transaction-id>`. When the format validator proves that a live file is
 valid but its digest is neither the recorded old nor new digest, it is a concurrent version
 and always stops for manual recovery; it is never silently replaced by a temp or backup.
 Other ambiguous/corrupt evidence also stops.

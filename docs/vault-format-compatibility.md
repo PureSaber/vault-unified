@@ -42,6 +42,8 @@ lowercase names, and allow only bounded scalar values.
 
 Legacy encryption and payload versions are unchanged. Merely opening or inspecting a legacy
 vault is byte-for-byte read-only, and ordinary legacy writes remain legacy. V3 creation is
-available only through `vault init-v3` and refuses an existing path. There is no migration in
-5c, so no existing user file is converted or needs format rollback. Pre-v3 applications cannot
-open an explicitly created v3 file; its retained atomic backups therefore remain important.
+available only through `vault init-v3` and refuses an existing path. Legacy conversion is
+available only through the dry-run-first, explicit `vault migrate-v3 --apply` workflow in
+[`vault-v3-migration.md`](vault-v3-migration.md); it preserves exact legacy bytes, a candidate,
+and a receipt. Pre-v3 applications cannot open v3, so retained migration evidence is required
+for byte-for-byte rollback.

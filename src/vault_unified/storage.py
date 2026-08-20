@@ -95,11 +95,11 @@ def _journal_path(path: Path, transaction_id: str) -> Path:
 
 
 def _recovery_temp_path(path: Path, transaction_id: str) -> Path:
-    return path.with_name(f".{path.name}.recovery.{transaction_id}.{uuid4().hex}")
+    return path.with_name(f".recovery.{transaction_id}.{uuid4().hex}")
 
 
 def _pre_recovery_path(path: Path, transaction_id: str) -> Path:
-    return path.with_name(f"{path.name}.pre-recovery.{transaction_id}")
+    return path.with_name(f".pre-recovery.{transaction_id}")
 
 
 def _journal_paths(path: Path) -> list[Path]:
