@@ -191,17 +191,18 @@ atomic primitive. No cleanup path deletes the only valid candidate.
 
 ## 7. Keyring trust boundary
 
-The current raw-master-password keyring entry is deprecated but remains readable until an
-explicit 5e transition. V3 MUST NOT add or update raw password entries.
+The legacy raw-master-password keyring entry remains readable for legacy files only. V3 MUST NOT add or update raw password entries; the implementation also does not read that record
+for a framed v3 file.
 
 An optional device-unlock slot stores a random 32-byte device KEK in an approved OS keyring;
 the file holds only the corresponding authenticated wrapped DEK. The keyring account name is
 scoped by `vault_id` and slot ID, not a global `master-password` label. Backend discovery MUST
-allowlist supported OS facilities (Windows Credential Locker initially), reject null/plaintext
+allowlist supported OS facilities (Windows Credential Manager initially), reject null/plaintext
 or unreviewed third-party backends, and fail closed without falling back to a file or
 environment variable. The upstream keyring documentation notes that backend security
 considerations vary and that no analysis is published for its Windows backend
-([keyring security considerations](https://keyring.readthedocs.io/en/stable/#security-considerations));
+([keyring backend configuration](https://keyring.readthedocs.io/en/stable/#configuring),
+[upstream Windows backend](https://github.com/jaraco/keyring/blob/main/keyring/backends/Windows.py));
 therefore this is a convenience boundary, not a second authentication factor.
 
 Any process running as the same unlocked OS user may be able to request the device secret.

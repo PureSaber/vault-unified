@@ -11,14 +11,15 @@ from vault_unified.local_store import LocalVault
 from vault_unified.models import SecretEntry, Source, SyncPreferences
 from vault_unified.sync.engine import SyncEngine, SyncResult
 from vault_unified.sync_prefs import load_prefs, save_prefs
+from vault_unified.v3_crypto import V3Credential
 
 
 class UnifiedVault:
     """Local encrypted vault with bidirectional sync to external password managers."""
 
-    def __init__(self, vault_path: Path, password: str) -> None:
+    def __init__(self, vault_path: Path, credential: V3Credential) -> None:
         self.vault_path = vault_path
-        self.local = LocalVault(vault_path, password)
+        self.local = LocalVault(vault_path, credential)
         self.proton = ProtonPassAdapter()
         self.bitwarden = BitwardenAdapter()
         self.keepassxc = KeePassXCAdapter()

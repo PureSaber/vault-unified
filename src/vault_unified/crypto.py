@@ -7,7 +7,12 @@ from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from vault_unified.v3_crypto import decrypt_v3_payload, update_v3_file
+from vault_unified.v3_crypto import (
+    ROLLBACK_ANCHOR_EXTENSION,
+    V3Credential,
+    decrypt_v3_payload,
+    update_v3_file,
+)
 from vault_unified.storage import (
     RecoveryPlan,
     atomic_write_bytes,
@@ -50,54 +55,69 @@ def encrypt_payload(password: str, payload: dict) -> bytes:
     return salt + nonce + ciphertext
 
 
-def decrypt_payload(password: str, blob: bytes) -> dict:
+def decrypt_payload(credential: V3Credential, blob: bytes) -> dict:
     container = parse_vault_container(blob)
     if isinstance(container, V3Container):
-        return decrypt_v3_payload(password, container)
+        return decrypt_v3_payload(credential, container)
+    if not isinstance(credential, str):
+        raise TypeError("Legacy vaults require a password")
     blob = container.blob
     if len(blob) < SALT_BYTES + NONCE_BYTES + 16:
         raise ValueError("Invalid vault file or corrupted data")
     salt = blob[:SALT_BYTES]
     nonce = blob[SALT_BYTES : SALT_BYTES + NONCE_BYTES]
     ciphertext = blob[SALT_BYTES + NONCE_BYTES :]
-    key = derive_key(password, salt)
+    key = derive_key(credential, salt)
     plaintext = AESGCM(key).decrypt(nonce, ciphertext, None)
     return json.loads(plaintext.decode("utf-8"))
 
 
-def write_encrypted_file(path: Path, password: str, payload: dict) -> None:
+def write_encrypted_file(path: Path, credential: V3Credential, payload: dict) -> None:
     require_clean_storage(path)
     if path.exists() and isinstance(inspect_vault_format_file(path), V3Container):
-        update_v3_file(path, password, payload)
+        update_v3_file(path, credential, payload)
         return
-    blob = encrypt_payload(password, payload)
+    if not isinstance(credential, str):
+        raise TypeError("Legacy vaults require a password")
+    blob = encrypt_payload(credential, payload)
 
     def validate(candidate: bytes) -> None:
-        if decrypt_payload(password, candidate) != payload:
+        if decrypt_payload(credential, candidate) != payload:
             raise ValueError("Encrypted write did not round-trip")
 
     atomic_write_bytes(path, blob, validator=validate)
 
 
-def read_encrypted_file(path: Path, password: str) -> dict:
+def read_encrypted_file(path: Path, credential: V3Credential) -> dict:
     require_clean_storage(path)
-    return decrypt_payload(password, path.read_bytes())
+    blob = path.read_bytes()
+    payload = decrypt_payload(credential, blob)
+    container = parse_vault_container(blob)
+    if isinstance(container, V3Container) and container.header.extensions.get(
+        ROLLBACK_ANCHOR_EXTENSION
+    ) is True:
+        from vault_unified.device_keyring import verify_and_advance_rollback_anchor
+
+        verify_and_advance_rollback_anchor(path, credential=credential)
+    return payload
 
 
-def inspect_encrypted_file_recovery(path: Path, password: str) -> list[RecoveryPlan]:
-    return inspect_recovery(path, validator=lambda candidate: decrypt_payload(password, candidate))
+def inspect_encrypted_file_recovery(path: Path, credential: V3Credential) -> list[RecoveryPlan]:
+    return inspect_recovery(
+        path, validator=lambda candidate: decrypt_payload(credential, candidate)
+    )
 
 
 def recover_encrypted_file(
     path: Path,
-    password: str,
+    credential: V3Credential,
     *,
     transaction_id: str | None = None,
     dry_run: bool = True,
 ) -> RecoveryPlan:
     return recover_atomic_file(
         path,
-        validator=lambda candidate: decrypt_payload(password, candidate),
+        validator=lambda candidate: decrypt_payload(credential, candidate),
         transaction_id=transaction_id,
         dry_run=dry_run,
     )

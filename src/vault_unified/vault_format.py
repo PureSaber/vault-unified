@@ -25,6 +25,7 @@ MAX_ARGON2_PASSES = 6
 MAX_ARGON2_LANES = 4
 MAX_ARGON2_WORK = 786_432
 SUPPORTED_PAYLOAD_SCHEMAS = frozenset({2})
+WINDOWS_DEVICE_KEYRING_BACKEND = "windows-credential-manager"
 
 _B64URL_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 _EXTENSION_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]*:[a-z0-9_.-]+$")
@@ -73,6 +74,18 @@ class PasswordSlotHeader:
 
 
 @dataclass(frozen=True)
+class DeviceSlotHeader:
+    slot_id: str
+    keyring_backend: str
+    wrap_cipher: str
+    wrap_nonce: bytes
+    wrapped_dek: bytes
+
+
+KeySlotHeader = PasswordSlotHeader | DeviceSlotHeader
+
+
+@dataclass(frozen=True)
 class V3Header:
     format_version: int
     vault_id: str
@@ -84,7 +97,7 @@ class V3Header:
     plaintext_length: int
     ciphertext_length: int
     dek_id: str
-    key_slots: tuple[PasswordSlotHeader, ...]
+    key_slots: tuple[KeySlotHeader, ...]
     extensions: dict[str, str | int | bool]
 
 
@@ -198,7 +211,7 @@ def _parse_password_slot(value: Any) -> PasswordSlotHeader:
         context="key slot",
     )
     if value["type"] != "password":
-        raise VaultFormatError("5b accepts password key slots only")
+        raise VaultFormatError("Expected a password key slot")
     if value["wrap_cipher"] != "AES-256-GCM":
         raise VaultFormatError("Unsupported DEK wrapping cipher")
     if not isinstance(value["kdf"], dict):
@@ -256,6 +269,51 @@ def _parse_password_slot(value: Any) -> PasswordSlotHeader:
             value["wrapped_dek"], name="wrapped DEK", minimum=48, maximum=48
         ),
     )
+
+
+def _parse_device_slot(value: Any) -> DeviceSlotHeader:
+    if not isinstance(value, dict):
+        raise VaultFormatError("key slot must be an object")
+    _exact_keys(
+        value,
+        {
+            "slot_id",
+            "type",
+            "keyring_backend",
+            "wrap_cipher",
+            "wrap_nonce",
+            "wrapped_dek",
+        },
+        context="key slot",
+    )
+    if value["type"] != "device":
+        raise VaultFormatError("Expected a device key slot")
+    if value["keyring_backend"] != WINDOWS_DEVICE_KEYRING_BACKEND:
+        raise VaultFormatError("Unsupported device keyring backend")
+    if value["wrap_cipher"] != "AES-256-GCM":
+        raise VaultFormatError("Unsupported DEK wrapping cipher")
+    return DeviceSlotHeader(
+        slot_id=_canonical_uuid(value["slot_id"], name="slot_id"),
+        keyring_backend=WINDOWS_DEVICE_KEYRING_BACKEND,
+        wrap_cipher="AES-256-GCM",
+        wrap_nonce=_decode_base64url(
+            value["wrap_nonce"], name="wrap nonce", minimum=12, maximum=12
+        ),
+        wrapped_dek=_decode_base64url(
+            value["wrapped_dek"], name="wrapped DEK", minimum=48, maximum=48
+        ),
+    )
+
+
+def _parse_key_slot(value: Any) -> KeySlotHeader:
+    if not isinstance(value, dict):
+        raise VaultFormatError("key slot must be an object")
+    slot_type = value.get("type")
+    if slot_type == "password":
+        return _parse_password_slot(value)
+    if slot_type == "device":
+        return _parse_device_slot(value)
+    raise VaultFormatError("Unsupported key slot type")
 
 
 def _parse_v3_header(raw_header: bytes, ciphertext_length: int) -> V3Header:
@@ -322,10 +380,14 @@ def _parse_v3_header(raw_header: bytes, ciphertext_length: int) -> V3Header:
         raise VaultFormatError("key_slots must be an array")
     if not 1 <= len(value["key_slots"]) <= MAX_KEY_SLOTS:
         raise VaultFormatError("key_slots count is outside the accepted range")
-    slots = tuple(_parse_password_slot(slot) for slot in value["key_slots"])
+    slots = tuple(_parse_key_slot(slot) for slot in value["key_slots"])
     slot_ids = [slot.slot_id for slot in slots]
     if len(slot_ids) != len(set(slot_ids)):
         raise VaultFormatError("Duplicate key slot ID")
+    if sum(isinstance(slot, DeviceSlotHeader) for slot in slots) > 1:
+        raise VaultFormatError("At most one device key slot is supported")
+    if not any(isinstance(slot, PasswordSlotHeader) for slot in slots):
+        raise VaultFormatError("A password recovery slot is required")
     return V3Header(
         format_version=format_version,
         vault_id=_canonical_uuid(value["vault_id"], name="vault_id"),
@@ -413,6 +475,9 @@ def describe_vault_container(container: VaultContainer) -> dict[str, Any]:
         "vault_id": container.header.vault_id,
         "cipher": container.header.cipher,
         "key_slot_count": len(container.header.key_slots),
-        "key_slot_types": ["password" for _ in container.header.key_slots],
+        "key_slot_types": [
+            "password" if isinstance(slot, PasswordSlotHeader) else "device"
+            for slot in container.header.key_slots
+        ],
         "kdf": "argon2id",
     }
