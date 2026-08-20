@@ -1,19 +1,94 @@
-const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8765/api";
+import { invoke } from "@tauri-apps/api/core";
 
-let token: string | null = localStorage.getItem("vault_token");
+interface ApiRuntimeConfig {
+  base_url: string;
+  bootstrap_secret: string;
+  instance_id: string;
+}
+
+let runtimeConfigPromise: Promise<ApiRuntimeConfig> | null = null;
+let token: string | null = null;
+try {
+  localStorage.removeItem("vault_token");
+} catch {
+  // Ignore storage access failures; tokens are never persisted by this version.
+}
 let onUnauthorized: (() => void) | null = null;
 
 export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
-function headers(): HeadersInit {
-  const h: HeadersInit = {
-    "Content-Type": "application/json",
-    "X-Vault-Client": "vault-unified-desktop",
+function validateRuntimeConfig(config: ApiRuntimeConfig): ApiRuntimeConfig {
+  const baseUrl = config.base_url.replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(baseUrl);
+  } catch {
+    throw new Error("Vault sidecar returned an invalid API URL");
+  }
+  if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1") {
+    throw new Error("Vault sidecar must use an authenticated loopback endpoint");
+  }
+  if (!config.bootstrap_secret || config.bootstrap_secret.length < 32) {
+    throw new Error("Vault sidecar bootstrap secret is missing or too short");
+  }
+  if (!config.instance_id) {
+    throw new Error("Vault sidecar instance identity is missing");
+  }
+  return {
+    ...config,
+    base_url: baseUrl,
   };
-  if (token) h["Authorization"] = `Bearer ${token}`;
-  return h;
+}
+
+async function loadRuntimeConfig(): Promise<ApiRuntimeConfig> {
+  try {
+    const config = await invoke<ApiRuntimeConfig>("get_api_runtime_config");
+    return validateRuntimeConfig(config);
+  } catch (tauriError) {
+    // Browser-only Vite development is allowed only when the developer supplies
+    // an explicit authenticated endpoint. There is intentionally no fixed-port
+    // fallback because that would reintroduce local sidecar impersonation.
+    const baseUrl = import.meta.env.VITE_API_URL?.trim();
+    const bootstrapSecret = import.meta.env.VITE_API_BOOTSTRAP_SECRET?.trim();
+    if (!baseUrl || !bootstrapSecret) {
+      const detail = tauriError instanceof Error ? `: ${tauriError.message}` : "";
+      throw new Error(`Secure Vault sidecar runtime is unavailable${detail}`);
+    }
+    return validateRuntimeConfig({
+      base_url: baseUrl,
+      bootstrap_secret: bootstrapSecret,
+      instance_id: import.meta.env.VITE_API_INSTANCE_ID?.trim() || "vite-development",
+    });
+  }
+}
+
+function runtimeConfig(): Promise<ApiRuntimeConfig> {
+  if (!runtimeConfigPromise) {
+    runtimeConfigPromise = loadRuntimeConfig();
+  }
+  return runtimeConfigPromise;
+}
+
+export function setToken(value: string) {
+  // Session tokens intentionally stay in renderer memory. Reloading or closing
+  // the desktop window therefore locks the UI instead of persisting a bearer
+  // token in localStorage.
+  token = value;
+}
+
+export function clearToken() {
+  token = null;
+  try {
+    localStorage.removeItem("vault_token");
+  } catch {
+    // Ignore storage access failures.
+  }
+}
+
+export function hasToken() {
+  return !!token;
 }
 
 function formatDetail(detail: unknown, fallback: string): string {
@@ -37,9 +112,16 @@ function formatDetail(detail: unknown, fallback: string): string {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const config = await runtimeConfig();
+  const requestHeaders = new Headers(options.headers);
+  requestHeaders.set("Content-Type", "application/json");
+  requestHeaders.set("X-Vault-Bootstrap", config.bootstrap_secret);
+  requestHeaders.set("X-Vault-Client", "vault-unified-desktop");
+  if (token) requestHeaders.set("Authorization", `Bearer ${token}`);
+
+  const res = await fetch(`${config.base_url}${path}`, {
     ...options,
-    headers: { ...headers(), ...(options.headers || {}) },
+    headers: requestHeaders,
   });
   if (!res.ok) {
     if (res.status === 401) {
@@ -76,20 +158,6 @@ export interface SyncPrefs {
   proton_vault_name: string;
   proton_share_id: string;
   enabled_sources?: string[] | null;
-}
-
-export function setToken(t: string) {
-  token = t;
-  localStorage.setItem("vault_token", t);
-}
-
-export function clearToken() {
-  token = null;
-  localStorage.removeItem("vault_token");
-}
-
-export function hasToken() {
-  return !!token;
 }
 
 export const api = {

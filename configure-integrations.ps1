@@ -86,9 +86,9 @@ $lines = @(
     "GOPASS_MOUNT=$gpMount",
     "GOPASS_PATH_PREFIX=$gpPrefix",
     "",
-    "# API server (desktop app sidecar)",
+    "# API server (manual debugging only; desktop overrides these values)",
     "VAULT_API_HOST=127.0.0.1",
-    "VAULT_API_PORT=8765"
+    "VAULT_API_PORT=0"
 )
 
 $lines | Set-Content -Path ".env" -Encoding UTF8
