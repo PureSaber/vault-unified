@@ -9,7 +9,7 @@ interface Props {
 export default function Unlock({ onUnlock }: Props) {
   const { t } = useI18n();
   const [password, setPassword] = useState("");
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasKeyring, setHasKeyring] = useState(false);
@@ -110,6 +110,7 @@ export default function Unlock({ onUnlock }: Props) {
             />
             <span>{t("unlock.remember")}</span>
           </label>
+          <p className="unlock-remember-hint">{t("unlock.rememberHint")}</p>
           {error && (
             <div id="unlock-error" className="error" role="alert">
               {error}

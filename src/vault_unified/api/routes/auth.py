@@ -40,7 +40,9 @@ def check_keyring(request: Request) -> dict:
     require_loopback(request)
     path = get_vault_path()
     if is_framed_vault_file(path):
-        return {"has_saved_password": False}
+        from vault_unified.device_keyring import device_unlock_available
+
+        return {"has_saved_password": device_unlock_available(path)}
     from vault_unified.keyring_store import get_master_password
 
     pwd = get_master_password()

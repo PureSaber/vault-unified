@@ -87,11 +87,14 @@ an explicit future decision; SSD secure deletion is not claimed.
   after replacement. Interrupted transactions fail closed into the existing `vault storage
   inspect` and dry-run-first `vault storage recover` flow.
 - Whole-file replay of an older valid generation cannot be detected from the file alone.
-  The optional external rollback anchor belongs to the separately reviewed 5e stage.
+  The explicitly enabled external rollback anchor is described in
+  [`vault-v3-keyring.md`](vault-v3-keyring.md).
 - Python immutable strings/bytes cannot be reliably zeroized. Password and key lifetimes are
   minimized, but a compromised unlocked process remains outside this protection boundary.
-- Only one password slot is accepted for unlock until reviewed slot selection and the 5e
-  device-keyring design ship. A multi-slot file fails closed instead of guessing a slot.
+- Password unlock requires exactly one password recovery slot. One separately authenticated
+  device slot may coexist with it; duplicate/ambiguous slots fail closed. Password or DEK
+  rotation refuses to run while a device slot exists, so it can never silently discard that
+  slot. Disable device unlock explicitly, rotate, and re-enable it.
 - Legacy conversion is available only through the separately reviewed, dry-run-first 5d
   workflow in [`vault-v3-migration.md`](vault-v3-migration.md). It preserves exact legacy
   bytes, a validated candidate, a recovery receipt, and an explicit rollback path.

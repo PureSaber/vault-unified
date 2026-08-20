@@ -20,7 +20,10 @@ from vault_unified.storage import atomic_write_bytes, require_clean_storage
 from vault_unified.vault_format import (
     MAX_VAULT_BYTES,
     V3_MAGIC,
+    WINDOWS_DEVICE_KEYRING_BACKEND,
     Argon2idParameters,
+    DeviceSlotHeader,
+    KeySlotHeader,
     PasswordSlotHeader,
     V3Container,
     V3Header,
@@ -42,6 +45,7 @@ MAX_ENTRY_COUNT = 100_000
 
 WRAP_AAD_DOMAIN = b"vault-unified:v3:wrap"
 PAYLOAD_AAD_DOMAIN = b"vault-unified:v3:payload"
+ROLLBACK_ANCHOR_EXTENSION = "vault-unified:rollback-anchor"
 _ARGON2_LOCK = threading.Lock()
 
 
@@ -63,6 +67,27 @@ class V3PayloadError(V3CryptoError):
 
 class V3PasswordSlotSelectionRequired(V3CryptoError):
     """More than one password slot exists and no reviewed selector is available."""
+
+
+@dataclass(frozen=True)
+class V3DeviceCredential:
+    """In-memory device KEK reference. The key is never serialized into a vault file."""
+
+    slot_id: str
+    key: bytes
+
+    def __post_init__(self) -> None:
+        try:
+            canonical = str(UUID(self.slot_id))
+        except (ValueError, AttributeError) as exc:
+            raise V3CryptoError("Device slot ID is not a UUID") from exc
+        if canonical != self.slot_id:
+            raise V3CryptoError("Device slot ID is not canonical")
+        if not isinstance(self.key, bytes) or len(self.key) != KEY_BYTES:
+            raise V3CryptoError("Device key must be exactly 32 bytes")
+
+
+V3Credential = str | V3DeviceCredential
 
 
 @dataclass(frozen=True)
@@ -161,16 +186,17 @@ def _typed_aad(domain: bytes, fields: tuple[tuple[str, bytes], ...]) -> bytes:
     return b"".join(encoded)
 
 
-def _wrap_aad(header: V3Header, slot: PasswordSlotHeader) -> bytes:
-    return _typed_aad(
-        WRAP_AAD_DOMAIN,
-        (
+def _wrap_aad(header: V3Header, slot: KeySlotHeader) -> bytes:
+    common = (
             ("format_version", _integer(header.format_version)),
             ("cipher", header.cipher.encode("ascii")),
             ("vault_id", UUID(header.vault_id).bytes),
             ("dek_id", UUID(header.dek_id).bytes),
             ("key_generation", _integer(header.key_generation)),
             ("slot_id", UUID(slot.slot_id).bytes),
+    )
+    if isinstance(slot, PasswordSlotHeader):
+        fields = common + (
             ("slot_type", b"password"),
             ("kdf", b"argon2id"),
             ("argon2_version", _integer(slot.kdf.version)),
@@ -181,8 +207,15 @@ def _wrap_aad(header: V3Header, slot: PasswordSlotHeader) -> bytes:
             ("output_bytes", _integer(slot.kdf.output_bytes)),
             ("wrap_cipher", slot.wrap_cipher.encode("ascii")),
             ("wrap_nonce", slot.wrap_nonce),
-        ),
-    )
+        )
+    else:
+        fields = common + (
+            ("slot_type", b"device"),
+            ("keyring_backend", slot.keyring_backend.encode("ascii")),
+            ("wrap_cipher", slot.wrap_cipher.encode("ascii")),
+            ("wrap_nonce", slot.wrap_nonce),
+        )
+    return _typed_aad(WRAP_AAD_DOMAIN, fields)
 
 
 def _extensions_digest(extensions: dict[str, str | int | bool]) -> bytes:
@@ -333,6 +366,33 @@ def _b64(value: bytes) -> str:
 
 
 def _header_dict(header: V3Header) -> dict[str, Any]:
+    def encode_slot(slot: KeySlotHeader) -> dict[str, Any]:
+        common = {
+            "slot_id": slot.slot_id,
+            "wrap_cipher": slot.wrap_cipher,
+            "wrap_nonce": _b64(slot.wrap_nonce),
+            "wrapped_dek": _b64(slot.wrapped_dek),
+        }
+        if isinstance(slot, PasswordSlotHeader):
+            return {
+                **common,
+                "type": "password",
+                "kdf": {
+                    "name": "argon2id",
+                    "version": slot.kdf.version,
+                    "memory_kib": slot.kdf.memory_kib,
+                    "passes": slot.kdf.passes,
+                    "lanes": slot.kdf.lanes,
+                    "salt": _b64(slot.kdf.salt),
+                    "output_bytes": slot.kdf.output_bytes,
+                },
+            }
+        return {
+            **common,
+            "type": "device",
+            "keyring_backend": slot.keyring_backend,
+        }
+
     value: dict[str, Any] = {
         "format_version": header.format_version,
         "vault_id": header.vault_id,
@@ -344,25 +404,7 @@ def _header_dict(header: V3Header) -> dict[str, Any]:
         "plaintext_length": header.plaintext_length,
         "ciphertext_length": header.ciphertext_length,
         "dek_id": header.dek_id,
-        "key_slots": [
-            {
-                "slot_id": slot.slot_id,
-                "type": "password",
-                "kdf": {
-                    "name": "argon2id",
-                    "version": slot.kdf.version,
-                    "memory_kib": slot.kdf.memory_kib,
-                    "passes": slot.kdf.passes,
-                    "lanes": slot.kdf.lanes,
-                    "salt": _b64(slot.kdf.salt),
-                    "output_bytes": slot.kdf.output_bytes,
-                },
-                "wrap_cipher": slot.wrap_cipher,
-                "wrap_nonce": _b64(slot.wrap_nonce),
-                "wrapped_dek": _b64(slot.wrapped_dek),
-            }
-            for slot in header.key_slots
-        ],
+        "key_slots": [encode_slot(slot) for slot in header.key_slots],
     }
     if header.extensions:
         value["extensions"] = header.extensions
@@ -390,7 +432,7 @@ def _base_header(
     key_generation: int,
     plaintext_length: int,
     ciphertext_length: int,
-    key_slots: tuple[PasswordSlotHeader, ...] = (),
+    key_slots: tuple[KeySlotHeader, ...] = (),
     extensions: dict[str, str | int | bool] | None = None,
 ) -> V3Header:
     return V3Header(
@@ -439,14 +481,79 @@ def _wrap_dek(password: str, header: V3Header, slot: PasswordSlotHeader, dek: by
         del kek
 
 
-def _unlock_dek(password: str, container: V3Container) -> bytes:
-    slots = container.header.key_slots
-    if len(slots) != 1:
-        raise V3PasswordSlotSelectionRequired(
-            "Exactly one password slot is supported until reviewed slot selection ships"
+def _fresh_password_slot(slot_id: str) -> PasswordSlotHeader:
+    return PasswordSlotHeader(
+        slot_id=slot_id,
+        kdf=Argon2idParameters(
+            version=ARGON2_VERSION,
+            memory_kib=DEFAULT_MEMORY_KIB,
+            passes=DEFAULT_PASSES,
+            lanes=DEFAULT_LANES,
+            salt=os.urandom(SALT_BYTES),
+            output_bytes=KEY_BYTES,
+        ),
+        wrap_cipher="AES-256-GCM",
+        wrap_nonce=os.urandom(NONCE_BYTES),
+        wrapped_dek=b"",
+    )
+
+
+def _wrap_device_dek(
+    key: bytes, header: V3Header, slot: DeviceSlotHeader, dek: bytes
+) -> bytes:
+    if not isinstance(key, bytes) or len(key) != KEY_BYTES:
+        raise V3CryptoError("Device key must be exactly 32 bytes")
+    return AESGCM(key).encrypt(slot.wrap_nonce, dek, _wrap_aad(header, slot))
+
+
+def _device_slot(
+    slot_id: str,
+    *,
+    wrap_nonce: bytes | None = None,
+    wrapped_dek: bytes = b"",
+) -> DeviceSlotHeader:
+    return DeviceSlotHeader(
+        slot_id=slot_id,
+        keyring_backend=WINDOWS_DEVICE_KEYRING_BACKEND,
+        wrap_cipher="AES-256-GCM",
+        wrap_nonce=wrap_nonce or os.urandom(NONCE_BYTES),
+        wrapped_dek=wrapped_dek,
+    )
+
+
+def _password_slots(header: V3Header) -> tuple[PasswordSlotHeader, ...]:
+    return tuple(
+        slot for slot in header.key_slots if isinstance(slot, PasswordSlotHeader)
+    )
+
+
+def _device_slots(header: V3Header) -> tuple[DeviceSlotHeader, ...]:
+    return tuple(slot for slot in header.key_slots if isinstance(slot, DeviceSlotHeader))
+
+
+def _unlock_dek(credential: V3Credential, container: V3Container) -> bytes:
+    if isinstance(credential, str):
+        slots = _password_slots(container.header)
+        if len(slots) != 1:
+            raise V3PasswordSlotSelectionRequired(
+                "Exactly one password slot is required for password unlock"
+            )
+        slot = slots[0]
+        kek = _derive_kek(credential, slot.kdf)
+        failure = "Wrong password or tampered V3 key slot"
+    elif isinstance(credential, V3DeviceCredential):
+        slots = tuple(
+            slot
+            for slot in _device_slots(container.header)
+            if slot.slot_id == credential.slot_id
         )
-    slot = slots[0]
-    kek = _derive_kek(password, slot.kdf)
+        if len(slots) != 1:
+            raise V3AuthenticationError("Device key slot is missing or ambiguous")
+        slot = slots[0]
+        kek = credential.key
+        failure = "Wrong device key or tampered V3 key slot"
+    else:
+        raise TypeError("V3 credential must be a password or device credential")
     try:
         dek = AESGCM(kek).decrypt(
             slot.wrap_nonce,
@@ -454,9 +561,10 @@ def _unlock_dek(password: str, container: V3Container) -> bytes:
             _wrap_aad(container.header, slot),
         )
     except InvalidTag as exc:
-        raise V3AuthenticationError("Wrong password or tampered V3 key slot") from exc
+        raise V3AuthenticationError(failure) from exc
     finally:
-        del kek
+        if isinstance(credential, str):
+            del kek
     if len(dek) != KEY_BYTES:
         raise V3AuthenticationError("Unwrapped V3 data key has the wrong length")
     return dek
@@ -474,13 +582,136 @@ def _decrypt_with_dek(container: V3Container, dek: bytes) -> dict:
     return _parse_plaintext(plaintext, container.header.plaintext_length)
 
 
-def decrypt_v3_payload(password: str, value: bytes | V3Container) -> dict:
+def decrypt_v3_payload(credential: V3Credential, value: bytes | V3Container) -> dict:
     container = parse_vault_container(value) if isinstance(value, bytes) else value
     if not isinstance(container, V3Container):
         raise V3CryptoError("Expected a Vault Format v3 container")
-    dek = _unlock_dek(password, container)
+    dek = _unlock_dek(credential, container)
     try:
         return _decrypt_with_dek(container, dek)
+    finally:
+        del dek
+
+
+def add_v3_device_slot(
+    password: str,
+    credential: V3DeviceCredential,
+    value: bytes | V3Container,
+) -> bytes:
+    """Authenticate with the password and add one device-wrapped DEK slot."""
+
+    container = parse_vault_container(value) if isinstance(value, bytes) else value
+    if not isinstance(container, V3Container):
+        raise V3CryptoError("Expected a Vault Format v3 container")
+    if _device_slots(container.header):
+        raise V3CryptoError("A device key slot is already enabled")
+    password_slots = _password_slots(container.header)
+    if len(password_slots) != 1:
+        raise V3PasswordSlotSelectionRequired(
+            "Exactly one password slot is required to enable device unlock"
+        )
+    if container.header.key_generation >= 2**63 - 1:
+        raise V3CryptoError("V3 key generation is exhausted")
+    dek = _unlock_dek(password, container)
+    try:
+        _decrypt_with_dek(container, dek)
+        password_slot = _fresh_password_slot(password_slots[0].slot_id)
+        device_slot = _device_slot(credential.slot_id)
+        header = replace(
+            container.header,
+            key_generation=container.header.key_generation + 1,
+            key_slots=(password_slot, device_slot),
+        )
+        password_slot = replace(
+            password_slot,
+            wrapped_dek=_wrap_dek(password, header, password_slot, dek),
+        )
+        device_slot = replace(
+            device_slot,
+            wrapped_dek=_wrap_device_dek(credential.key, header, device_slot, dek),
+        )
+        frame = _assemble_frame(
+            replace(header, key_slots=(password_slot, device_slot)),
+            container.ciphertext,
+        )
+        decrypt_v3_payload(password, frame)
+        decrypt_v3_payload(credential, frame)
+        return frame
+    finally:
+        del dek
+
+
+def remove_v3_device_slot(
+    password: str,
+    slot_id: str,
+    value: bytes | V3Container,
+) -> bytes:
+    """Authenticate with the password and return a password-only v3 frame."""
+
+    container = parse_vault_container(value) if isinstance(value, bytes) else value
+    if not isinstance(container, V3Container):
+        raise V3CryptoError("Expected a Vault Format v3 container")
+    device_slots = _device_slots(container.header)
+    if len(device_slots) != 1 or device_slots[0].slot_id != slot_id:
+        raise V3CryptoError("Requested device key slot is not enabled")
+    password_slots = _password_slots(container.header)
+    if len(password_slots) != 1:
+        raise V3PasswordSlotSelectionRequired(
+            "Exactly one password slot is required to disable device unlock"
+        )
+    if container.header.key_generation >= 2**63 - 1:
+        raise V3CryptoError("V3 key generation is exhausted")
+    dek = _unlock_dek(password, container)
+    try:
+        _decrypt_with_dek(container, dek)
+        password_slot = _fresh_password_slot(password_slots[0].slot_id)
+        header = replace(
+            container.header,
+            key_generation=container.header.key_generation + 1,
+            key_slots=(password_slot,),
+        )
+        password_slot = replace(
+            password_slot,
+            wrapped_dek=_wrap_dek(password, header, password_slot, dek),
+        )
+        frame = _assemble_frame(
+            replace(header, key_slots=(password_slot,)), container.ciphertext
+        )
+        decrypt_v3_payload(password, frame)
+        return frame
+    finally:
+        del dek
+
+
+def update_v3_extensions(
+    credential: V3Credential,
+    value: bytes | V3Container,
+    extensions: dict[str, str | int | bool],
+) -> bytes:
+    """Authenticate and replace authenticated extensions with a fresh payload nonce."""
+
+    container = parse_vault_container(value) if isinstance(value, bytes) else value
+    if not isinstance(container, V3Container):
+        raise V3CryptoError("Expected a Vault Format v3 container")
+    payload = decrypt_v3_payload(credential, container)
+    plaintext = _serialize_payload(payload)
+    dek = _unlock_dek(credential, container)
+    try:
+        if container.header.generation >= 2**63 - 1:
+            raise V3CryptoError("V3 content generation is exhausted")
+        nonce = _fresh_payload_nonce(container.header.payload_nonce)
+        header = replace(
+            container.header,
+            generation=container.header.generation + 1,
+            payload_nonce=nonce,
+            plaintext_length=len(plaintext),
+            ciphertext_length=len(plaintext) + 16,
+            extensions=dict(extensions),
+        )
+        ciphertext = AESGCM(dek).encrypt(nonce, plaintext, _payload_aad(header))
+        frame = _assemble_frame(header, ciphertext)
+        decrypt_v3_payload(credential, frame)
+        return frame
     finally:
         del dek
 
@@ -546,7 +777,7 @@ def _fresh_payload_nonce(previous: bytes, supplied: bytes | None = None) -> byte
 
 
 def update_v3_container(
-    password: str,
+    credential: V3Credential,
     payload: dict,
     value: bytes | V3Container,
     *,
@@ -558,7 +789,7 @@ def update_v3_container(
     if container.header.generation >= 2**63 - 1:
         raise V3CryptoError("V3 content generation is exhausted")
     plaintext = _serialize_payload(payload)
-    dek = _unlock_dek(password, container)
+    dek = _unlock_dek(credential, container)
     try:
         # Authenticate the old payload before replacing it.
         _decrypt_with_dek(container, dek)
@@ -593,6 +824,11 @@ def rotate_v3_password(
     container = parse_vault_container(value) if isinstance(value, bytes) else value
     if not isinstance(container, V3Container):
         raise V3CryptoError("Expected a Vault Format v3 container")
+    if _device_slots(container.header):
+        raise V3CryptoError(
+            "Disable device unlock before rotating the password; "
+            "device slots are never dropped implicitly"
+        )
     if container.header.key_generation >= 2**63 - 1:
         raise V3CryptoError("V3 key generation is exhausted")
     dek = _unlock_dek(old_password, container)
@@ -645,6 +881,11 @@ def rotate_v3_dek(
     container = parse_vault_container(value) if isinstance(value, bytes) else value
     if not isinstance(container, V3Container):
         raise V3CryptoError("Expected a Vault Format v3 container")
+    if _device_slots(container.header):
+        raise V3CryptoError(
+            "Disable device unlock before rotating the data key; "
+            "device slots are never dropped implicitly"
+        )
     if (
         container.header.generation >= 2**63 - 1
         or container.header.key_generation >= 2**63 - 1
@@ -682,20 +923,21 @@ def create_v3_file(path: Path, password: str, payload: dict) -> None:
     )
 
 
-def update_v3_file(path: Path, password: str, payload: dict) -> None:
+def update_v3_file(path: Path, credential: V3Credential, payload: dict) -> None:
     path = Path(path)
     require_clean_storage(path)
     source = path.read_bytes()
     container = parse_vault_container(source)
     if not isinstance(container, V3Container):
         raise V3CryptoError("Refusing V3 update for a legacy file")
-    frame = update_v3_container(password, payload, container)
+    frame = update_v3_container(credential, payload, container)
     atomic_write_bytes(
         path,
         frame,
-        validator=lambda candidate: decrypt_v3_payload(password, candidate),
+        validator=lambda candidate: decrypt_v3_payload(credential, candidate),
         expected_old_sha256=hashlib.sha256(source).hexdigest(),
     )
+    _advance_anchor_after_write(path, credential)
 
 
 def rotate_v3_password_file(path: Path, old_password: str, new_password: str) -> None:
@@ -709,6 +951,7 @@ def rotate_v3_password_file(path: Path, old_password: str, new_password: str) ->
         validator=lambda candidate: decrypt_v3_payload(new_password, candidate),
         expected_old_sha256=hashlib.sha256(source).hexdigest(),
     )
+    _advance_anchor_after_write(path, new_password)
 
 
 def rotate_v3_dek_file(path: Path, password: str) -> None:
@@ -722,3 +965,15 @@ def rotate_v3_dek_file(path: Path, password: str) -> None:
         validator=lambda candidate: decrypt_v3_payload(password, candidate),
         expected_old_sha256=hashlib.sha256(source).hexdigest(),
     )
+    _advance_anchor_after_write(path, password)
+
+
+def _advance_anchor_after_write(path: Path, credential: V3Credential) -> None:
+    container = parse_vault_container(Path(path).read_bytes())
+    if not isinstance(container, V3Container) or not container.header.extensions.get(
+        ROLLBACK_ANCHOR_EXTENSION, False
+    ):
+        return
+    from vault_unified.device_keyring import verify_and_advance_rollback_anchor
+
+    verify_and_advance_rollback_anchor(path, credential=credential)

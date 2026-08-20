@@ -5,6 +5,7 @@ from pathlib import Path
 from vault_unified.crypto import read_encrypted_file, write_encrypted_file
 from vault_unified.models import SecretEntry, Source, SyncStatus
 from vault_unified.storage import require_clean_storage
+from vault_unified.v3_crypto import V3Credential
 
 VAULT_VERSION = 2
 
@@ -12,9 +13,11 @@ VAULT_VERSION = 2
 class LocalVault:
     """AES-GCM encrypted JSON vault stored on disk."""
 
-    def __init__(self, vault_path: Path, password: str) -> None:
+    def __init__(self, vault_path: Path, credential: V3Credential) -> None:
         self.vault_path = vault_path
-        self.password = password
+        self.credential = credential
+        # Compatibility alias for sync sidecar encryption; it may now be a device credential.
+        self.password = credential
         self._entries: dict[str, SecretEntry] = {}
         require_clean_storage(vault_path)
         if vault_path.exists():
@@ -36,7 +39,7 @@ class LocalVault:
         return entry_data
 
     def _load(self) -> None:
-        data = read_encrypted_file(self.vault_path, self.password)
+        data = read_encrypted_file(self.vault_path, self.credential)
         version = data.get("version", 1)
         entries_raw = data.get("entries", {})
         if version < VAULT_VERSION:
@@ -53,7 +56,7 @@ class LocalVault:
             "version": VAULT_VERSION,
             "entries": {item_id: entry.to_dict() for item_id, entry in self._entries.items()},
         }
-        write_encrypted_file(self.vault_path, self.password, payload)
+        write_encrypted_file(self.vault_path, self.credential, payload)
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> LocalVault:

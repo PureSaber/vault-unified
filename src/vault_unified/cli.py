@@ -19,6 +19,15 @@ from vault_unified.crypto import (
 )
 from vault_unified.env import find_project_root, load_env
 from vault_unified.generator import generate_password
+from vault_unified.device_keyring import (
+    DeviceKeyringError,
+    disable_device_unlock,
+    disable_rollback_anchor,
+    enable_device_unlock,
+    enable_rollback_anchor,
+    inspect_rollback_anchor,
+    verify_and_advance_rollback_anchor,
+)
 from vault_unified.keyring_store import (
     clear_master_password,
     get_master_password,
@@ -369,7 +378,7 @@ def init_v3(vault_path: Path | None, password: str | None) -> None:
 
 @main.group("v3")
 def v3_group() -> None:
-    """Explicit Vault Format v3 key operations; never uses raw-password keyring state."""
+    """Explicit Vault Format v3 key operations; never stores a raw v3 password."""
 
 
 @v3_group.command("rotate-password")
@@ -422,6 +431,109 @@ def v3_rotate_dek(vault_path: Path | None, password: str | None) -> None:
     except (OSError, StorageError, V3CryptoError, VaultFormatError) as exc:
         raise click.ClickException(str(exc)) from exc
     console.print("[green]V3 data key rotated atomically.[/green]")
+
+
+@v3_group.command("device-enable")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--password",
+    envvar="VAULT_PASSWORD",
+    help="V3 password; omit to use a hidden prompt",
+)
+def v3_device_enable(vault_path: Path | None, password: str | None) -> None:
+    """Store a random device KEK in the approved Windows Credential Manager backend."""
+
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password("V3 password", allow_saved=False)
+    try:
+        credential = enable_device_unlock(path, pwd)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError, DeviceKeyringError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(f"[green]Device unlock enabled:[/green] slot {credential.slot_id}")
+    console.print("[dim]The master password was not written to the keyring.[/dim]")
+
+
+@v3_group.command("device-disable")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option(
+    "--password",
+    envvar="VAULT_PASSWORD",
+    help="V3 password; omit to use a hidden prompt",
+)
+def v3_device_disable(vault_path: Path | None, password: str | None) -> None:
+    """Remove the device slot atomically, then delete its external keyring record."""
+
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password("V3 password", allow_saved=False)
+    try:
+        disable_device_unlock(path, pwd)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError, DeviceKeyringError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print("[green]Device unlock disabled.[/green]")
+
+
+@v3_group.group("rollback-anchor")
+def v3_rollback_anchor() -> None:
+    """Manage the optional non-secret rollback-detection anchor."""
+
+
+@v3_rollback_anchor.command("enable")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option("--password", envvar="VAULT_PASSWORD")
+def v3_anchor_enable(vault_path: Path | None, password: str | None) -> None:
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password("V3 password", allow_saved=False)
+    try:
+        anchor = enable_rollback_anchor(path, pwd)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError, DeviceKeyringError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print(
+        f"[green]Rollback anchor enabled:[/green] generation {anchor.generation}, "
+        f"key generation {anchor.key_generation}"
+    )
+
+
+@v3_rollback_anchor.command("verify")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option("--password", envvar="VAULT_PASSWORD")
+def v3_anchor_verify(vault_path: Path | None, password: str | None) -> None:
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password("V3 password", allow_saved=False)
+    try:
+        verified = verify_and_advance_rollback_anchor(path, credential=pwd)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError, DeviceKeyringError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    if not verified:
+        raise click.ClickException("Rollback anchor is disabled, missing, or unavailable")
+    console.print("[green]Rollback anchor verified.[/green]")
+
+
+@v3_rollback_anchor.command("inspect")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+def v3_anchor_inspect(vault_path: Path | None) -> None:
+    try:
+        metadata = inspect_rollback_anchor(vault_path or get_vault_path())
+    except (OSError, StorageError, VaultFormatError, DeviceKeyringError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    table = Table(title="V3 rollback anchor")
+    table.add_column("Field")
+    table.add_column("Value")
+    for key, value in metadata.items():
+        table.add_row(key, str(value).lower() if isinstance(value, bool) else str(value))
+    console.print(table)
+
+
+@v3_rollback_anchor.command("disable")
+@click.option("--vault-path", type=click.Path(path_type=Path), default=None)
+@click.option("--password", envvar="VAULT_PASSWORD")
+def v3_anchor_disable(vault_path: Path | None, password: str | None) -> None:
+    path = vault_path or get_vault_path()
+    pwd = password or _read_password("V3 password", allow_saved=False)
+    try:
+        disable_rollback_anchor(path, pwd)
+    except (OSError, StorageError, V3CryptoError, VaultFormatError, DeviceKeyringError) as exc:
+        raise click.ClickException(str(exc)) from exc
+    console.print("[green]Rollback anchor disabled.[/green]")
 
 
 def _print_migration_outcome(outcome: MigrationOutcome) -> None:
@@ -742,7 +854,9 @@ def status_cmd(vault_path: Path | None, password: str | None) -> None:
     for name, state in vault.status().items():
         table.add_row(name, state)
     if is_framed_vault_file(path):
-        remember = "disabled for v3 until device slots ship"
+        from vault_unified.device_keyring import device_slot_metadata
+
+        remember = "device slot enabled" if device_slot_metadata(path) else "no"
     else:
         remember = "yes" if is_remember_enabled() else "no"
     table.add_row("remember_password", remember)

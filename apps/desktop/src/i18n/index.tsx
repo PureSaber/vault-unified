@@ -28,6 +28,8 @@ const zh: Dict = {
   "unlock.subtitle": "输入主密码以解锁加密保险库。",
   "unlock.password": "主密码",
   "unlock.remember": "在此电脑记住（Windows 凭据管理器）",
+  "unlock.rememberHint":
+    "仅在信任此 Windows 账户时启用。旧格式会保存主密码；v3 仅保存随机设备密钥。同一账户下的进程可能请求该凭据。",
   "unlock.submit": "解锁",
   "unlock.unlocking": "解锁中…",
   "unlock.useSaved": "使用已保存密码",
@@ -187,6 +189,8 @@ const en: Dict = {
   "unlock.subtitle": "Enter your master password to unlock the encrypted vault.",
   "unlock.password": "Master password",
   "unlock.remember": "Remember on this PC (Windows Credential Manager)",
+  "unlock.rememberHint":
+    "Enable only for a trusted Windows account. Legacy vaults save the master password; v3 saves only a random device key. Other processes running as this user may request it.",
   "unlock.submit": "Unlock",
   "unlock.unlocking": "Unlocking…",
   "unlock.useSaved": "Use saved password",

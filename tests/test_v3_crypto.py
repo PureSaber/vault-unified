@@ -485,14 +485,16 @@ def test_argon2_backend_failure_is_normalized() -> None:
             create_v3_container(FAKE_PASSWORD, {"version": 2, "entries": {}})
 
 
-def test_session_v3_remember_refuses_before_keyring_write(tmp_path: Path) -> None:
+def test_session_v3_remember_uses_device_flow_not_legacy_password_store(tmp_path: Path) -> None:
     path = tmp_path / "fake-v3.vault"
     create_v3_file(path, FAKE_PASSWORD, {"version": 2, "entries": {}})
     manager = SessionManager()
 
-    with patch("vault_unified.session.save_master_password") as save:
-        with pytest.raises(ValueError, match="device slots"):
-            manager.unlock(FAKE_PASSWORD, vault_path=path, remember=True)
+    with patch("vault_unified.session.enable_device_unlock") as enable, patch(
+        "vault_unified.session.save_master_password"
+    ) as save:
+        manager.unlock(FAKE_PASSWORD, vault_path=path, remember=True)
+    enable.assert_called_once_with(path, FAKE_PASSWORD)
     save.assert_not_called()
 
 
@@ -513,10 +515,15 @@ def test_v3_keyring_probe_does_not_read_legacy_raw_password(tmp_path: Path) -> N
 
     with patch("vault_unified.api.routes.auth.require_loopback"), patch(
         "vault_unified.api.routes.auth.get_vault_path", return_value=path
-    ), patch("vault_unified.keyring_store.get_master_password") as get_saved:
+    ), patch(
+        "vault_unified.device_keyring.device_unlock_available", return_value=False
+    ) as device_probe, patch(
+        "vault_unified.keyring_store.get_master_password"
+    ) as get_saved:
         result = check_keyring(object())
 
     assert result == {"has_saved_password": False}
+    device_probe.assert_called_once_with(path)
     get_saved.assert_not_called()
 
 
@@ -585,7 +592,8 @@ def test_cli_v3_open_failure_and_status_never_read_legacy_keyring(tmp_path: Path
     assert failed.exit_code == 1, failed.output
     assert "Wrong password or corrupted vault" in failed.output
     assert status.exit_code == 0, status.output
-    assert "disabled for v3 until device slots ship" in status.output
+    assert "remember_password" in status.output
+    assert "no" in status.output
     get_saved.assert_not_called()
     remember.assert_not_called()
 
