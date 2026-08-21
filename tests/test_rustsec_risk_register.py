@@ -43,5 +43,7 @@ def test_rustsec_risk_register_is_complete_and_current():
     assert deadlines == {date(2026, 10, 20), date(2026, 11, 20)}
     assert all(date.today() <= deadline for deadline in deadlines)
 
-    lock_digest = sha256(LOCKFILE.read_bytes()).hexdigest()
+    # Keep the recorded digest stable across Git checkouts with different
+    # core.autocrlf settings while still hashing the full lockfile contents.
+    lock_digest = sha256(LOCKFILE.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     assert f"SHA-256 `{lock_digest}`" in text
