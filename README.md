@@ -243,7 +243,7 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 
 ## 版本
 
-**v1.0.4** — 当前版，包含：
+**v1.0.5** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
 - **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
@@ -254,7 +254,13 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 - 桌面端不再复用固定端口服务；每次启动均由 Tauri 拥有随机 loopback 端口的 sidecar
 - 每个 API 请求均需携带本次启动生成的 bootstrap secret，Tauri 同时验证实例 ID
 - Bearer Session Token 仅保存在渲染进程内存中；Windows 进程树随桌面应用一同退出
+- 原子写入、崩溃恢复和非覆盖式备份；异常事务默认 fail closed
+- 显式 opt-in 的 Vault Format v3：Argon2id、KEK/DEK envelope encryption、密钥轮换和测试向量
+- dry-run 优先的 legacy → v3 迁移、逐字节备份、恢复续作和显式回滚
+- Windows Credential Manager 设备解锁边界和可选回滚锚点
+- 多来源三方同步 ledger、durable operation saga、加密冲突快照和保留式删除 tombstone
 
-v1.0.4 不迁移或改写现有加密保险库格式。
+v1.0.5 保持 legacy v1/v2 为默认格式，不会自动迁移现有保险库。V3 创建、迁移、
+设备解锁和回滚均需显式操作；降级前必须按运行手册恢复兼容备份。
 
 GitHub: https://github.com/PureSaber/vault-unified

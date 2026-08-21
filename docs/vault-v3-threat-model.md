@@ -1,7 +1,7 @@
 # Vault Format v3 design and threat model
 
 Status: accepted design target, implemented through the ordered 5a-5f series. V3 remains
-explicit opt-in and has not been made the default or published in a post-v1.0.4 release. No
+explicit opt-in, is included starting with v1.0.5, and has not been made the default. No
 implementation PR may weaken a `MUST` without a new design review.
 
 ## 1. Scope and current compatibility boundary
