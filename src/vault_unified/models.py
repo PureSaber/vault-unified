@@ -56,6 +56,7 @@ class SecretEntry:
     remote_updated_at: str = ""
     proton_share_id: str = ""
     linked_sources: dict[str, str] = field(default_factory=dict)
+    source_metadata: dict[str, Any] = field(default_factory=dict)
     sync_ledger: EntrySyncLedger = field(default_factory=EntrySyncLedger)
 
     def touch(self) -> None:
@@ -86,6 +87,8 @@ class SecretEntry:
         data["source"] = self.source.value
         data["sync_status"] = self.sync_status.value
         data["sync_ledger"] = self.sync_ledger.to_dict()
+        if not self.source_metadata:
+            data.pop("source_metadata", None)
         return data
 
     @classmethod
@@ -99,6 +102,8 @@ class SecretEntry:
         linked = data.get("linked_sources") or {}
         if not linked and data.get("external_id") and source != Source.LOCAL:
             linked = {source.value: data["external_id"]}
+        raw_metadata = data.get("source_metadata") or {}
+        source_metadata = dict(raw_metadata) if isinstance(raw_metadata, dict) else {}
         return cls(
             id=data.get("id", str(uuid4())),
             title=data.get("title", ""),
@@ -116,6 +121,7 @@ class SecretEntry:
             remote_updated_at=data.get("remote_updated_at", ""),
             proton_share_id=data.get("proton_share_id", ""),
             linked_sources=dict(linked),
+            source_metadata=source_metadata,
             sync_ledger=EntrySyncLedger.from_dict(data.get("sync_ledger")),
         )
 

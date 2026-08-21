@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
@@ -9,6 +10,9 @@ from typing import Any
 
 from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
 from vault_unified.models import SecretEntry, Source
+
+BITWARDEN_LOGIN = 1
+BITWARDEN_SECURE_NOTE = 2
 
 
 class BitwardenAdapter(CliAdapter):
@@ -81,6 +85,56 @@ class BitwardenAdapter(CliAdapter):
             raise RuntimeError(result.stderr.strip() or "bw encode failed")
         return result.stdout.strip()
 
+    @staticmethod
+    def _metadata(entry: SecretEntry) -> dict[str, Any]:
+        value = entry.source_metadata.get(Source.BITWARDEN.value, {})
+        return value if isinstance(value, dict) else {}
+
+    @staticmethod
+    def _item_metadata(item: dict[str, Any]) -> dict[str, Any]:
+        login = item.get("login") or {}
+        secure_note = item.get("secureNote") or {}
+        collection_ids = item.get("collectionIds") or []
+        return {
+            "item_type": item.get("type", BITWARDEN_LOGIN),
+            "uris": copy.deepcopy(login.get("uris") or []),
+            "fields": copy.deepcopy(item.get("fields") or []),
+            "totp": login.get("totp") or "",
+            "folder_id": item.get("folderId") or "",
+            "favorite": bool(item.get("favorite", False)),
+            "reprompt": int(item.get("reprompt") or 0),
+            "organization_id": item.get("organizationId") or "",
+            "collection_ids": list(collection_ids) if isinstance(collection_ids, list) else [],
+            "secure_note_type": int(secure_note.get("type") or 0),
+            "has_attachments": bool(item.get("attachments")),
+        }
+
+    @staticmethod
+    def _updated_uris(metadata: dict[str, Any], url: str) -> list[dict[str, Any]]:
+        raw = metadata.get("uris") or []
+        uris = copy.deepcopy(raw) if isinstance(raw, list) else []
+        if url:
+            if uris and isinstance(uris[0], dict):
+                uris[0]["uri"] = url
+            else:
+                uris.insert(0, {"uri": url})
+        return uris
+
+    @staticmethod
+    def _assert_recreatable(metadata: dict[str, Any]) -> None:
+        blockers: list[str] = []
+        if metadata.get("has_attachments"):
+            blockers.append("attachments")
+        if metadata.get("organization_id"):
+            blockers.append("organization ownership")
+        if metadata.get("collection_ids"):
+            blockers.append("collection membership")
+        if blockers:
+            joined = ", ".join(blockers)
+            raise RuntimeError(
+                f"Bitwarden item cannot be safely recreated with preserved {joined}"
+            )
+
     def list_entries(self) -> list[SecretEntry]:
         result = self._bw(["list", "items"])
         if result.returncode != 0:
@@ -103,7 +157,7 @@ class BitwardenAdapter(CliAdapter):
     def create_entry(
         self, entry: SecretEntry, *, operation_id: str | None = None
     ) -> SecretEntry:
-        template = self._login_template(entry)
+        template = self._create_template(entry)
         encoded = self._encode(template)
         result = self._bw(["create", "item", encoded])
         if result.returncode != 0:
@@ -113,6 +167,7 @@ class BitwardenAdapter(CliAdapter):
         entry.link_source(Source.BITWARDEN, ext_id)
         entry.external_id = ext_id
         entry.remote_updated_at = created.get("revisionDate", "")
+        entry.source_metadata[Source.BITWARDEN.value] = self._item_metadata(created)
         return entry
 
     def update_entry(
@@ -125,19 +180,29 @@ class BitwardenAdapter(CliAdapter):
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to get Bitwarden item")
         item = json.loads(result.stdout)
+        item_type = item.get("type")
+        if item_type not in (BITWARDEN_LOGIN, BITWARDEN_SECURE_NOTE):
+            raise RuntimeError("Unsupported Bitwarden item type; refusing lossy write")
+
         item["name"] = entry.title
-        item.setdefault("login", {})
-        item["login"]["username"] = entry.username
-        item["login"]["password"] = entry.password
-        if entry.url:
-            item["login"]["uris"] = [{"uri": entry.url}]
         item["notes"] = entry.notes
+        if item_type == BITWARDEN_LOGIN:
+            login = item.setdefault("login", {})
+            login["username"] = entry.username
+            login["password"] = entry.password
+            existing_uris = login.get("uris") or []
+            metadata = {"uris": existing_uris}
+            login["uris"] = self._updated_uris(metadata, entry.url)
+        else:
+            item.setdefault("secureNote", {"type": 0})
+
         encoded = self._encode(item)
         edit = self._bw(["edit", "item", ext_id, encoded])
         if edit.returncode != 0:
             raise RuntimeError(edit.stderr.strip() or "Failed to update Bitwarden item")
         updated = json.loads(edit.stdout)
         entry.remote_updated_at = updated.get("revisionDate", entry.remote_updated_at)
+        entry.source_metadata[Source.BITWARDEN.value] = self._item_metadata(updated)
         return entry
 
     def delete_entry(
@@ -154,37 +219,61 @@ class BitwardenAdapter(CliAdapter):
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to delete Bitwarden item")
 
-    def _login_template(self, entry: SecretEntry) -> dict[str, Any]:
+    def _create_template(self, entry: SecretEntry) -> dict[str, Any]:
+        metadata = self._metadata(entry)
+        self._assert_recreatable(metadata)
+        item_type = metadata.get("item_type", BITWARDEN_LOGIN)
+        if item_type not in (BITWARDEN_LOGIN, BITWARDEN_SECURE_NOTE):
+            raise RuntimeError("Unsupported Bitwarden item type; refusing lossy write")
+
         result = self._bw(["get", "template", "item"])
         if result.returncode != 0:
-            template: dict[str, Any] = {"type": 1, "name": entry.title, "login": {}}
+            template: dict[str, Any] = {"type": item_type, "name": entry.title}
         else:
             template = json.loads(result.stdout)
         template["name"] = entry.title
-        template["type"] = 1
-        template["login"] = {
-            "username": entry.username,
-            "password": entry.password,
-            "uris": [{"uri": entry.url}] if entry.url else [],
-        }
+        template["type"] = item_type
         template["notes"] = entry.notes
+
+        if item_type == BITWARDEN_LOGIN:
+            login: dict[str, Any] = {
+                "username": entry.username,
+                "password": entry.password,
+                "uris": self._updated_uris(metadata, entry.url),
+            }
+            if metadata.get("totp"):
+                login["totp"] = metadata["totp"]
+            template["login"] = login
+            template.pop("secureNote", None)
+        else:
+            template.pop("login", None)
+            template["secureNote"] = {
+                "type": int(metadata.get("secure_note_type") or 0)
+            }
+
+        if metadata.get("fields"):
+            template["fields"] = copy.deepcopy(metadata["fields"])
+        if metadata.get("folder_id"):
+            template["folderId"] = metadata["folder_id"]
+        if "favorite" in metadata:
+            template["favorite"] = bool(metadata["favorite"])
+        if "reprompt" in metadata:
+            template["reprompt"] = int(metadata["reprompt"] or 0)
         return template
 
     def _item_to_entry(self, item: dict[str, Any]) -> SecretEntry | None:
         item_type = item.get("type")
-        if item_type not in (1, 2):
+        if item_type not in (BITWARDEN_LOGIN, BITWARDEN_SECURE_NOTE):
             return None
 
         login = item.get("login") or {}
-        password = login.get("password") or ""
-        username = login.get("username") or ""
+        username = (login.get("username") or "") if item_type == BITWARDEN_LOGIN else ""
+        password = (login.get("password") or "") if item_type == BITWARDEN_LOGIN else ""
         url = ""
-        if login.get("uris"):
-            url = login["uris"][0].get("uri", "")
-
-        notes = item.get("notes") or ""
-        if item_type == 2 and not password:
-            password = notes
+        if item_type == BITWARDEN_LOGIN and login.get("uris"):
+            first = login["uris"][0]
+            if isinstance(first, dict):
+                url = first.get("uri", "")
 
         ext_id = item.get("id", "")
         entry = SecretEntry(
@@ -192,10 +281,13 @@ class BitwardenAdapter(CliAdapter):
             username=username,
             password=password,
             url=url,
-            notes=notes,
+            notes=item.get("notes") or "",
             source=Source.BITWARDEN,
             external_id=ext_id,
             remote_updated_at=item.get("revisionDate", ""),
+            source_metadata={
+                Source.BITWARDEN.value: self._item_metadata(item),
+            },
         )
         entry.link_source(Source.BITWARDEN, ext_id)
         return entry
