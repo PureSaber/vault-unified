@@ -46,6 +46,15 @@ def get_vault_dir() -> Path:
     return get_data_dir() / ".vault"
 
 
+def get_config_dir() -> Path:
+    custom = os.environ.get("VAULT_CONFIG_DIR")
+    if custom:
+        return Path(custom)
+    if _looks_like_repo_checkout():
+        return get_vault_dir() / "config"
+    return get_data_dir() / "config"
+
+
 def get_vault_path() -> Path:
     custom = os.environ.get("VAULT_FILE")
     if custom:

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import os
 import re
 
 from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
+from vault_unified.integration_credentials import get_source_settings, source_environment
 from vault_unified.models import SecretEntry, Source
 
 
@@ -21,16 +21,13 @@ class GopassAdapter(CliAdapter):
     cli_name = "gopass"
     source = Source.GOPASS
 
-    def __init__(self) -> None:
-        self._mount = os.environ.get("GOPASS_MOUNT", "").strip("/")
-        self._prefix = os.environ.get("GOPASS_PATH_PREFIX", "vault").strip("/")
+    @staticmethod
+    def _settings() -> dict[str, str]:
+        return get_source_settings(Source.GOPASS.value)
 
-    def _env(self) -> dict[str, str] | None:
-        env = os.environ.copy()
-        store = os.environ.get("GOPASS_STORE")
-        if store:
-            env["GOPASS_STORE"] = store
-        return env
+    @staticmethod
+    def _env() -> dict[str, str]:
+        return source_environment(Source.GOPASS.value)
 
     def is_configured(self) -> bool:
         return super().is_configured()
@@ -43,9 +40,10 @@ class GopassAdapter(CliAdapter):
 
     def list_entries(self) -> list[SecretEntry]:
         env = self._env()
+        mount = self._settings().get("GOPASS_MOUNT", "").strip("/")
         args = ["ls", "--flat"]
-        if self._mount:
-            args.append(self._mount)
+        if mount:
+            args.append(mount)
         result = self._run(args, env=env)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to list gopass entries")
@@ -54,7 +52,7 @@ class GopassAdapter(CliAdapter):
             path = line.strip()
             if not path:
                 continue
-            if self._mount and not path.startswith(self._mount):
+            if mount and not path.startswith(mount):
                 continue
             entry = self.get_entry(path)
             if entry:
@@ -62,8 +60,7 @@ class GopassAdapter(CliAdapter):
         return entries
 
     def get_entry(self, external_id: str) -> SecretEntry | None:
-        env = self._env()
-        result = self._run(["show", external_id], env=env)
+        result = self._run(["show", external_id], env=self._env())
         if result.returncode != 0:
             return None
         return self._parse_show(external_id, result.stdout)
@@ -104,9 +101,12 @@ class GopassAdapter(CliAdapter):
         linked = entry.get_linked_id(Source.GOPASS)
         if linked:
             return linked
+        settings = self._settings()
+        mount = settings.get("GOPASS_MOUNT", "").strip("/")
+        prefix = settings.get("GOPASS_PATH_PREFIX", "vault").strip("/")
         slug = re.sub(r"[^\w\s-]", "", entry.title).strip().lower().replace(" ", "-")
         slug = slug or "entry"
-        parts = [p for p in (self._mount, self._prefix, slug) if p]
+        parts = [p for p in (mount, prefix, slug) if p]
         return "/".join(parts)
 
     def _format_body(self, entry: SecretEntry) -> str:

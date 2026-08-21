@@ -9,6 +9,7 @@ import subprocess
 from typing import Any
 
 from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
+from vault_unified.integration_credentials import get_source_settings, source_environment
 from vault_unified.models import SecretEntry, Source
 
 BITWARDEN_LOGIN = 1
@@ -30,6 +31,14 @@ class BitwardenAdapter(CliAdapter):
     def __init__(self) -> None:
         self._session: str | None = None
 
+    @staticmethod
+    def _settings() -> dict[str, str]:
+        return get_source_settings(Source.BITWARDEN.value)
+
+    @staticmethod
+    def _runtime_env() -> dict[str, str]:
+        return source_environment(Source.BITWARDEN.value)
+
     def _ensure_session(self) -> str | None:
         if self._session:
             return self._session
@@ -38,17 +47,18 @@ class BitwardenAdapter(CliAdapter):
             self._session = session
             return session
 
-        if not os.environ.get("BW_CLIENTID") or not os.environ.get("BW_CLIENTSECRET"):
+        settings = self._settings()
+        if not settings.get("BW_CLIENTID") or not settings.get("BW_CLIENTSECRET"):
             return None
-
-        login = self._run(["login", "--apikey", "--raw"])
+        env = self._runtime_env()
+        login = self._run(["login", "--apikey", "--raw"], env=env)
         if login.returncode != 0 and "already logged in" not in (login.stderr or "").lower():
             return None
 
         unlock_args = ["unlock", "--raw"]
-        if os.environ.get("BW_PASSWORD"):
+        if settings.get("BW_PASSWORD"):
             unlock_args = ["unlock", "--passwordenv", "BW_PASSWORD", "--raw"]
-        unlock = self._run(unlock_args)
+        unlock = self._run(unlock_args, env=env)
         if unlock.returncode != 0:
             return None
         self._session = unlock.stdout.strip()
@@ -57,10 +67,11 @@ class BitwardenAdapter(CliAdapter):
     def is_configured(self) -> bool:
         if not super().is_configured():
             return False
+        settings = self._settings()
         return bool(
-            os.environ.get("BW_CLIENTID")
-            and os.environ.get("BW_CLIENTSECRET")
-            and os.environ.get("BW_PASSWORD")
+            settings.get("BW_CLIENTID")
+            and settings.get("BW_CLIENTSECRET")
+            and settings.get("BW_PASSWORD")
         )
 
     def is_available(self) -> bool:
@@ -77,10 +88,18 @@ class BitwardenAdapter(CliAdapter):
         session = self._ensure_session()
         if not session:
             raise RuntimeError("Bitwarden session unavailable")
-        return self._run([*args, "--session", session], input_text=input_text)
+        return self._run(
+            [*args, "--session", session],
+            env=self._runtime_env(),
+            input_text=input_text,
+        )
 
     def _encode(self, payload: dict[str, Any]) -> str:
-        result = self._run(["encode"], input_text=json.dumps(payload))
+        result = self._run(
+            ["encode"],
+            env=self._runtime_env(),
+            input_text=json.dumps(payload),
+        )
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "bw encode failed")
         return result.stdout.strip()

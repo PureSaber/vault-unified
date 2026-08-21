@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from vault_unified.api.routes import auth, entries, sync
+from vault_unified.api.routes import auth, entries, integrations, sync
 from vault_unified.env import load_env
 
 load_env()
@@ -70,6 +70,7 @@ def create_app(
     )
     app.include_router(auth.router, prefix="/api")
     app.include_router(entries.router, prefix="/api")
+    app.include_router(integrations.router, prefix="/api")
     app.include_router(sync.router, prefix="/api")
 
     @app.get("/api/health", include_in_schema=False)
@@ -81,19 +82,12 @@ def create_app(
 
     @app.middleware("http")
     async def sidecar_security_guard(request: Request, call_next):
-        # Loopback is a boundary, not an identity. Every non-preflight request
-        # must also prove it knows the per-process bootstrap secret delivered
-        # to the owning Tauri process over the child's stdout pipe.
         client = request.client.host if request.client else ""
         allow_remote = os.environ.get("VAULT_API_ALLOW_REMOTE", "") == "1"
         if not allow_remote and client and client not in LOOPBACK_HOSTS:
             return JSONResponse({"detail": "Loopback only"}, status_code=403)
-
-        # Browsers omit custom headers from the OPTIONS request itself. CORS
-        # still restricts which origins may proceed to an authenticated call.
         if request.method == "OPTIONS":
             return await call_next(request)
-
         provided = request.headers.get("x-vault-bootstrap", "")
         if not provided or not hmac.compare_digest(provided, secret):
             return JSONResponse(
@@ -105,8 +99,6 @@ def create_app(
     return app
 
 
-# ASGI import compatibility. The desktop launcher uses main(), which creates a
-# fresh secret and reports it through the authenticated runtime handshake.
 app = create_app()
 
 
@@ -166,8 +158,6 @@ def main() -> None:
         "bootstrap_secret": secret,
         "instance_id": instance_id,
     }
-    # This line is consumed by the parent Tauri process through a private pipe.
-    # Do not send it through normal application logging.
     print(
         READY_PREFIX + json.dumps(ready, separators=(",", ":")),
         flush=True,
