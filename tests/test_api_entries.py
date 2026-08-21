@@ -66,3 +66,7 @@ def test_unlock_and_crud(client):
 
     delete = client.delete(f"/api/entries/{entry_id}", headers=headers)
     assert delete.status_code == 200
+
+    after_delete = client.get("/api/entries", headers=headers)
+    assert after_delete.status_code == 200
+    assert after_delete.json() == []
