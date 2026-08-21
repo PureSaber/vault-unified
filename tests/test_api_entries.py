@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 pytest.importorskip("fastapi")
 
 from vault_unified.api.app import create_app
+from vault_unified.manager import UnifiedVault
 
 BOOTSTRAP_SECRET = "test-bootstrap-secret-0123456789abcdef"
 
@@ -19,6 +20,7 @@ def client(monkeypatch):
         vault_file = Path(tmp) / "secrets.vault"
         monkeypatch.setenv("VAULT_FILE", str(vault_file))
         monkeypatch.setattr("vault_unified.config.get_vault_path", lambda: vault_file)
+        UnifiedVault.create(vault_file, "test123")
         app = create_app(
             bootstrap_secret=BOOTSTRAP_SECRET,
             instance_id="test-api-entries",

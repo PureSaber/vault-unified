@@ -10,9 +10,27 @@ class UnlockRequest(BaseModel):
     remember: bool = False
 
 
+class CreateVaultRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=1024)
+    confirm_password: str = Field(min_length=1, max_length=1024)
+    remember: bool = False
+
+
+class RestoreVaultRequest(BaseModel):
+    backup_path: str = Field(min_length=1, max_length=32768)
+    password: str = Field(min_length=1, max_length=1024)
+    remember: bool = False
+
+
 class UnlockResponse(BaseModel):
     token: str
     message: str = "unlocked"
+
+
+class VaultInfoOut(BaseModel):
+    exists: bool
+    format: Literal["missing", "legacy", "v3", "unreadable"]
+    path: str
 
 
 class EntryOut(BaseModel):

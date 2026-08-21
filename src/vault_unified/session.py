@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from vault_unified.config import get_vault_path
+from vault_unified.crypto import decrypt_payload
 from vault_unified.device_keyring import (
     device_slot_metadata,
     enable_device_unlock,
@@ -14,10 +15,12 @@ from vault_unified.device_keyring import (
 )
 from vault_unified.keyring_store import get_master_password, save_master_password
 from vault_unified.manager import UnifiedVault
-from vault_unified.storage import require_clean_storage
+from vault_unified.storage import atomic_write_bytes, require_clean_storage
+from vault_unified.v3_crypto import create_v3_file
 from vault_unified.vault_format import is_framed_vault_file
 
 SESSION_IDLE_SECONDS = 30 * 60
+EMPTY_VAULT_PAYLOAD = {"version": 2, "entries": {}}
 
 
 @dataclass
@@ -37,6 +40,22 @@ class SessionManager:
     def __init__(self) -> None:
         self._sessions: dict[str, VaultSession] = {}
 
+    def _register(self, vault: UnifiedVault) -> tuple[str, UnifiedVault]:
+        token = str(uuid4())
+        self._sessions[token] = VaultSession(
+            token=token,
+            vault=vault,
+            last_active=time.time(),
+        )
+        return token, vault
+
+    @staticmethod
+    def _remember(path: Path, password: str) -> None:
+        if is_framed_vault_file(path):
+            enable_device_unlock(path, password)
+        else:
+            save_master_password(password)
+
     def unlock(
         self,
         password: str | None = None,
@@ -46,6 +65,10 @@ class SessionManager:
     ) -> tuple[str, UnifiedVault]:
         path = vault_path or get_vault_path()
         require_clean_storage(path)
+        if not path.exists():
+            raise FileNotFoundError(
+                "Vault does not exist; create a new vault or restore a backup first"
+            )
         is_framed = is_framed_vault_file(path)
         pwd = password or os.environ.get("VAULT_PASSWORD")
         if not pwd and not is_framed:
@@ -57,23 +80,63 @@ class SessionManager:
             credential = load_device_credential(path)
         if not credential:
             raise ValueError("Master password or enabled device unlock required")
-        if not path.exists():
-            if not isinstance(credential, str):  # pragma: no cover - defensive guard
-                raise ValueError("A password is required to create a vault")
-            vault = UnifiedVault.create(path, credential)
-        else:
-            vault = UnifiedVault(path, credential)
-        if remember and is_framed:
+        vault = UnifiedVault(path, credential)
+        if remember:
             if not isinstance(credential, str):
-                raise ValueError("A password is required to enable device unlock")
-            enable_device_unlock(path, credential)
-        elif remember:
-            if not isinstance(credential, str):  # pragma: no cover - legacy invariant
-                raise ValueError("A password is required for legacy remember")
-            save_master_password(credential)
-        token = str(uuid4())
-        self._sessions[token] = VaultSession(token=token, vault=vault, last_active=time.time())
-        return token, vault
+                raise ValueError("Enter the master password before enabling device unlock")
+            self._remember(path, credential)
+        return self._register(vault)
+
+    def create_v3(
+        self,
+        password: str,
+        confirm_password: str,
+        *,
+        vault_path: Path | None = None,
+        remember: bool = False,
+    ) -> tuple[str, UnifiedVault]:
+        if password != confirm_password:
+            raise ValueError("Master password confirmation does not match")
+        path = vault_path or get_vault_path()
+        require_clean_storage(path)
+        if path.exists():
+            raise FileExistsError(f"Vault already exists: {path}")
+        create_v3_file(path, password, EMPTY_VAULT_PAYLOAD)
+        vault = UnifiedVault(path, password)
+        if remember:
+            self._remember(path, password)
+        return self._register(vault)
+
+    def restore(
+        self,
+        backup_path: str | Path,
+        password: str,
+        *,
+        vault_path: Path | None = None,
+        remember: bool = False,
+    ) -> tuple[str, UnifiedVault]:
+        source = Path(backup_path).expanduser().resolve()
+        target = (vault_path or get_vault_path()).expanduser().resolve()
+        require_clean_storage(target)
+        if target.exists():
+            raise FileExistsError(f"Vault already exists: {target}")
+        if source == target:
+            raise ValueError("Backup path must be different from the active vault path")
+        if not source.is_file():
+            raise FileNotFoundError(f"Backup file not found: {source}")
+
+        source_bytes = source.read_bytes()
+        decrypt_payload(password, source_bytes)
+        atomic_write_bytes(
+            target,
+            source_bytes,
+            validator=lambda candidate: decrypt_payload(password, candidate),
+            must_not_exist=True,
+        )
+        vault = UnifiedVault(target, password)
+        if remember:
+            self._remember(target, password)
+        return self._register(vault)
 
     def get(self, token: str) -> UnifiedVault:
         session = self._sessions.get(token)
