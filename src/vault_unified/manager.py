@@ -133,8 +133,8 @@ class UnifiedVault:
                 entry.sync_ledger.tombstone = Tombstone.create(
                     list(entry.linked_sources)
                 )
-            entry.sync_status = SyncStatus.DELETED_PENDING
             entry.mark_dirty()
+            entry.sync_status = SyncStatus.DELETED_PENDING
             self.local.replace_entry(entry)
             if prefs.auto_push_on_edit:
                 self.sync.push_entry(entry_id)
