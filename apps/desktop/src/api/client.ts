@@ -177,6 +177,44 @@ export interface IntegrationTestResult {
   message: string;
 }
 
+export interface BackupRecord {
+  path: string;
+  kind: "local_atomic" | "manual" | string;
+  size: number;
+  modified_at: string;
+  sha256: string;
+  format: "legacy" | "v3" | "unreadable" | string;
+  verified: boolean;
+  pinned: boolean;
+  transaction_id: string;
+}
+
+export interface BackupSummary {
+  backups: BackupRecord[];
+  count: number;
+  total_bytes: number;
+  verified_count: number;
+  pinned_count: number;
+  default_destination: string;
+}
+
+export interface BackupPruneResult {
+  policy: {
+    newest_count: number;
+    daily_days: number;
+    weekly_weeks: number;
+  };
+  keep_count: number;
+  delete_count: number;
+  reclaim_bytes: number;
+  delete: BackupRecord[];
+  applied: boolean;
+  deleted_count: number;
+  reclaimed_bytes: number;
+  errors: string[];
+  summary: BackupSummary;
+}
+
 export interface SyncPrefs {
   primary: string;
   auto_push_on_edit: boolean;
@@ -247,6 +285,37 @@ export const api = {
     request<IntegrationTestResult>(
       `/integrations/${encodeURIComponent(source)}/test`,
       { method: "POST" }
+    ),
+  backups: () => request<BackupSummary>("/backups"),
+  createBackup: (destinationDir?: string) =>
+    request<BackupSummary & { created: BackupRecord }>("/backups/create", {
+      method: "POST",
+      body: JSON.stringify({ destination_dir: destinationDir || null }),
+    }),
+  pinBackup: (path: string, pinned: boolean) =>
+    request<BackupSummary & { backup: BackupRecord }>("/backups/pin", {
+      method: "PUT",
+      body: JSON.stringify({ path, pinned }),
+    }),
+  pruneBackups: (
+    apply: boolean,
+    policy: { newest_count: number; daily_days: number; weekly_weeks: number }
+  ) =>
+    request<BackupPruneResult>("/backups/prune", {
+      method: "POST",
+      body: JSON.stringify({ apply, ...policy }),
+    }),
+  restoreBackup: (path: string, password = "", confirmRestore = false) =>
+    request<{ restored: string; locked: boolean; message: string }>(
+      "/backups/restore",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          path,
+          password,
+          confirm_restore: confirmRestore,
+        }),
+      }
     ),
   status: () => request<{ components: Record<string, string> }>("/status"),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
