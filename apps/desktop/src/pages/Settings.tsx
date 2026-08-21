@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, SyncPrefs } from "../api/client";
+import IntegrationManager from "../components/IntegrationManager";
 import { useToast } from "../components/Toast";
 import { useI18n, type Locale } from "../i18n";
 
@@ -9,8 +10,6 @@ const REMOTE_SOURCES = [
   { id: "keepassxc", label: "KeePassXC" },
   { id: "gopass", label: "gopass" },
 ] as const;
-
-const ENV_HINT_SOURCES = ["bitwarden", "keepassxc", "gopass"] as const;
 
 function allRemoteIds(): string[] {
   return REMOTE_SOURCES.map((s) => s.id);
@@ -232,41 +231,6 @@ export default function Settings() {
           </div>
         </section>
 
-        <section className="settings-section" aria-labelledby="source-hints-heading">
-          <h3 id="source-hints-heading" className="section-title">
-            {t("settings.sourceStatus")}
-          </h3>
-          <ul className="source-hint-list">
-            {ENV_HINT_SOURCES.map((id) => {
-              const label = REMOTE_SOURCES.find((s) => s.id === id)?.label || id;
-              return (
-                <li key={id}>
-                  <strong>{label}</strong>: {t("settings.configureHint")}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-
-        <section className="settings-section" aria-labelledby="locale-heading">
-          <h3 id="locale-heading" className="section-title">
-            {t("settings.language")}
-          </h3>
-          <div className="field">
-            <label className="field-label" htmlFor="settings-locale">
-              {t("lang.label")}
-            </label>
-            <select
-              id="settings-locale"
-              value={locale}
-              onChange={(e) => setLocale(e.target.value as Locale)}
-            >
-              <option value="zh">{t("lang.zh")}</option>
-              <option value="en">{t("lang.en")}</option>
-            </select>
-          </div>
-        </section>
-
         {error && (
           <div className="error" role="alert">
             {error}
@@ -279,6 +243,27 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      <IntegrationManager />
+
+      <section className="settings-section" aria-labelledby="locale-heading">
+        <h3 id="locale-heading" className="section-title">
+          {t("settings.language")}
+        </h3>
+        <div className="field">
+          <label className="field-label" htmlFor="settings-locale">
+            {t("lang.label")}
+          </label>
+          <select
+            id="settings-locale"
+            value={locale}
+            onChange={(e) => setLocale(e.target.value as Locale)}
+          >
+            <option value="zh">{t("lang.zh")}</option>
+            <option value="en">{t("lang.en")}</option>
+          </select>
+        </div>
+      </section>
     </div>
   );
 }
