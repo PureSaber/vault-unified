@@ -10,9 +10,8 @@ interface Props {
   onOpenConflicts?: () => void;
 }
 
-function maskPassword(value: string) {
-  if (!value) return "—";
-  return "••••••••";
+function maskPassword(hasPassword: boolean) {
+  return hasPassword ? "••••••••" : "—";
 }
 
 function syncBadgeClass(status: string) {
@@ -188,7 +187,7 @@ export default function VaultList({ onEdit, onOpenConflicts }: Props) {
                     <span className="entry-password-preview" aria-label={t("list.passwordAria")}>
                       {revealed
                         ? revealedPasswords[e.id] || "—"
-                        : maskPassword(e.password)}
+                        : maskPassword(e.has_password)}
                     </span>
                     <span className="badge badge-source">{e.source}</span>
                     {e.sync_status === "conflict" && onOpenConflicts ? (
