@@ -12,7 +12,9 @@ This register records informational RustSec findings that cannot currently be re
 
 - Tool: RustSec `cargo-audit 0.22.2`; official Windows archive SHA-256 `0a7316540862c13d954f648917ceacca593747baed6eec180fafa590be2710ab`.
 - Advisory database: `RustSec/advisory-db` commit `2f08fbb85332687b721f2f22706d07448369451b` (commit time `2026-08-18T10:23:07+02:00`), 1,217 advisories.
-- Lockfile: `apps/desktop/src-tauri/Cargo.lock`, SHA-256 `4ebf16406ea821b155f0703211f34a3883544190ea37ea8eded21218308b756b`, 441 packages.
+- Lockfile: `apps/desktop/src-tauri/Cargo.lock`, SHA-256 `158e0b495da52a95dc21986537b5eeb15ae0088ce4bb3f85721ae2bab3cddc94`,
+  441 packages. The v1.0.5 release preparation changed only the root package version; the
+  advisory set and dependency graph were re-audited unchanged.
 - Unfiltered result: **0 vulnerabilities; 17 allowed informational warnings** (16 unmaintained, 1 unsound).
 - `--target-os windows --target-arch x86_64` result: also 0 vulnerabilities and 17 warnings. Advisory target filters do not prove dependency reachability when an advisory has no OS/architecture restriction.
 - Reachability was therefore determined with `cargo tree --locked --target x86_64-pc-windows-msvc --invert <package>`. A second `--target all` tree established why non-Windows packages remain in the universal lockfile.
