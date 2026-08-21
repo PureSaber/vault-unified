@@ -231,8 +231,8 @@ class LocalVault:
                 entry.sync_ledger.tombstone = Tombstone.create(
                     list(entry.linked_sources)
                 )
-            entry.sync_status = SyncStatus.DELETED_PENDING
             entry.mark_dirty()
+            entry.sync_status = SyncStatus.DELETED_PENDING
             self._save()
             return True
         del self._entries[entry_id]

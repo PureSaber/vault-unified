@@ -524,6 +524,15 @@ def test_local_delete_persists_tombstone_before_remote_call_and_never_auto_purge
 
     adapter.delete_entry = observe_delete
     vault.local.delete(local.id, soft=True)
+
+    soft_deleted = vault.local.get(local.id)
+    persisted = LocalVault(path, FAKE_PASSWORD)
+    assert soft_deleted is not None
+    assert soft_deleted.sync_status == SyncStatus.DELETED_PENDING
+    assert vault.local.list_entries() == []
+    assert persisted.get(local.id).sync_status == SyncStatus.DELETED_PENDING
+    assert persisted.list_entries() == []
+
     with patch("vault_unified.sync.engine.get_adapter", return_value=adapter):
         result = engine.push_entry(local.id)
 
