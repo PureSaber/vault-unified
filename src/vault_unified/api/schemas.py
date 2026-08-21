@@ -22,6 +22,8 @@ class EntryOut(BaseModel):
     password: str = ""
     url: str = ""
     notes: str = ""
+    has_password: bool = False
+    has_notes: bool = False
     source: str
     tags: list[str] = Field(default_factory=list)
     sync_status: str
