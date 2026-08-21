@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from vault_unified.api.routes import auth, entries, integrations, sync
+from vault_unified.api.routes import auth, backups, entries, integrations, sync
 from vault_unified.env import load_env
 
 load_env()
@@ -69,6 +69,7 @@ def create_app(
         ],
     )
     app.include_router(auth.router, prefix="/api")
+    app.include_router(backups.router, prefix="/api")
     app.include_router(entries.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
     app.include_router(sync.router, prefix="/api")

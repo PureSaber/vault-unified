@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, SyncPrefs } from "../api/client";
+import BackupCenter from "../components/BackupCenter";
 import IntegrationManager from "../components/IntegrationManager";
 import { useToast } from "../components/Toast";
 import { useI18n, type Locale } from "../i18n";
@@ -245,6 +246,7 @@ export default function Settings() {
       </form>
 
       <IntegrationManager />
+      <BackupCenter />
 
       <section className="settings-section" aria-labelledby="locale-heading">
         <h3 id="locale-heading" className="section-title">
