@@ -53,6 +53,20 @@ jobs:
           New-Item -ItemType File -Force -Path $path | Out-Null
       - name: Check authenticated sidecar launcher
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+      - name: Parse release validator PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/validate-desktop-release.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Release validator contains PowerShell syntax errors"
+          }
 
   rustsec:
     runs-on: windows-latest
@@ -101,11 +115,47 @@ jobs:
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/build-desktop-release.ps1
+      - name: Validate packaged sidecar and installers
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/validate-desktop-release.ps1
       - name: Upload Release Assets
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
+          tag_name: ${{ github.ref_name }}
+          name: Vault Unified ${{ github.ref_name }}
+          body_path: docs/release-${{ github.ref_name }}.md
+          fail_on_unmatched_files: true
           files: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            release-manifest-v*.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Re-download and verify published assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $download = Join-Path $env:RUNNER_TEMP "published-$env:GITHUB_REF_NAME"
+          New-Item -ItemType Directory -Force -Path $download | Out-Null
+          gh release download $env:GITHUB_REF_NAME --repo $env:GITHUB_REPOSITORY --dir $download
+          if ($LASTEXITCODE -ne 0) { throw "Independent release download failed" }
+          $manifests = @(Get-ChildItem -LiteralPath $download -Filter "release-manifest-v*.json" -File)
+          if ($manifests.Count -ne 1) { throw "Expected exactly one downloaded release manifest" }
+          $manifest = Get-Content -LiteralPath $manifests[0].FullName -Raw | ConvertFrom-Json
+          $source = (git rev-parse HEAD).Trim()
+          if ($manifest.source_commit -ne $source -or $manifest.tag -ne $env:GITHUB_REF_NAME) {
+            throw "Downloaded release manifest provenance mismatch"
+          }
+          foreach ($record in $manifest.assets) {
+            $path = Join-Path $download ([string]$record.name)
+            if (-not (Test-Path -LiteralPath $path)) { throw "Downloaded asset missing: $($record.name)" }
+            $file = Get-Item -LiteralPath $path
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+            if ([int64]$file.Length -ne [int64]$record.bytes -or $hash -ne [string]$record.sha256) {
+              throw "Downloaded asset verification failed: $($record.name)"
+            }
+          }
+          $tag = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:GITHUB_REF_NAME" | ConvertFrom-Json
+          if ($tag.object.sha -ne $source) { throw "Release tag does not resolve to the built source" }
