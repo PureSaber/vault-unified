@@ -47,9 +47,6 @@ async function loadRuntimeConfig(): Promise<ApiRuntimeConfig> {
     const config = await invoke<ApiRuntimeConfig>("get_api_runtime_config");
     return validateRuntimeConfig(config);
   } catch (tauriError) {
-    // Browser-only Vite development is allowed only when the developer supplies
-    // an explicit authenticated endpoint. There is intentionally no fixed-port
-    // fallback because that would reintroduce local sidecar impersonation.
     const baseUrl = import.meta.env.VITE_API_URL?.trim();
     const bootstrapSecret = import.meta.env.VITE_API_BOOTSTRAP_SECRET?.trim();
     if (!baseUrl || !bootstrapSecret) {
@@ -72,9 +69,6 @@ function runtimeConfig(): Promise<ApiRuntimeConfig> {
 }
 
 export function setToken(value: string) {
-  // Session tokens intentionally stay in renderer memory. Reloading or closing
-  // the desktop window therefore locks the UI instead of persisting a bearer
-  // token in localStorage.
   token = value;
 }
 
@@ -158,6 +152,31 @@ export interface Entry {
   linked_sources: Record<string, string>;
 }
 
+export interface IntegrationField {
+  key: string;
+  label: string;
+  secret: boolean;
+  required: boolean;
+  value: string;
+  present: boolean;
+  origin: string;
+}
+
+export interface Integration {
+  source: string;
+  label: string;
+  configured: boolean;
+  cli_installed: boolean;
+  fields: IntegrationField[];
+}
+
+export interface IntegrationTestResult {
+  source: string;
+  configured: boolean;
+  available: boolean;
+  message: string;
+}
+
 export interface SyncPrefs {
   primary: string;
   auto_push_on_edit: boolean;
@@ -209,6 +228,25 @@ export const api = {
   generate: (length = 20, symbols = true) =>
     request<{ password: string }>(
       `/entries/tools/generate?length=${length}&symbols=${symbols}`
+    ),
+  integrations: () => request<Integration[]>("/integrations"),
+  saveIntegration: (
+    source: string,
+    values: Record<string, string>,
+    clear: string[] = []
+  ) =>
+    request<Integration>(`/integrations/${encodeURIComponent(source)}`, {
+      method: "PUT",
+      body: JSON.stringify({ values, clear }),
+    }),
+  clearIntegration: (source: string) =>
+    request<Integration>(`/integrations/${encodeURIComponent(source)}`, {
+      method: "DELETE",
+    }),
+  testIntegration: (source: string) =>
+    request<IntegrationTestResult>(
+      `/integrations/${encodeURIComponent(source)}/test`,
+      { method: "POST" }
     ),
   status: () => request<{ components: Record<string, string> }>("/status"),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 
 from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
+from vault_unified.integration_credentials import get_source_settings
 from vault_unified.models import SecretEntry, Source
 
 
@@ -22,22 +22,22 @@ class KeePassXCAdapter(CliAdapter):
     cli_name = "keepassxc-cli"
     source = Source.KEEPASSXC
 
-    def __init__(self) -> None:
-        self._database = os.environ.get("KEEPASSXC_DATABASE", "")
-        self._password = os.environ.get("KEEPASSXC_PASSWORD", "")
-        self._key_file = os.environ.get("KEEPASSXC_KEY_FILE", "")
-        self._group = os.environ.get("KEEPASSXC_GROUP", "")
+    @staticmethod
+    def _settings() -> dict[str, str]:
+        return get_source_settings(Source.KEEPASSXC.value)
 
     def _db_path(self) -> Path | None:
-        if not self._database:
+        database = self._settings().get("KEEPASSXC_DATABASE", "")
+        if not database:
             return None
-        path = Path(self._database)
+        path = Path(database)
         return path if path.is_file() else None
 
     def is_configured(self) -> bool:
         if not super().is_configured():
             return False
-        return self._db_path() is not None and bool(self._password)
+        settings = self._settings()
+        return self._db_path() is not None and bool(settings.get("KEEPASSXC_PASSWORD"))
 
     def is_available(self) -> bool:
         if not self.is_configured():
@@ -54,21 +54,26 @@ class KeePassXCAdapter(CliAdapter):
         db = self._db_path()
         if not db:
             raise RuntimeError("KEEPASSXC_DATABASE not set or missing")
+        settings = self._settings()
+        key_file = settings.get("KEEPASSXC_KEY_FILE", "")
         cmd: list[str] = []
-        if self._key_file:
-            cmd.extend(["--key-file", self._key_file])
+        if key_file:
+            cmd.extend(["--key-file", key_file])
         cmd.extend(args)
-        stdin = self._password
+        database_password = settings.get("KEEPASSXC_PASSWORD", "")
+        stdin = database_password
         if entry_password is not None:
-            stdin = f"{self._password}\n{entry_password}"
+            stdin = f"{database_password}\n{entry_password}"
         return self._run(cmd, input_text=stdin)
 
     def list_entries(self) -> list[SecretEntry]:
         db = self._db_path()
         assert db is not None
+        settings = self._settings()
+        group = settings.get("KEEPASSXC_GROUP", "")
         ls_args = ["ls", "-R", str(db)]
-        if self._group:
-            ls_args.append(self._group)
+        if group:
+            ls_args.append(group)
         result = self._run_db(ls_args)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to list KeePassXC entries")
@@ -148,8 +153,9 @@ class KeePassXCAdapter(CliAdapter):
             return linked
         slug = re.sub(r"[^\w\s-]", "", entry.title).strip().replace(" ", "-")
         slug = slug or "entry"
-        if self._group:
-            return f"{self._group.rstrip('/')}/{slug}"
+        group = self._settings().get("KEEPASSXC_GROUP", "")
+        if group:
+            return f"{group.rstrip('/')}/{slug}"
         return slug
 
     def _parse_ls_paths(self, output: str) -> list[str]:

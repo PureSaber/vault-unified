@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
+from vault_unified.integration_credentials import get_source_settings, source_environment
 from vault_unified.models import SecretEntry, Source
 
 
@@ -22,17 +23,21 @@ class ProtonPassAdapter(CliAdapter):
     cli_name = "pass-cli"
     source = Source.PROTON_PASS
 
-    def __init__(self) -> None:
-        self._default_share_id = os.environ.get("PROTON_PASS_SHARE_ID", "")
-        self._default_vault_name = os.environ.get("PROTON_PASS_VAULT_NAME", "")
+    @staticmethod
+    def _settings() -> dict[str, str]:
+        return get_source_settings(Source.PROTON_PASS.value)
+
+    def _default_share_id(self) -> str:
+        return self._settings().get("PROTON_PASS_SHARE_ID", "")
+
+    def _default_vault_name(self) -> str:
+        return self._settings().get("PROTON_PASS_VAULT_NAME", "")
 
     def _env(self) -> dict[str, str] | None:
-        token = os.environ.get("PROTON_PASS_PERSONAL_ACCESS_TOKEN")
-        if not token:
+        settings = self._settings()
+        if not settings.get("PROTON_PASS_PERSONAL_ACCESS_TOKEN"):
             return None
-        env = os.environ.copy()
-        env["PROTON_PASS_PERSONAL_ACCESS_TOKEN"] = token
-        return env
+        return source_environment(Source.PROTON_PASS.value)
 
     def is_configured(self) -> bool:
         return super().is_configured() and self._env() is not None
@@ -43,7 +48,7 @@ class ProtonPassAdapter(CliAdapter):
     def list_entries(self) -> list[SecretEntry]:
         env = self._env()
         if not env:
-            raise RuntimeError("PROTON_PASS_PERSONAL_ACCESS_TOKEN not set")
+            raise RuntimeError("Proton Pass token is not configured")
 
         result = self._run(["item", "list", "--output", "json"], env=env)
         if result.returncode != 0:
@@ -84,19 +89,20 @@ class ProtonPassAdapter(CliAdapter):
                 args.extend(["--password-file", password_file])
             if entry.url:
                 args.extend(["--url", entry.url])
-            share_id = entry.proton_share_id or self._default_share_id
-            vault_name = self._default_vault_name
+            share_id = entry.proton_share_id or self._default_share_id()
+            vault_name = self._default_vault_name()
             if share_id:
                 args.extend(["--share-id", share_id])
             elif vault_name:
                 args.extend(["--vault-name", vault_name])
             result = self._run(args, env=env)
-            if result.returncode != 0:
-                # Fallback for older pass-cli without --password-file.
-                if entry.password and "password-file" in (result.stderr or "").lower():
-                    args = [a for a in args if a != "--password-file" and a != password_file]
-                    args.extend(["--password", entry.password])
-                    result = self._run(args, env=env)
+            if result.returncode != 0 and entry.password and "password-file" in (
+                result.stderr or ""
+            ).lower():
+                raise RuntimeError(
+                    "Installed pass-cli does not support --password-file; upgrade it "
+                    "instead of exposing the password in process arguments"
+                )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or "Failed to create Proton Pass item")
         finally:
@@ -126,11 +132,11 @@ class ProtonPassAdapter(CliAdapter):
         if not ext_id:
             return self.create_entry(entry, operation_id=operation_id)
         args = ["item", "update", "--item-id", ext_id]
-        share_id = entry.proton_share_id or self._default_share_id
+        share_id = entry.proton_share_id or self._default_share_id()
         if share_id:
             args.extend(["--share-id", share_id])
-        elif self._default_vault_name:
-            args.extend(["--vault-name", self._default_vault_name])
+        elif self._default_vault_name():
+            args.extend(["--vault-name", self._default_vault_name()])
         password_file = None
         try:
             for field, value in [
@@ -146,25 +152,10 @@ class ProtonPassAdapter(CliAdapter):
                 args.extend(["--field", f"password=@{password_file}"])
             result = self._run(args, env=env)
             if result.returncode != 0 and entry.password:
-                # Fallback: field=password=value (argv exposure — last resort)
-                args = [a for a in args if not a.startswith("password=@")]
-                args = [a for a in args if a != "--field" or True]
-                # Rebuild without password file field
-                args = ["item", "update", "--item-id", ext_id]
-                if share_id:
-                    args.extend(["--share-id", share_id])
-                elif self._default_vault_name:
-                    args.extend(["--vault-name", self._default_vault_name])
-                for field, value in [
-                    ("title", entry.title),
-                    ("username", entry.username),
-                    ("password", entry.password),
-                    ("url", entry.url),
-                    ("note", entry.notes),
-                ]:
-                    if value:
-                        args.extend(["--field", f"{field}={value}"])
-                result = self._run(args, env=env)
+                raise RuntimeError(
+                    result.stderr.strip()
+                    or "Password-file field update failed; refusing plaintext argv fallback"
+                )
             if result.returncode != 0:
                 raise RuntimeError(result.stderr.strip() or "Failed to update Proton Pass item")
         finally:
@@ -182,7 +173,7 @@ class ProtonPassAdapter(CliAdapter):
         env = self._env()
         if not env:
             raise RuntimeError("Proton Pass not configured")
-        share_id = self._default_share_id
+        share_id = self._default_share_id()
         if not share_id:
             raise RuntimeError("PROTON_PASS_SHARE_ID required for delete")
         result = self._run(
@@ -255,7 +246,7 @@ class ProtonPassAdapter(CliAdapter):
             detail.get("shareId")
             or detail.get("share_id")
             or content.get("shareId")
-            or self._default_share_id
+            or self._default_share_id()
         )
         remote_updated = detail.get("modifyTime") or detail.get("updatedAt") or ""
 

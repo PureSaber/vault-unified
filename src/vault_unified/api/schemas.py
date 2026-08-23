@@ -68,6 +68,36 @@ class EntryUpdate(BaseModel):
     tags: list[str] | None = None
 
 
+class IntegrationFieldOut(BaseModel):
+    key: str
+    label: str
+    secret: bool
+    required: bool
+    value: str = ""
+    present: bool = False
+    origin: str = ""
+
+
+class IntegrationOut(BaseModel):
+    source: str
+    label: str
+    configured: bool
+    cli_installed: bool = False
+    fields: list[IntegrationFieldOut] = Field(default_factory=list)
+
+
+class IntegrationUpdateIn(BaseModel):
+    values: dict[str, str] = Field(default_factory=dict)
+    clear: list[str] = Field(default_factory=list)
+
+
+class IntegrationTestOut(BaseModel):
+    source: str
+    configured: bool
+    available: bool
+    message: str
+
+
 class SyncPreferencesOut(BaseModel):
     primary: str
     auto_push_on_edit: bool
