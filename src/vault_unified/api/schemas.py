@@ -140,6 +140,16 @@ class SyncPreferencesIn(BaseModel):
     enabled_sources: list[str] | None = None
 
 
+class SyncPreviewIn(BaseModel):
+    include_pull: bool = True
+    include_push: bool = True
+    sources: list[str] | None = Field(default=None, max_length=16)
+
+
+class SyncExecuteIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+
+
 class ConflictResolveIn(BaseModel):
     choice: Literal["local", "remote", "merge"]
     merged: dict[str, Any] | None = None

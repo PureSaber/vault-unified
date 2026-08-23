@@ -1,0 +1,337 @@
+from __future__ import annotations
+
+import copy
+import tempfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+pytest.importorskip("fastapi")
+
+from vault_unified.api.app import create_app
+from vault_unified.local_store import LocalVault
+from vault_unified.manager import MetadataPreservingSyncEngine
+from vault_unified.models import SecretEntry, Source, SyncPreferences
+from vault_unified.session import sessions
+from vault_unified.sync.ledger import AdapterCapabilities
+from vault_unified.sync.preview import (
+    SyncPreviewExpired,
+    SyncPreviewStore,
+    preview_store,
+)
+from vault_unified.sync_prefs import save_prefs
+
+
+BOOTSTRAP_SECRET = "sync-preview-test-secret-0123456789abcdef"
+
+
+class FakeBitwarden:
+    name = "Bitwarden"
+    source = Source.BITWARDEN
+    capabilities = AdapterCapabilities(
+        authoritative_list=True,
+        revision_token=True,
+        idempotent_create=False,
+        delete_confirm=True,
+        absence_is_delete=False,
+    )
+
+    def __init__(self) -> None:
+        self.entries: dict[str, SecretEntry] = {}
+        self.create_calls = 0
+        self.update_calls = 0
+        self.delete_calls = 0
+
+    def is_configured(self) -> bool:
+        return True
+
+    def is_available(self) -> bool:
+        return True
+
+    def list_entries(self) -> list[SecretEntry]:
+        return [copy.deepcopy(entry) for entry in self.entries.values()]
+
+    def get_entry(self, external_id: str) -> SecretEntry | None:
+        value = self.entries.get(external_id)
+        return copy.deepcopy(value) if value else None
+
+    def create_entry(
+        self,
+        entry: SecretEntry,
+        *,
+        operation_id: str | None = None,
+    ) -> SecretEntry:
+        assert operation_id
+        self.create_calls += 1
+        external_id = f"bw-{self.create_calls}"
+        remote = copy.deepcopy(entry)
+        remote.external_id = external_id
+        remote.link_source(Source.BITWARDEN, external_id)
+        remote.remote_updated_at = f"revision-{self.create_calls}"
+        self.entries[external_id] = remote
+        return copy.deepcopy(remote)
+
+    def update_entry(
+        self,
+        entry: SecretEntry,
+        *,
+        operation_id: str | None = None,
+    ) -> SecretEntry:
+        assert operation_id
+        self.update_calls += 1
+        external_id = entry.get_linked_id(Source.BITWARDEN)
+        self.entries[external_id] = copy.deepcopy(entry)
+        return copy.deepcopy(entry)
+
+    def delete_entry(
+        self,
+        external_id: str,
+        *,
+        permanent: bool = False,
+        operation_id: str | None = None,
+    ) -> None:
+        assert operation_id
+        self.delete_calls += 1
+        self.entries.pop(external_id, None)
+
+
+def test_preview_is_read_only_and_digest_is_stable(tmp_path: Path) -> None:
+    vault_path = tmp_path / "preview.vault"
+    local = LocalVault.create(vault_path, "generated-preview-password")
+    save_prefs(
+        vault_path,
+        SyncPreferences(enabled_sources=["bitwarden"]),
+    )
+    local.add(
+        SecretEntry(
+            title="Local only",
+            username="local-user",
+            password="local-password",
+        )
+    )
+
+    vault = MagicMock()
+    vault.local = local
+    vault.vault_path = vault_path
+    vault._last_errors = []
+    engine = MetadataPreservingSyncEngine(vault)
+    vault.sync = engine
+
+    adapter = MagicMock()
+    adapter.name = "Bitwarden"
+    adapter.capabilities = FakeBitwarden.capabilities
+    adapter.is_configured.return_value = True
+    adapter.is_available.return_value = True
+
+    def fresh_remote() -> list[SecretEntry]:
+        remote = SecretEntry(
+            title="Remote only",
+            username="remote-user",
+            password="remote-password",
+            source=Source.BITWARDEN,
+            external_id="remote-1",
+            remote_updated_at="revision-1",
+        )
+        remote.link_source(Source.BITWARDEN, "remote-1")
+        return [remote]
+
+    adapter.list_entries.side_effect = fresh_remote
+    before_bytes = vault_path.read_bytes()
+    before_entries = [
+        item.to_dict()
+        for item in local.list_entries(include_deleted=True)
+    ]
+
+    with patch("vault_unified.manager.get_adapter", return_value=adapter):
+        first = engine.preview_explicit(
+            [Source.BITWARDEN],
+            include_pull=True,
+            include_push=True,
+        )
+        second = engine.preview_explicit(
+            [Source.BITWARDEN],
+            include_pull=True,
+            include_push=True,
+        )
+
+    assert first["totals"]["pull_add"] == 1
+    assert first["totals"]["push_create"] == 1
+    assert first["_state_digest"] == second["_state_digest"]
+    assert vault_path.read_bytes() == before_bytes
+    assert [
+        item.to_dict()
+        for item in local.list_entries(include_deleted=True)
+    ] == before_entries
+    adapter.create_entry.assert_not_called()
+    adapter.update_entry.assert_not_called()
+    adapter.delete_entry.assert_not_called()
+
+
+def test_preview_tokens_are_single_use_and_expire() -> None:
+    now = [100.0]
+    store = SyncPreviewStore(ttl_seconds=5, clock=lambda: now[0])
+    issued = store.issue(
+        session_token="session-a",
+        sources=("bitwarden",),
+        include_pull=True,
+        include_push=False,
+        local_fingerprint="local",
+        plan_digest="remote",
+    )
+    consumed = store.consume(issued.token, session_token="session-a")
+    assert consumed == issued
+    with pytest.raises(SyncPreviewExpired):
+        store.consume(issued.token, session_token="session-a")
+
+    expired = store.issue(
+        session_token="session-a",
+        sources=("bitwarden",),
+        include_pull=False,
+        include_push=True,
+        local_fingerprint="local",
+        plan_digest="remote",
+    )
+    now[0] += 6
+    with pytest.raises(SyncPreviewExpired):
+        store.consume(expired.token, session_token="session-a")
+
+
+@pytest.fixture
+def api_client(monkeypatch):
+    with tempfile.TemporaryDirectory() as tmp:
+        vault_path = Path(tmp) / "secrets.vault"
+        monkeypatch.setenv("VAULT_FILE", str(vault_path))
+        LocalVault.create(vault_path, "test-password")
+        save_prefs(
+            vault_path,
+            SyncPreferences(enabled_sources=["bitwarden"]),
+        )
+        sessions._sessions.clear()
+        preview_store._intents.clear()
+        app = create_app(
+            bootstrap_secret=BOOTSTRAP_SECRET,
+            instance_id="sync-preview-api-test",
+        )
+        with TestClient(app) as client:
+            yield client, vault_path
+        sessions._sessions.clear()
+        preview_store._intents.clear()
+
+
+def _headers(token: str | None = None) -> dict[str, str]:
+    value = {
+        "X-Vault-Bootstrap": BOOTSTRAP_SECRET,
+        "X-Vault-Client": "vault-unified-desktop",
+    }
+    if token:
+        value["Authorization"] = f"Bearer {token}"
+    return value
+
+
+def _unlock(client: TestClient) -> str:
+    response = client.post(
+        "/api/auth/unlock",
+        json={"password": "test-password", "remember": False},
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    return response.json()["token"]
+
+
+def test_api_requires_preview_and_invalidates_it_after_local_change(
+    api_client,
+) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    token = _unlock(client)
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        direct = client.post("/api/sync/push", headers=_headers(token))
+        assert direct.status_code == 409
+
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": False,
+                "include_push": True,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        preview_token = preview.json()["preview_token"]
+
+        created = client.post(
+            "/api/entries",
+            json={
+                "title": "Changed after preview",
+                "username": "user",
+                "password": "secret",
+            },
+            headers=_headers(token),
+        )
+        assert created.status_code == 200
+
+        execute = client.post(
+            "/api/sync/execute",
+            json={"preview_token": preview_token},
+            headers=_headers(token),
+        )
+        assert execute.status_code == 409
+        assert adapter.create_calls == 0
+
+
+def test_api_executes_unchanged_preview_once(api_client) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    token = _unlock(client)
+
+    created = client.post(
+        "/api/entries",
+        json={
+            "title": "Ready to sync",
+            "username": "user",
+            "password": "secret",
+        },
+        headers=_headers(token),
+    )
+    assert created.status_code == 200
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": False,
+                "include_push": True,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        payload = preview.json()
+        assert payload["totals"]["push_create"] == 1
+
+        first = client.post(
+            "/api/sync/execute",
+            json={"preview_token": payload["preview_token"]},
+            headers=_headers(token),
+        )
+        assert first.status_code == 200
+        assert first.json()["pushed"]["pushed"] == 1
+        assert adapter.create_calls == 1
+
+        second = client.post(
+            "/api/sync/execute",
+            json={"preview_token": payload["preview_token"]},
+            headers=_headers(token),
+        )
+        assert second.status_code == 409
+        assert adapter.create_calls == 1
