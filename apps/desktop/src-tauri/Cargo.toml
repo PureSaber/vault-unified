@@ -1,6 +1,6 @@
 [package]
 name = "vault-unified-desktop"
-version = "1.0.5"
+version = "1.1.0"
 description = "Vault Unified Desktop"
 authors = ["PureSaber"]
 edition = "2021"

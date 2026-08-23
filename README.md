@@ -1,4 +1,4 @@
-# Vault Unified v1.0
+# Vault Unified v1.1.0
 
 本地加密密码库 + **Tauri 桌面应用** + 多密码源 **双向同步**（Bitwarden、KeePassXC、gopass；Proton Pass 需 Plus）。
 
@@ -6,7 +6,7 @@
 
 | 功能 | 说明 |
 |------|------|
-| 本地加密库 | 兼容 Scrypt + AES-GCM；显式可选 Argon2id + KEK/DEK v3 |
+| 本地加密库 | 兼容 legacy Scrypt/AES-GCM；新建桌面库默认 Argon2id + KEK/DEK v3 |
 | 桌面 App | Tauri + React 图形界面 |
 | 双向同步 | 拉取 + 推送到已配置的外部源 |
 | 主数据源 | 可设 local / bitwarden / keepassxc / gopass / proton_pass |
@@ -85,10 +85,10 @@ V3 设备解锁、Windows keyring allowlist 与可选回滚锚点见 [`docs/vaul
 }
 ```
 
-- `enabled_sources`：勾选参与同步的外源；缺省或 `null` 表示四个外源全部启用；`[]` 表示仅本地库
+- `enabled_sources`：缺省或 `[]` 表示仅本地库；显式 `null` 仅为旧配置兼容，表示四个外源全部启用
 - 取消勾选某源会**停止**对该源的 pull/push，但保留本地 `linked_sources`
 - 桌面 App **Settings → Enabled external sources** 或 CLI：`vault sources list|enable|disable`
-- `primary=local`：本地修改后自动 push 到**已启用**的外部源
+- `primary=local`：只有在 `auto_push_on_edit=true` 且目标源已显式启用时，本地修改后才会自动 push
 
 ## 外部 CLI 安装（Windows）
 
@@ -128,44 +128,34 @@ pass-cli --version
 .\vault.cmd status
 ```
 
-`status` 中应显示 `CLI found`；若仍提示 `credentials missing`，继续下一步配置 `.env`。
+`status` 中应显示 `CLI found`；若仍提示 `credentials missing`，请在桌面端 Settings → External password-manager connections 中保存并测试凭证。
 
-## 外部源配置（`.env`）
+## 外部源配置（Windows Credential Manager）
 
-凭证只保存在本机 `.env`（已在 `.gitignore` 中，**不要提交 Git**）。可复制模板后手动编辑：
+推荐在桌面 App **Settings → External password-manager connections** 中配置。敏感值保存在 Windows Credential Manager；数据库路径、服务器地址、Vault 名称等非敏感配置保存在：
 
-```powershell
-copy .env.example .env
+```text
+%LOCALAPPDATA%\VaultUnified\config\integrations.json
 ```
 
-或运行交互式配置脚本（会写入 `.env` 并测试连接）：
+桌面 API 只返回“是否已保存”和来源，不会把主密码、client secret 或 token 回填到界面。
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File configure-integrations.ps1
 ```
 
+该脚本只负责启动桌面配置页，**不会收集密码或把 token 写入 `.env`**。
+
 **需要准备：**
 
-| 服务 | 获取方式 |
-|------|----------|
-| Bitwarden | [Security → API Key](https://vault.bitwarden.com/#/settings/security/security-keys) + 主密码 |
-| KeePassXC | `.kdbx` 路径 + 库主密码（可放 OneDrive 同步文件夹） |
-| gopass | `gopass setup` + GPG 密钥（见 `scripts/setup-gopass.ps1`） |
-| Proton Pass | [设置 → 访问令牌](https://pass.proton.me/)（需 **Pass Plus**） |
+| 服务 | 需要的信息 |
+|------|------------|
+| Bitwarden | Security → API Key 的 Client ID / Client Secret + 主密码；可选自建服务器地址 |
+| KeePassXC | `.kdbx` 路径 + 库主密码；可选 key file 与 group |
+| gopass | 已初始化的 store；可选 mount、store 路径与前缀 |
+| Proton Pass | Personal Access Token（需 Pass Plus）；可选 Share ID / Vault 名称 |
 
-**`.env` 示例：**
-
-```env
-BW_CLIENTID=user.xxx
-BW_CLIENTSECRET=xxx
-BW_PASSWORD=your_master_password
-KEEPASSXC_DATABASE=C:\Users\you\OneDrive\Passwords\vault.kdbx
-KEEPASSXC_PASSWORD=kdbx_master_password
-GOPASS_PATH_PREFIX=vault
-PROTON_PASS_PERSONAL_ACCESS_TOKEN=
-```
-
-配置完成后：`.\vault.cmd sync` 或 `.\launch-desktop.ps1`。
+`.env` 和环境变量仅保留给明确的源码开发或无界面自动化场景。它们不会被桌面端自动迁移进凭据管理器，也不应提交到 GitHub。
 
 ## 常见问题（FAQ）
 
@@ -198,8 +188,8 @@ PROTON_PASS_PERSONAL_ACCESS_TOKEN=
 ### Bitwarden：加密密钥设置 vs API 密钥？
 
 - **加密密钥设置**（KDF / 迭代次数）：vault 加密参数，**与 CLI 同步无关**，默认不要改。
-- **API 密钥**（OAuth client_id / client_secret）：**设置 → 安全 → API 密钥**，用于填 `.env` 的 `BW_CLIENTID` / `BW_CLIENTSECRET`。
-- `scope`、`grant_type` 由 Bitwarden 固定，**不用写进 `.env`**；还需本机填 `BW_PASSWORD`（登录主密码）。
+- **API 密钥**（OAuth client_id / client_secret）：**设置 → 安全 → API 密钥**，在桌面端 Bitwarden 连接设置中保存。
+- `scope`、`grant_type` 由 Bitwarden 固定，无需配置；主密码也通过桌面连接设置写入 Windows Credential Manager。
 
 ### `sync` 显示 `0 added, 0 updated`？
 
@@ -243,7 +233,7 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 
 ## 版本
 
-**v1.0.5** — 当前版，包含：
+**v1.1.0** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
 - **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
@@ -254,13 +244,16 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 - 桌面端不再复用固定端口服务；每次启动均由 Tauri 拥有随机 loopback 端口的 sidecar
 - 每个 API 请求均需携带本次启动生成的 bootstrap secret，Tauri 同时验证实例 ID
 - Bearer Session Token 仅保存在渲染进程内存中；Windows 进程树随桌面应用一同退出
+- 新建桌面保险库默认使用 Vault Format v3，并要求两次确认主密码
+- 外部服务秘密使用 Windows Credential Manager，普通配置写入 LocalAppData
+- 提供可验证、可固定、预览清理和原子恢复的备份中心
+- 桌面同步采用只读预览 + 一次性确认令牌，默认不启用任何远端源
 - 原子写入、崩溃恢复和非覆盖式备份；异常事务默认 fail closed
-- 显式 opt-in 的 Vault Format v3：Argon2id、KEK/DEK envelope encryption、密钥轮换和测试向量
+- 桌面新库默认 Vault Format v3；CLI 创建、迁移与密钥轮换仍为显式操作
 - dry-run 优先的 legacy → v3 迁移、逐字节备份、恢复续作和显式回滚
 - Windows Credential Manager 设备解锁边界和可选回滚锚点
 - 多来源三方同步 ledger、durable operation saga、加密冲突快照和保留式删除 tombstone
 
-v1.0.5 保持 legacy v1/v2 为默认格式，不会自动迁移现有保险库。V3 创建、迁移、
-设备解锁和回滚均需显式操作；降级前必须按运行手册恢复兼容备份。
+v1.1.0 不会自动改写现有 v1/v2/v3 保险库；新建桌面保险库默认使用 v3，legacy CLI/setup 创建路径继续保持兼容。迁移、设备解锁、密钥轮换和回滚仍需显式操作；降级前必须按运行手册恢复兼容备份。
 
 GitHub: https://github.com/PureSaber/vault-unified
