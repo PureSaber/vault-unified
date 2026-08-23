@@ -98,6 +98,28 @@ class IntegrationTestOut(BaseModel):
     message: str
 
 
+class BackupCreateIn(BaseModel):
+    destination_dir: str | None = Field(default=None, max_length=32768)
+
+
+class BackupPinIn(BaseModel):
+    path: str = Field(min_length=1, max_length=32768)
+    pinned: bool
+
+
+class BackupPruneIn(BaseModel):
+    apply: bool = False
+    newest_count: int = Field(default=10, ge=0, le=1000)
+    daily_days: int = Field(default=30, ge=0, le=3650)
+    weekly_weeks: int = Field(default=12, ge=0, le=520)
+
+
+class BackupRestoreIn(BaseModel):
+    path: str = Field(min_length=1, max_length=32768)
+    password: str = Field(default="", max_length=1024)
+    confirm_restore: bool = False
+
+
 class SyncPreferencesOut(BaseModel):
     primary: str
     auto_push_on_edit: bool
