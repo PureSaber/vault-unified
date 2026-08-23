@@ -144,6 +144,8 @@ export interface Entry {
   password: string;
   url: string;
   notes: string;
+  has_password: boolean;
+  has_notes: boolean;
   source: string;
   tags: string[];
   sync_status: string;

@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from vault_unified.api.deps import get_vault
 from vault_unified.api.schemas import EntryIn, EntryOut, EntryUpdate
 from vault_unified.clipboard import copy_to_clipboard
-from vault_unified.crypto import mask_secret
 from vault_unified.generator import generate_password
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
@@ -18,9 +17,11 @@ def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
         id=entry.id,
         title=entry.title,
         username=entry.username,
-        password=entry.password if reveal else mask_secret(entry.password),
+        password=entry.password if reveal else "",
         url=entry.url,
-        notes=entry.notes if reveal else mask_secret(entry.notes, visible=0),
+        notes=entry.notes if reveal else "",
+        has_password=bool(entry.password),
+        has_notes=bool(entry.notes),
         source=entry.source.value,
         tags=entry.tags,
         sync_status=entry.sync_status.value,
@@ -94,23 +95,14 @@ def update_entry(
     body: EntryUpdate,
     vault: UnifiedVault = Depends(get_vault),
 ) -> EntryOut:
-    password = body.password
-    notes = body.notes
-    # Ignore masked placeholder payloads from the desktop list view.
-    if password is not None and (
-        set(password) <= {"*", "•"} or "****" in password or password.startswith("•")
-    ):
-        password = None
-    if notes is not None and (set(notes) <= {"*", "•"} or notes.startswith("•")):
-        notes = None
     try:
         entry = vault.edit(
             entry_id,
             title=body.title,
             username=body.username,
-            password=password,
+            password=body.password,
             url=body.url,
-            notes=notes,
+            notes=body.notes,
             tags=body.tags,
         )
     except (KeyError, ValueError) as exc:

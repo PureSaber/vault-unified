@@ -31,18 +31,21 @@ def bootstrap_headers() -> dict[str, str]:
     return {"X-Vault-Bootstrap": BOOTSTRAP_SECRET}
 
 
-def test_unlock_and_crud(client):
+def unlock_headers(client: TestClient) -> dict[str, str]:
     res = client.post(
         "/api/auth/unlock",
         json={"password": "test123", "remember": False},
         headers=bootstrap_headers(),
     )
     assert res.status_code == 200
-    token = res.json()["token"]
-    headers = {
+    return {
         **bootstrap_headers(),
-        "Authorization": f"Bearer {token}",
+        "Authorization": f"Bearer {res.json()['token']}",
     }
+
+
+def test_unlock_and_crud(client):
+    headers = unlock_headers(client)
 
     create = client.post(
         "/api/entries",
@@ -70,3 +73,67 @@ def test_unlock_and_crud(client):
     after_delete = client.get("/api/entries", headers=headers)
     assert after_delete.status_code == 200
     assert after_delete.json() == []
+
+
+def test_list_returns_presence_flags_without_mask_placeholders(client):
+    headers = unlock_headers(client)
+    create = client.post(
+        "/api/entries",
+        json={
+            "title": "Mail",
+            "password": "actual-password",
+            "notes": "private notes",
+        },
+        headers=headers,
+    )
+    assert create.status_code == 200
+    entry_id = create.json()["id"]
+
+    listing = client.get("/api/entries", headers=headers)
+    assert listing.status_code == 200
+    item = listing.json()[0]
+    assert item["password"] == ""
+    assert item["notes"] == ""
+    assert item["has_password"] is True
+    assert item["has_notes"] is True
+
+    revealed = client.get(
+        f"/api/entries/{entry_id}?reveal=true",
+        headers=headers,
+    )
+    assert revealed.status_code == 200
+    assert revealed.json()["password"] == "actual-password"
+    assert revealed.json()["notes"] == "private notes"
+
+
+def test_patch_accepts_mask_like_values_and_explicit_empty_strings(client):
+    headers = unlock_headers(client)
+    create = client.post(
+        "/api/entries",
+        json={"title": "Example", "password": "old", "notes": "old notes"},
+        headers=headers,
+    )
+    assert create.status_code == 200
+    entry_id = create.json()["id"]
+
+    literal_password = "prefix****suffix"
+    literal_notes = "•• literal note"
+    update = client.patch(
+        f"/api/entries/{entry_id}",
+        json={"password": literal_password, "notes": literal_notes},
+        headers=headers,
+    )
+    assert update.status_code == 200
+    assert update.json()["password"] == literal_password
+    assert update.json()["notes"] == literal_notes
+
+    clear = client.patch(
+        f"/api/entries/{entry_id}",
+        json={"password": "", "notes": ""},
+        headers=headers,
+    )
+    assert clear.status_code == 200
+    assert clear.json()["password"] == ""
+    assert clear.json()["notes"] == ""
+    assert clear.json()["has_password"] is False
+    assert clear.json()["has_notes"] is False
