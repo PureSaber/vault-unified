@@ -243,7 +243,7 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 
 ## 版本
 
-**v1.0.5** — 当前版，包含：
+**v1.1.0** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
 - **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
@@ -254,6 +254,10 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 - 桌面端不再复用固定端口服务；每次启动均由 Tauri 拥有随机 loopback 端口的 sidecar
 - 每个 API 请求均需携带本次启动生成的 bootstrap secret，Tauri 同时验证实例 ID
 - Bearer Session Token 仅保存在渲染进程内存中；Windows 进程树随桌面应用一同退出
+- 新建桌面保险库默认使用 Vault Format v3，并要求两次确认主密码
+- 外部服务秘密使用 Windows Credential Manager，普通配置写入 LocalAppData
+- 提供可验证、可固定、预览清理和原子恢复的备份中心
+- 桌面同步采用只读预览 + 一次性确认令牌，默认不启用任何远端源
 - 原子写入、崩溃恢复和非覆盖式备份；异常事务默认 fail closed
 - 显式 opt-in 的 Vault Format v3：Argon2id、KEK/DEK envelope encryption、密钥轮换和测试向量
 - dry-run 优先的 legacy → v3 迁移、逐字节备份、恢复续作和显式回滚
