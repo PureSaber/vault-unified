@@ -34,6 +34,13 @@ def test_default_sync_preferences_are_local_only_and_manual():
     assert prefs.primary == PrimarySource.LOCAL
 
 
+def test_remote_primary_implicitly_enables_it_when_no_list_was_supplied():
+    prefs = SyncPreferences(primary=PrimarySource.BITWARDEN).normalize()
+    assert prefs.primary == PrimarySource.BITWARDEN
+    assert prefs.enabled_sources == ["bitwarden"]
+    assert prefs.get_enabled_sources() == [Source.BITWARDEN]
+
+
 def test_explicit_null_preserves_legacy_all_sources_setting():
     prefs = SyncPreferences.from_dict(
         {

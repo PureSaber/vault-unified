@@ -154,7 +154,7 @@ class SyncPreferences:
         return source in self.get_enabled_sources()
 
     def normalize(self) -> SyncPreferences:
-        """Validate enabled_sources and reset primary if its source is disabled."""
+        """Validate sources and keep the selected primary internally consistent."""
         remote_values = {s.value for s in Source if s != Source.LOCAL}
         if self.enabled_sources is not None:
             self.enabled_sources = [
@@ -162,7 +162,14 @@ class SyncPreferences:
             ]
         enabled = {s.value for s in self.get_enabled_sources()}
         if self.primary != PrimarySource.LOCAL and self.primary.value not in enabled:
-            self.primary = PrimarySource.LOCAL
+            if self.enabled_sources == []:
+                # Compatibility: explicitly selecting a remote primary has always
+                # implied that source participates, even when the caller omitted
+                # a separate enabled_sources value. The untouched default remains
+                # local-only because its primary is LOCAL.
+                self.enabled_sources = [self.primary.value]
+            else:
+                self.primary = PrimarySource.LOCAL
         return self
 
     def to_dict(self) -> dict[str, Any]:
