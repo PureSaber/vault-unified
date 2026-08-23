@@ -2,8 +2,7 @@
 
 Status: accepted design target, implemented through the ordered 5a-5f series. V3 is included starting with v1.0.5 and becomes the default for newly created
 desktop vaults in v1.1.0. Legacy CLI/setup creation remains compatibility-oriented, and
-existing vaults are never migrated automatically. No
-implementation PR may weaken a `MUST` without a new design review.
+existing vaults are never migrated automatically. No implementation PR may weaken a `MUST` without a new design review.
 
 ## 1. Scope and current compatibility boundary
 
