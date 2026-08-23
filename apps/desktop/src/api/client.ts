@@ -225,6 +225,53 @@ export interface SyncPrefs {
   enabled_sources?: string[] | null;
 }
 
+export interface SyncSourcePreview {
+  label: string;
+  configured: boolean;
+  available: boolean;
+  status: string;
+  error: string;
+  pull: {
+    remote_total: number;
+    add: number;
+    update: number;
+    conflict: number;
+    unchanged: number;
+    local_only: number;
+    delete_observed: number;
+  };
+  push: {
+    create: number;
+    update: number;
+    delete: number;
+    pending: number;
+    total: number;
+  };
+}
+
+export interface SyncPreview {
+  preview_token: string;
+  generated_at: string;
+  expires_at: string;
+  include_pull: boolean;
+  include_push: boolean;
+  sources: string[];
+  per_source: Record<string, SyncSourcePreview>;
+  totals: {
+    pull_add: number;
+    pull_update: number;
+    pull_conflict: number;
+    pull_delete_observed: number;
+    push_create: number;
+    push_update: number;
+    push_delete: number;
+    pending: number;
+    unavailable_sources: number;
+  };
+  destructive_count: number;
+  warnings: string[];
+}
+
 export const api = {
   vaultInfo: () => request<VaultInfo>("/auth/vault-info"),
   createVault: (password: string, confirmPassword: string, remember = false) =>
@@ -324,10 +371,24 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(prefs),
     }),
-  sync: () => request("/sync", { method: "POST" }),
-  push: () => request("/sync/push", { method: "POST" }),
-  pullSource: (source: string) =>
-    request(`/sync/pull/${encodeURIComponent(source)}`, { method: "POST" }),
+  previewSync: (
+    includePull: boolean,
+    includePush: boolean,
+    sources?: string[]
+  ) =>
+    request<SyncPreview>("/sync/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        include_pull: includePull,
+        include_push: includePush,
+        sources: sources ?? null,
+      }),
+    }),
+  executeSync: (previewToken: string) =>
+    request("/sync/execute", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
+    }),
   listConflicts: (reveal = false) =>
     request<Record<string, unknown>[]>(
       reveal ? "/sync/conflicts?reveal=true" : "/sync/conflicts"

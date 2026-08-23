@@ -8,7 +8,7 @@ import pytest
 
 from vault_unified.adapters.registry import get_adapter
 from vault_unified.local_store import LocalVault
-from vault_unified.models import PrimarySource, SecretEntry, Source, SyncPreferences, SyncStatus
+from vault_unified.models import PrimarySource, SecretEntry, Source, SyncPreferences
 from vault_unified.sync.engine import SyncEngine
 
 
@@ -26,13 +26,40 @@ def vault_setup():
         yield vault, engine, vault_path
 
 
-def test_default_enabled_sources_all_remote():
+def test_default_sync_preferences_are_local_only_and_manual():
     prefs = SyncPreferences()
+    assert prefs.get_enabled_sources() == []
+    assert prefs.auto_push_on_edit is False
+    assert prefs.auto_pull_on_sync is False
+    assert prefs.primary == PrimarySource.LOCAL
+
+
+def test_explicit_null_preserves_legacy_all_sources_setting():
+    prefs = SyncPreferences.from_dict(
+        {
+            "primary": "local",
+            "auto_push_on_edit": True,
+            "auto_pull_on_sync": True,
+            "conflict_default": "primary",
+            "proton_vault_name": "",
+            "proton_share_id": "",
+            "enabled_sources": None,
+        }
+    )
     enabled = prefs.get_enabled_sources()
     assert Source.BITWARDEN in enabled
     assert Source.KEEPASSXC in enabled
     assert Source.GOPASS in enabled
     assert Source.PROTON_PASS in enabled
+    assert prefs.auto_push_on_edit is True
+    assert prefs.auto_pull_on_sync is True
+
+
+def test_missing_new_fields_uses_safe_defaults():
+    prefs = SyncPreferences.from_dict({"primary": "local"})
+    assert prefs.enabled_sources == []
+    assert prefs.auto_push_on_edit is False
+    assert prefs.auto_pull_on_sync is False
 
 
 def test_empty_enabled_sources_means_none_enabled():

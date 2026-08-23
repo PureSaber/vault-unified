@@ -129,12 +129,12 @@ class SecretEntry:
 @dataclass
 class SyncPreferences:
     primary: PrimarySource = PrimarySource.LOCAL
-    auto_push_on_edit: bool = True
-    auto_pull_on_sync: bool = True
+    auto_push_on_edit: bool = False
+    auto_pull_on_sync: bool = False
     conflict_default: str = "primary"
     proton_vault_name: str = ""
     proton_share_id: str = ""
-    enabled_sources: list[str] | None = None
+    enabled_sources: list[str] | None = field(default_factory=list)
 
     def get_enabled_sources(self) -> list[Source]:
         remote = [s for s in Source if s != Source.LOCAL]
@@ -184,17 +184,26 @@ class SyncPreferences:
                 primary = PrimarySource(primary)
             except ValueError:
                 primary = PrimarySource.LOCAL
-        raw_enabled = data.get("enabled_sources")
-        enabled_sources: list[str] | None = None
-        if raw_enabled is not None:
-            enabled_sources = list(raw_enabled) if isinstance(raw_enabled, list) else []
+
+        if "enabled_sources" not in data:
+            enabled_sources: list[str] | None = []
+        else:
+            raw_enabled = data["enabled_sources"]
+            if raw_enabled is None:
+                # Preserve the legacy explicit "all remote sources" setting.
+                enabled_sources = None
+            elif isinstance(raw_enabled, list):
+                enabled_sources = list(raw_enabled)
+            else:
+                enabled_sources = []
+
         conflict_default = data.get("conflict_default", "primary")
         if conflict_default not in ("primary", "manual"):
             conflict_default = "primary"
         prefs = cls(
             primary=primary,
-            auto_push_on_edit=bool(data.get("auto_push_on_edit", True)),
-            auto_pull_on_sync=bool(data.get("auto_pull_on_sync", True)),
+            auto_push_on_edit=bool(data.get("auto_push_on_edit", False)),
+            auto_pull_on_sync=bool(data.get("auto_pull_on_sync", False)),
             conflict_default=conflict_default,
             proton_vault_name=data.get("proton_vault_name", ""),
             proton_share_id=data.get("proton_share_id", ""),

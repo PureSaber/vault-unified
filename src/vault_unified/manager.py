@@ -1,19 +1,27 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from vault_unified.adapters.bitwarden import BitwardenAdapter
 from vault_unified.adapters.gopass import GopassAdapter
 from vault_unified.adapters.keepassxc import KeePassXCAdapter
 from vault_unified.adapters.proton_pass import ProtonPassAdapter
-from vault_unified.adapters.registry import all_remote_adapters
+from vault_unified.adapters.registry import all_remote_adapters, get_adapter
 from vault_unified.local_store import LocalVault
 from vault_unified.models import SecretEntry, Source, SyncPreferences, SyncStatus
 from vault_unified.sync.engine import SyncEngine, SyncResult
+from vault_unified.sync.ledger import (
+    Tombstone,
+    capabilities_for,
+    content_fingerprint,
+    entry_snapshot,
+)
+from vault_unified.sync.preview import canonical_digest
 from vault_unified.sync_prefs import load_prefs, save_prefs
 from vault_unified.v3_crypto import V3Credential
-from vault_unified.sync.ledger import Tombstone
 
 
 class MetadataPreservingSyncEngine(SyncEngine):
@@ -32,6 +40,317 @@ class MetadataPreservingSyncEngine(SyncEngine):
             if outcome == "unchanged":
                 return "updated"
         return outcome
+
+    @staticmethod
+    def _preview_pull_outcome(
+        local: SecretEntry,
+        remote: SecretEntry,
+        source: Source,
+    ) -> str:
+        local_fingerprint = content_fingerprint(local)
+        remote_fingerprint = content_fingerprint(remote)
+        replica = local.sync_ledger.replicas.get(source.value)
+        if replica is None or replica.base_snapshot is None:
+            if local.sync_status in {SyncStatus.DIRTY, SyncStatus.CONFLICT} and (
+                local_fingerprint != remote_fingerprint
+            ):
+                return "conflict"
+            return "updated"
+
+        base_fingerprint = replica.base_fingerprint
+        local_changed = local_fingerprint != base_fingerprint
+        remote_changed = remote_fingerprint != base_fingerprint
+        if not local_changed and not remote_changed:
+            return "unchanged"
+        if remote_changed and not local_changed:
+            return "updated"
+        if local_changed and not remote_changed:
+            return "local_only"
+        if local_fingerprint == remote_fingerprint:
+            return "converged"
+        return "conflict"
+
+    def _preview_push_counts(self, source: Source) -> dict[str, int]:
+        counts = {
+            "create": 0,
+            "update": 0,
+            "delete": 0,
+            "pending": 0,
+            "total": 0,
+        }
+        for entry in self.vault.local.list_dirty():
+            replica = entry.sync_ledger.replicas.get(source.value)
+            if replica is not None and replica.pending is not None:
+                counts["pending"] += 1
+                counts["total"] += 1
+                continue
+
+            if entry.sync_ledger.tombstone is not None or (
+                entry.sync_status == SyncStatus.DELETED_PENDING
+            ):
+                external_id = (
+                    (replica.external_id if replica is not None else "")
+                    or entry.get_linked_id(source)
+                )
+                tombstone = entry.sync_ledger.tombstone
+                if not external_id:
+                    continue
+                if tombstone is not None and (
+                    source.value in tombstone.acknowledged
+                    or source.value in tombstone.abandoned
+                ):
+                    continue
+                counts["delete"] += 1
+                counts["total"] += 1
+                continue
+
+            external_id = (
+                (replica.external_id if replica is not None else "")
+                or entry.get_linked_id(source)
+            )
+            counts["update" if external_id else "create"] += 1
+            counts["total"] += 1
+        return counts
+
+    def preview_explicit(
+        self,
+        sources: list[Source],
+        *,
+        include_pull: bool,
+        include_push: bool,
+    ) -> dict[str, Any]:
+        """Build a read-only plan. No local or remote write method is called."""
+        if not include_pull and not include_push:
+            raise ValueError("Preview must include pull, push, or both")
+        if not sources:
+            raise ValueError("At least one enabled external source is required")
+
+        per_source: dict[str, dict[str, Any]] = {}
+        digest_sources: dict[str, Any] = {}
+        totals = {
+            "pull_add": 0,
+            "pull_update": 0,
+            "pull_conflict": 0,
+            "pull_delete_observed": 0,
+            "push_create": 0,
+            "push_update": 0,
+            "push_delete": 0,
+            "pending": 0,
+            "unavailable_sources": 0,
+        }
+
+        for source in sources:
+            adapter = get_adapter(source)
+            configured = False
+            available = False
+            status = "not_configured"
+            error = ""
+            try:
+                configured = adapter.is_configured()
+                if configured:
+                    available = adapter.is_available()
+                    status = "ready" if available else "unavailable"
+            except Exception as exc:
+                status = "error"
+                error = type(exc).__name__
+
+            pull_counts = {
+                "remote_total": 0,
+                "add": 0,
+                "update": 0,
+                "conflict": 0,
+                "unchanged": 0,
+                "local_only": 0,
+                "delete_observed": 0,
+            }
+            remote_digest_entries: list[dict[str, Any]] = []
+
+            if include_pull and configured and available:
+                try:
+                    remote_entries = adapter.list_entries()
+                    external_ids = [
+                        remote.get_linked_id(source) or remote.external_id
+                        for remote in remote_entries
+                    ]
+                    if any(not value for value in external_ids) or len(
+                        external_ids
+                    ) != len(set(external_ids)):
+                        raise RuntimeError(
+                            "Remote listing has missing or duplicate external IDs"
+                        )
+                    pull_counts["remote_total"] = len(remote_entries)
+                    seen_external_ids = set(external_ids)
+
+                    for remote, external_id in sorted(
+                        zip(remote_entries, external_ids, strict=True),
+                        key=lambda pair: pair[1],
+                    ):
+                        remote_digest_entries.append(
+                            {
+                                "external_id": external_id,
+                                "remote_updated_at": remote.remote_updated_at,
+                                "content": entry_snapshot(remote),
+                                "source_metadata": remote.source_metadata,
+                                "proton_share_id": remote.proton_share_id,
+                            }
+                        )
+                        local = self.vault.local.find_by_linked_id(
+                            source, external_id
+                        )
+                        if local is None:
+                            pull_counts["add"] += 1
+                            continue
+                        outcome = self._preview_pull_outcome(
+                            local, remote, source
+                        )
+                        if outcome in {"updated", "converged"}:
+                            pull_counts["update"] += 1
+                        elif outcome == "conflict":
+                            pull_counts["conflict"] += 1
+                        elif outcome == "local_only":
+                            pull_counts["local_only"] += 1
+                        else:
+                            pull_counts["unchanged"] += 1
+
+                    capabilities = capabilities_for(adapter)
+                    if (
+                        capabilities.authoritative_list
+                        and capabilities.absence_is_delete
+                    ):
+                        for local in self.vault.local.list_entries(
+                            include_deleted=True
+                        ):
+                            replica = local.sync_ledger.replicas.get(
+                                source.value
+                            )
+                            if (
+                                replica is None
+                                or not replica.external_id
+                                or replica.external_id in seen_external_ids
+                                or local.sync_ledger.tombstone is not None
+                                or replica.base_snapshot is None
+                            ):
+                                continue
+                            if (
+                                content_fingerprint(local)
+                                != replica.base_fingerprint
+                            ):
+                                pull_counts["conflict"] += 1
+                            else:
+                                pull_counts["delete_observed"] += 1
+                except Exception as exc:
+                    status = "error"
+                    error = type(exc).__name__
+                    remote_digest_entries = []
+
+            push_counts = (
+                self._preview_push_counts(source)
+                if include_push
+                else {
+                    "create": 0,
+                    "update": 0,
+                    "delete": 0,
+                    "pending": 0,
+                    "total": 0,
+                }
+            )
+
+            if not configured or not available or status == "error":
+                totals["unavailable_sources"] += 1
+            totals["pull_add"] += pull_counts["add"]
+            totals["pull_update"] += pull_counts["update"]
+            totals["pull_conflict"] += pull_counts["conflict"]
+            totals["pull_delete_observed"] += pull_counts[
+                "delete_observed"
+            ]
+            totals["push_create"] += push_counts["create"]
+            totals["push_update"] += push_counts["update"]
+            totals["push_delete"] += push_counts["delete"]
+            totals["pending"] += push_counts["pending"]
+
+            source_plan = {
+                "label": adapter.name,
+                "configured": configured,
+                "available": available,
+                "status": status,
+                "error": error,
+                "pull": pull_counts,
+                "push": push_counts,
+            }
+            per_source[source.value] = source_plan
+            digest_sources[source.value] = {
+                "plan": source_plan,
+                "remote_entries": remote_digest_entries,
+            }
+
+        warnings: list[str] = []
+        destructive = (
+            totals["push_delete"] + totals["pull_delete_observed"]
+        )
+        if destructive:
+            warnings.append(
+                "The plan includes remote or locally observed deletions"
+            )
+        if totals["pending"]:
+            warnings.append(
+                "Some prior remote operations have an unknown outcome and "
+                "require reconciliation"
+            )
+        if totals["unavailable_sources"]:
+            warnings.append(
+                "One or more selected sources are unavailable or not configured"
+            )
+
+        plan: dict[str, Any] = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "include_pull": include_pull,
+            "include_push": include_push,
+            "sources": [source.value for source in sources],
+            "per_source": per_source,
+            "totals": totals,
+            "destructive_count": destructive,
+            "warnings": warnings,
+        }
+        plan["_state_digest"] = canonical_digest(
+            {
+                "include_pull": include_pull,
+                "include_push": include_push,
+                "sources": [source.value for source in sources],
+                "source_state": digest_sources,
+            }
+        )
+        return plan
+
+    def execute_explicit(
+        self,
+        sources: list[Source],
+        *,
+        include_pull: bool,
+        include_push: bool,
+    ) -> SyncResult:
+        """Execute exactly the operation that an approved preview described."""
+        result = SyncResult()
+        if include_pull:
+            for source in sources:
+                try:
+                    result.pulled[source.value] = self.pull_source(source)
+                except Exception as exc:
+                    self._record_error("pull", source, exc)
+                    result.errors.append(
+                        f"pull {source.value}: {type(exc).__name__}"
+                    )
+
+        if include_push:
+            pushed = 0
+            errors = 0
+            for entry in list(self.vault.local.list_dirty()):
+                stats = self.push_entry(entry.id, sources)
+                pushed += stats["pushed"]
+                errors += stats["errors"]
+            result.pushed = {"pushed": pushed, "errors": errors}
+
+        result.conflicts = self.list_conflicts()
+        return result
 
 
 class UnifiedVault:
@@ -179,13 +498,51 @@ class UnifiedVault:
     def sync_bidirectional(self) -> SyncResult:
         return self.sync.sync_bidirectional()
 
-    def push_entry(self, entry_id: str, targets: list[Source] | None = None) -> dict[str, int]:
+    def preview_sync(
+        self,
+        sources: list[Source],
+        *,
+        include_pull: bool,
+        include_push: bool,
+    ) -> dict[str, Any]:
+        return self.sync.preview_explicit(
+            sources,
+            include_pull=include_pull,
+            include_push=include_push,
+        )
+
+    def execute_sync(
+        self,
+        sources: list[Source],
+        *,
+        include_pull: bool,
+        include_push: bool,
+    ) -> SyncResult:
+        return self.sync.execute_explicit(
+            sources,
+            include_pull=include_pull,
+            include_push=include_push,
+        )
+
+    def push_entry(
+        self, entry_id: str, targets: list[Source] | None = None
+    ) -> dict[str, int]:
         return self.sync.push_entry(entry_id, targets)
 
-    def push_all_dirty(self) -> dict[str, int]:
-        return self.sync.push_all_dirty()
+    def push_all_dirty(
+        self, targets: list[Source] | None = None
+    ) -> dict[str, int]:
+        pushed = 0
+        errors = 0
+        for entry in list(self.local.list_dirty()):
+            result = self.sync.push_entry(entry.id, targets)
+            pushed += result["pushed"]
+            errors += result["errors"]
+        return {"pushed": pushed, "errors": errors}
 
-    def abandon_tombstone_source(self, entry_id: str, source: Source) -> None:
+    def abandon_tombstone_source(
+        self, entry_id: str, source: Source
+    ) -> None:
         self.sync.abandon_tombstone_source(entry_id, source)
 
     def purge_tombstone(self, entry_id: str) -> None:
@@ -194,5 +551,10 @@ class UnifiedVault:
     def list_conflicts(self):
         return self.sync.list_conflicts()
 
-    def resolve_conflict(self, conflict_id: str, choice: str, merged: SecretEntry | None = None):
+    def resolve_conflict(
+        self,
+        conflict_id: str,
+        choice: str,
+        merged: SecretEntry | None = None,
+    ):
         return self.sync.resolve_conflict(conflict_id, choice, merged)
