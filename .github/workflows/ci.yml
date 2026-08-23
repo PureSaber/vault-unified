@@ -53,6 +53,20 @@ jobs:
           New-Item -ItemType File -Force -Path $path | Out-Null
       - name: Check authenticated sidecar launcher
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+      - name: Parse release validator PowerShell
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path "scripts/validate-desktop-release.ps1"),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw "Release validator contains PowerShell syntax errors"
+          }
 
   rustsec:
     runs-on: windows-latest
