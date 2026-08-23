@@ -7,6 +7,7 @@ import re
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+RELEASE_VALIDATOR = ROOT / "scripts" / "validate-desktop-release.ps1"
 
 
 def _block(lines: list[str], key: str, indent: int) -> list[str]:
@@ -125,3 +126,27 @@ def test_ci_action_and_permission_contract():
     )
     assert any("RustSec/advisory-db.git" in line for line in rustsec)
     assert not any("--ignore" in line for line in rustsec)
+
+
+def test_release_assets_are_smoke_tested_and_reverified_after_publication():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    validator = RELEASE_VALIDATOR.read_text(encoding="utf-8")
+
+    assert "scripts/validate-desktop-release.ps1" in workflow
+    assert "release-manifest-v*.json" in workflow
+    assert "gh release download" in workflow
+    assert "Get-FileHash -Algorithm SHA256" in workflow
+    assert "git/ref/tags/$env:GITHUB_REF_NAME" in workflow
+
+    for required in (
+        "VAULT_API_READY",
+        "/auth/create",
+        "/entries",
+        "/backups/create",
+        "/sync/preferences",
+        "/sync/push",
+        "NSIS install / launch / uninstall",
+        "MSI install / launch / uninstall",
+        "Get-AuthenticodeSignature",
+    ):
+        assert required in validator
