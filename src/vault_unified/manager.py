@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from vault_unified.adapters.bitwarden import BitwardenAdapter
@@ -15,6 +16,24 @@ from vault_unified.v3_crypto import V3Credential
 from vault_unified.sync.ledger import Tombstone
 
 
+class MetadataPreservingSyncEngine(SyncEngine):
+    """Keep encrypted source-specific fields without treating them as portable fields."""
+
+    @staticmethod
+    def _local_from_remote(remote: SecretEntry, source: Source) -> SecretEntry:
+        local = SyncEngine._local_from_remote(remote, source)
+        local.source_metadata = copy.deepcopy(remote.source_metadata)
+        return local
+
+    def _merge_remote(self, local, remote, source, capabilities) -> str:
+        outcome = super()._merge_remote(local, remote, source, capabilities)
+        if outcome != "conflict" and local.source_metadata != remote.source_metadata:
+            local.source_metadata = copy.deepcopy(remote.source_metadata)
+            if outcome == "unchanged":
+                return "updated"
+        return outcome
+
+
 class UnifiedVault:
     """Local encrypted vault with bidirectional sync to external password managers."""
 
@@ -25,7 +44,7 @@ class UnifiedVault:
         self.bitwarden = BitwardenAdapter()
         self.keepassxc = KeePassXCAdapter()
         self.gopass = GopassAdapter()
-        self.sync = SyncEngine(self)
+        self.sync = MetadataPreservingSyncEngine(self)
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> UnifiedVault:
