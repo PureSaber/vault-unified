@@ -124,7 +124,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers: requestHeaders,
   });
   if (!res.ok) {
-    if (res.status === 401) {
+    if (res.status === 401 && token) {
       clearToken();
       onUnauthorized?.();
     }
@@ -135,6 +135,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const text = await res.text();
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
+}
+
+export interface VaultInfo {
+  exists: boolean;
+  format: "missing" | "legacy" | "v3" | "unreadable";
+  path: string;
 }
 
 export interface Entry {
@@ -163,6 +169,21 @@ export interface SyncPrefs {
 }
 
 export const api = {
+  vaultInfo: () => request<VaultInfo>("/auth/vault-info"),
+  createVault: (password: string, confirmPassword: string, remember = false) =>
+    request<{ token: string }>("/auth/create", {
+      method: "POST",
+      body: JSON.stringify({
+        password,
+        confirm_password: confirmPassword,
+        remember,
+      }),
+    }),
+  restoreVault: (backupPath: string, password: string, remember = false) =>
+    request<{ token: string }>("/auth/restore", {
+      method: "POST",
+      body: JSON.stringify({ backup_path: backupPath, password, remember }),
+    }),
   unlock: (password: string, remember = false) =>
     request<{ token: string }>("/auth/unlock", {
       method: "POST",
