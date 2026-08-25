@@ -137,6 +137,9 @@ def test_release_assets_are_smoke_tested_and_reverified_after_publication():
     assert "gh release download" in workflow
     assert "Get-FileHash -Algorithm SHA256" in workflow
     assert "git/ref/tags/$env:GITHUB_REF_NAME" in workflow
+    assert "git/tags/$tagSha" in workflow
+    assert '$tagType -eq "tag"' in workflow
+    assert '$tagType -ne "commit"' in workflow
 
     for required in (
         "VAULT_API_READY",

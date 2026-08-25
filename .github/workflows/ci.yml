@@ -161,5 +161,17 @@ jobs:
               throw "Downloaded asset verification failed: $($record.name)"
             }
           }
-          $tag = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:GITHUB_REF_NAME" | ConvertFrom-Json
-          if ($tag.object.sha -ne $source) { throw "Release tag does not resolve to the built source" }
+          $tagRef = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:GITHUB_REF_NAME" | ConvertFrom-Json
+          $tagType = [string]$tagRef.object.type
+          $tagSha = [string]$tagRef.object.sha
+          $depth = 0
+          while ($tagType -eq "tag") {
+            if ($depth -ge 8) { throw "Release tag indirection is unexpectedly deep" }
+            $tagObject = gh api "repos/$env:GITHUB_REPOSITORY/git/tags/$tagSha" | ConvertFrom-Json
+            $tagType = [string]$tagObject.object.type
+            $tagSha = [string]$tagObject.object.sha
+            $depth += 1
+          }
+          if ($tagType -ne "commit" -or $tagSha -ne $source) {
+            throw "Release tag does not resolve to the built source"
+          }
