@@ -120,9 +120,15 @@ function Get-VaultInstallExecutable {
 function Wait-ForVaultExecutable {
     param([int]$Seconds = 45)
     $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    $deepSearchAttempted = $false
     while ([DateTime]::UtcNow -lt $deadline) {
         $app = Get-VaultInstallExecutable
         if ($app) { return $app }
+        if (-not $deepSearchAttempted) {
+            $deepSearchAttempted = $true
+            $app = Get-VaultInstallExecutable -DeepSearch
+            if ($app) { return $app }
+        }
         Start-Sleep -Seconds 1
     }
     throw "Vault Unified executable was not registered after installation"
