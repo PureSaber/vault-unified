@@ -126,7 +126,7 @@ def test_cleanup_apply_requires_and_consumes_exact_preview(backup_api) -> None:
     )
     assert preview.status_code == 200
     plan = preview.json()
-    approved_paths = {Path(item["path"]) for item in plan["delete"]}
+    approved_paths = {Path(item["path"]).resolve() for item in plan["delete"]}
     assert approved_paths
 
     missing_token = client.post(
@@ -144,7 +144,8 @@ def test_cleanup_apply_requires_and_consumes_exact_preview(backup_api) -> None:
     )
     assert changed_after_preview.status_code == 200
     current_atomic = {
-        path for path, _transaction_id in backup_manager._atomic_backup_candidates(
+        path.resolve()
+        for path, _transaction_id in backup_manager._atomic_backup_candidates(
             vault_file
         )
     }
