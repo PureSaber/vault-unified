@@ -188,12 +188,16 @@ export default function BackupCenter() {
   }
 
   async function applyCleanup() {
-    if (!plan || plan.delete_count === 0) return;
+    if (!plan || !plan.preview_token || plan.delete_count === 0) return;
     if (!window.confirm(text.applyConfirm)) return;
     setBusy("apply");
     setError("");
     try {
-      const result = await api.pruneBackups(true, policy);
+      const result = await api.pruneBackups(
+        true,
+        plan.policy,
+        plan.preview_token
+      );
       setPlan(result);
       setSummary(result.summary);
       showToast(text.pruned);
@@ -334,7 +338,10 @@ export default function BackupCenter() {
                 min={0}
                 max={1000}
                 value={policy.newest_count}
-                onChange={(event) => setPolicy({ ...policy, newest_count: Number(event.target.value) || 0 })}
+                onChange={(event) => {
+                  setPolicy({ ...policy, newest_count: Number(event.target.value) || 0 });
+                  setPlan(null);
+                }}
               />
             </div>
             <div className="field">
@@ -345,7 +352,10 @@ export default function BackupCenter() {
                 min={0}
                 max={3650}
                 value={policy.daily_days}
-                onChange={(event) => setPolicy({ ...policy, daily_days: Number(event.target.value) || 0 })}
+                onChange={(event) => {
+                  setPolicy({ ...policy, daily_days: Number(event.target.value) || 0 });
+                  setPlan(null);
+                }}
               />
             </div>
             <div className="field">
@@ -356,7 +366,10 @@ export default function BackupCenter() {
                 min={0}
                 max={520}
                 value={policy.weekly_weeks}
-                onChange={(event) => setPolicy({ ...policy, weekly_weeks: Number(event.target.value) || 0 })}
+                onChange={(event) => {
+                  setPolicy({ ...policy, weekly_weeks: Number(event.target.value) || 0 });
+                  setPlan(null);
+                }}
               />
             </div>
             <div className="button-row">
@@ -371,7 +384,12 @@ export default function BackupCenter() {
               <button
                 type="button"
                 className="danger"
-                disabled={busy !== null || !plan || plan.delete_count === 0}
+                disabled={
+                  busy !== null ||
+                  !plan ||
+                  !plan.preview_token ||
+                  plan.delete_count === 0
+                }
                 onClick={applyCleanup}
               >
                 {busy === "apply" ? text.applying : text.apply}

@@ -12,8 +12,8 @@ This register records informational RustSec findings that cannot currently be re
 
 - Tool: RustSec `cargo-audit 0.22.2`; official Windows archive SHA-256 `0a7316540862c13d954f648917ceacca593747baed6eec180fafa590be2710ab`.
 - Advisory database: `RustSec/advisory-db` commit `2f08fbb85332687b721f2f22706d07448369451b` (commit time `2026-08-18T10:23:07+02:00`), 1,217 advisories.
-- Lockfile: `apps/desktop/src-tauri/Cargo.lock`, canonical LF SHA-256 `29fcea8a19fe4481f2419ea75dea5784dab18011bf0df7f4c4736e263fee1d88`,
-  441 packages. The v1.1.0 release preparation changed only the root package version; the
+- Lockfile: `apps/desktop/src-tauri/Cargo.lock`, canonical LF SHA-256 `2268b0a27f8ab9cd43b4079e6636053cc6b749fe83ee30762238c59da481539c`,
+  441 packages. The v1.1.1 release preparation changed only the root package version; the
   advisory set and dependency graph were re-audited unchanged.
 - Unfiltered result: **0 vulnerabilities; 17 allowed informational warnings** (16 unmaintained, 1 unsound).
 - `--target-os windows --target-arch x86_64` result: also 0 vulnerabilities and 17 warnings. Advisory target filters do not prove dependency reachability when an advisory has no OS/architecture restriction.

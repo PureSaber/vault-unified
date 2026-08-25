@@ -55,3 +55,12 @@ Restore requires an explicit confirmation and accepts an optional old backup pas
 Restore never silently overwrites an active vault without retaining its prior encrypted bytes.
 A failed password, changed candidate, missing file, storage lock, or failed post-commit open
 leaves the user with an error rather than silently continuing with stale in-memory entries.
+
+## Preview-confirmed cleanup
+
+Desktop backup cleanup is a two-phase operation. A dry-run issues a random, single-use token
+that expires after five minutes and belongs to one unlocked session. Applying cleanup requires
+that token and the exact same retention policy. The server deletes only the paths and SHA-256
+digests present in the approved preview; backups created after preview are never added to the
+execution set. A candidate that was changed, pinned, removed, or became unverifiable is skipped
+with an error instead of being deleted.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -300,20 +301,42 @@ def apply_retention_plan(
     newest_count: int = 10,
     daily_days: int = 30,
     weekly_weeks: int = 12,
+    approved_plan: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    plan = retention_plan(
-        vault_path,
-        credential,
-        newest_count=newest_count,
-        daily_days=daily_days,
-        weekly_weeks=weekly_weeks,
-    )
+    if approved_plan is None:
+        plan = retention_plan(
+            vault_path,
+            credential,
+            newest_count=newest_count,
+            daily_days=daily_days,
+            weekly_weeks=weekly_weeks,
+        )
+    else:
+        plan = copy.deepcopy(approved_plan)
+        expected_policy = {
+            "newest_count": newest_count,
+            "daily_days": daily_days,
+            "weekly_weeks": weekly_weeks,
+        }
+        if plan.get("policy") != expected_policy:
+            raise ValueError("Backup cleanup policy changed after preview")
+
+    current_records = {
+        record.path: record for record in list_backups(vault_path, credential)
+    }
     deleted = 0
     reclaimed = 0
     errors: list[str] = []
     for item in plan["delete"]:
         path = Path(item["path"])
         try:
+            current = current_records.get(item["path"])
+            if current is None:
+                raise ValueError("backup is no longer registered")
+            if current.kind != "local_atomic" or current.pinned or not current.verified:
+                raise ValueError("backup is no longer eligible")
+            if current.sha256 != item["sha256"]:
+                raise ValueError("backup changed after retention planning")
             if path.is_symlink() or not path.is_file():
                 raise ValueError("backup disappeared or changed type")
             data = path.read_bytes()

@@ -44,7 +44,7 @@ def create_app(
 
     app = FastAPI(
         title="Vault Unified API",
-        version="1.1.0",
+        version="1.1.1",
         docs_url=docs_url,
         redoc_url=None if docs_url is None else "/redoc",
     )

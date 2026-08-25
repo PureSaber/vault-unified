@@ -112,6 +112,7 @@ class BackupPruneIn(BaseModel):
     newest_count: int = Field(default=10, ge=0, le=1000)
     daily_days: int = Field(default=30, ge=0, le=3650)
     weekly_weeks: int = Field(default=12, ge=0, le=520)
+    preview_token: str | None = Field(default=None, min_length=32, max_length=512)
 
 
 class BackupRestoreIn(BaseModel):

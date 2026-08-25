@@ -213,6 +213,8 @@ export interface BackupPruneResult {
   reclaimed_bytes: number;
   errors: string[];
   summary: BackupSummary;
+  preview_token?: string;
+  expires_at?: string;
 }
 
 export interface SyncPrefs {
@@ -346,11 +348,16 @@ export const api = {
     }),
   pruneBackups: (
     apply: boolean,
-    policy: { newest_count: number; daily_days: number; weekly_weeks: number }
+    policy: { newest_count: number; daily_days: number; weekly_weeks: number },
+    previewToken?: string
   ) =>
     request<BackupPruneResult>("/backups/prune", {
       method: "POST",
-      body: JSON.stringify({ apply, ...policy }),
+      body: JSON.stringify({
+        apply,
+        ...policy,
+        preview_token: previewToken || null,
+      }),
     }),
   restoreBackup: (path: string, password = "", confirmRestore = false) =>
     request<{ restored: string; locked: boolean; message: string }>(

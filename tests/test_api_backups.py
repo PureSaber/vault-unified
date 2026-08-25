@@ -10,6 +10,7 @@ pytest.importorskip("fastapi")
 
 from vault_unified import backup_manager
 from vault_unified.api.app import create_app
+from vault_unified.backup_preview import backup_preview_store
 from vault_unified.manager import UnifiedVault
 from vault_unified.session import sessions
 
@@ -28,6 +29,7 @@ def backup_api(monkeypatch):
         monkeypatch.setattr(backup_manager, "default_backup_dir", lambda: default_dir)
         UnifiedVault.create(vault_file, "backup-password")
         sessions._sessions.clear()
+        backup_preview_store._intents.clear()
         app = create_app(
             bootstrap_secret=BOOTSTRAP_SECRET,
             instance_id="backup-api-test",
@@ -45,6 +47,7 @@ def backup_api(monkeypatch):
             }
             yield client, headers, vault_file, root
         sessions._sessions.clear()
+        backup_preview_store._intents.clear()
 
 
 def test_create_list_pin_and_dry_run_cleanup(backup_api) -> None:
@@ -95,8 +98,84 @@ def test_create_list_pin_and_dry_run_cleanup(backup_api) -> None:
     body = preview.json()
     assert body["applied"] is False
     assert body["deleted_count"] == 0
+    assert len(body["preview_token"]) >= 32
+    assert body["expires_at"]
     assert all(Path(item["path"]).exists() for item in body["delete"])
     assert manual["path"] not in {item["path"] for item in body["delete"]}
+
+
+def test_cleanup_apply_requires_and_consumes_exact_preview(backup_api) -> None:
+    client, headers, vault_file, _ = backup_api
+    for title in ("One", "Two"):
+        created = client.post(
+            "/api/entries",
+            json={"title": title, "password": "synthetic"},
+            headers=headers,
+        )
+        assert created.status_code == 200
+
+    policy = {
+        "newest_count": 0,
+        "daily_days": 0,
+        "weekly_weeks": 0,
+    }
+    preview = client.post(
+        "/api/backups/prune",
+        json={"apply": False, **policy},
+        headers=headers,
+    )
+    assert preview.status_code == 200
+    plan = preview.json()
+    approved_paths = {Path(item["path"]) for item in plan["delete"]}
+    assert approved_paths
+
+    missing_token = client.post(
+        "/api/backups/prune",
+        json={"apply": True, **policy},
+        headers=headers,
+    )
+    assert missing_token.status_code == 409
+    assert all(path.exists() for path in approved_paths)
+
+    changed_after_preview = client.post(
+        "/api/entries",
+        json={"title": "After preview", "password": "synthetic"},
+        headers=headers,
+    )
+    assert changed_after_preview.status_code == 200
+    current_atomic = {
+        path for path, _transaction_id in backup_manager._atomic_backup_candidates(
+            vault_file
+        )
+    }
+    new_paths = current_atomic - approved_paths
+    assert new_paths
+
+    applied = client.post(
+        "/api/backups/prune",
+        json={
+            "apply": True,
+            "preview_token": plan["preview_token"],
+            **policy,
+        },
+        headers=headers,
+    )
+    assert applied.status_code == 200
+    result = applied.json()
+    assert result["deleted_count"] == len(approved_paths)
+    assert all(not path.exists() for path in approved_paths)
+    assert all(path.exists() for path in new_paths)
+
+    replay = client.post(
+        "/api/backups/prune",
+        json={
+            "apply": True,
+            "preview_token": plan["preview_token"],
+            **policy,
+        },
+        headers=headers,
+    )
+    assert replay.status_code == 409
 
 
 def test_restore_requires_confirmation_and_invalidates_session(backup_api) -> None:

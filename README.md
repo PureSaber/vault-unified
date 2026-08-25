@@ -1,4 +1,4 @@
-# Vault Unified v1.1.0
+# Vault Unified v1.1.1
 
 本地加密密码库 + **Tauri 桌面应用** + 多密码源 **双向同步**（Bitwarden、KeePassXC、gopass；Proton Pass 需 Plus）。
 
@@ -233,7 +233,7 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 
 ## 版本
 
-**v1.1.0** — 当前版，包含：
+**v1.1.1** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
 - **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
@@ -248,12 +248,15 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 - 外部服务秘密使用 Windows Credential Manager，普通配置写入 LocalAppData
 - 提供可验证、可固定、预览清理和原子恢复的备份中心
 - 桌面同步采用只读预览 + 一次性确认令牌，默认不启用任何远端源
+- CLI 与桌面版在显式数据目录下共享同一集成配置和备份目录
+- 剪贴板仅在内容仍为刚复制的密码时自动清空，不覆盖用户后续复制内容
+- 备份清理使用会话绑定、单次有效的预览令牌，只执行预览中的精确候选集
 - 原子写入、崩溃恢复和非覆盖式备份；异常事务默认 fail closed
 - 桌面新库默认 Vault Format v3；CLI 创建、迁移与密钥轮换仍为显式操作
 - dry-run 优先的 legacy → v3 迁移、逐字节备份、恢复续作和显式回滚
 - Windows Credential Manager 设备解锁边界和可选回滚锚点
 - 多来源三方同步 ledger、durable operation saga、加密冲突快照和保留式删除 tombstone
 
-v1.1.0 不会自动改写现有 v1/v2/v3 保险库；新建桌面保险库默认使用 v3，legacy CLI/setup 创建路径继续保持兼容。迁移、设备解锁、密钥轮换和回滚仍需显式操作；降级前必须按运行手册恢复兼容备份。
+v1.1.1 不会自动改写现有 v1/v2/v3 保险库；新建桌面保险库默认使用 v3，legacy CLI/setup 创建路径继续保持兼容。迁移、设备解锁、密钥轮换和回滚仍需显式操作；降级前必须按运行手册恢复兼容备份。
 
 GitHub: https://github.com/PureSaber/vault-unified

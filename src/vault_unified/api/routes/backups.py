@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from vault_unified.api.deps import get_token, get_vault
@@ -17,6 +19,11 @@ from vault_unified.backup_manager import (
     restore_backup,
     retention_plan,
     set_backup_pinned,
+)
+from vault_unified.backup_preview import (
+    BackupPreviewExpired,
+    BackupPreviewSessionMismatch,
+    backup_preview_store,
 )
 from vault_unified.manager import UnifiedVault
 from vault_unified.session import sessions
@@ -84,6 +91,7 @@ def pin_backup(
 @router.post("/prune")
 def prune_backups(
     body: BackupPruneIn,
+    token: str = Depends(get_token),
     vault: UnifiedVault = Depends(get_vault),
 ) -> dict:
     kwargs = {
@@ -91,11 +99,34 @@ def prune_backups(
         "daily_days": body.daily_days,
         "weekly_weeks": body.weekly_weeks,
     }
+    policy = (
+        body.newest_count,
+        body.daily_days,
+        body.weekly_weeks,
+    )
     try:
         if body.apply:
+            if not body.preview_token:
+                raise HTTPException(
+                    status_code=409,
+                    detail="A fresh backup cleanup preview token is required",
+                )
+            try:
+                intent = backup_preview_store.consume(
+                    body.preview_token,
+                    session_token=token,
+                )
+            except (BackupPreviewExpired, BackupPreviewSessionMismatch) as exc:
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            if intent.policy != policy:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Backup cleanup policy changed; create a new preview",
+                )
             result = apply_retention_plan(
                 vault.vault_path,
                 vault.local.credential,
+                approved_plan=intent.plan,
                 **kwargs,
             )
         else:
@@ -111,6 +142,21 @@ def prune_backups(
                 "reclaimed_bytes": 0,
                 "errors": [],
             }
+            intent = backup_preview_store.issue(
+                session_token=token,
+                policy=policy,
+                plan=result,
+            )
+            result = {
+                **result,
+                "preview_token": intent.token,
+                "expires_at": datetime.fromtimestamp(
+                    intent.expires_at,
+                    tz=timezone.utc,
+                ).isoformat(),
+            }
+    except HTTPException:
+        raise
     except (OSError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {**result, "summary": _summary(vault)}

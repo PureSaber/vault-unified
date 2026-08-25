@@ -14,6 +14,9 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 
 Write-Host "Installing API deps + PyInstaller ..."
 & $VenvPip install -e ".[api]" pyinstaller | Out-Host
+if ($LASTEXITCODE -ne 0) {
+    throw "pip install failed with exit code $LASTEXITCODE"
+}
 
 $OutDir = Join-Path $RepoRoot "apps\desktop\src-tauri\binaries"
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -58,6 +61,7 @@ $PyInstallerArgs = @(
     "--noconfirm",
     "--clean",
     "--onefile",
+    "--paths", (Join-Path $RepoRoot "src"),
     "--name", "vault-api-sidecar",
     "--distpath", $OutDir,
     "--workpath", (Join-Path $RepoRoot "build\pyinstaller"),

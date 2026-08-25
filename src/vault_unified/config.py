@@ -50,6 +50,12 @@ def get_config_dir() -> Path:
     custom = os.environ.get("VAULT_CONFIG_DIR")
     if custom:
         return Path(custom)
+    # An explicit data root represents the installed application's storage
+    # context even when a developer invokes the CLI from a source checkout.
+    # Keep configuration beside that data root so desktop and CLI processes
+    # cannot silently split integration credentials and backup catalogs.
+    if os.environ.get("VAULT_DATA_DIR"):
+        return get_data_dir() / "config"
     if _looks_like_repo_checkout():
         return get_vault_dir() / "config"
     return get_data_dir() / "config"

@@ -11,6 +11,13 @@ if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "pyproject.toml"))) {
     $RepoRoot = (Resolve-Path -LiteralPath $env:GITHUB_WORKSPACE).Path
 }
 Set-Location -LiteralPath $RepoRoot
+$ValidationTempRoot = if ($env:RUNNER_TEMP) {
+    $env:RUNNER_TEMP
+} elseif ($env:TEMP) {
+    $env:TEMP
+} else {
+    [IO.Path]::GetTempPath()
+}
 
 if (-not $Version) {
     $Version = [string](Get-Content -LiteralPath "apps/desktop/package.json" -Raw | ConvertFrom-Json).version
@@ -160,7 +167,7 @@ function Launch-And-StopInstalledApp {
 
 function Smoke-PackagedSidecar {
     param([System.IO.FileInfo]$Sidecar)
-    $smokeRoot = Join-Path $env:RUNNER_TEMP "vault-unified-sidecar-smoke"
+    $smokeRoot = Join-Path $ValidationTempRoot "vault-unified-sidecar-smoke"
     Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
     $stdout = Join-Path $smokeRoot "sidecar.stdout.log"
@@ -240,6 +247,41 @@ function Smoke-PackagedSidecar {
             if (-not $backup.created.verified -or -not (Test-Path -LiteralPath ([string]$backup.created.path))) {
                 throw "Packaged sidecar did not create and verify an encrypted backup"
             }
+            $cleanupPolicy = @{
+                newest_count = 0
+                daily_days = 0
+                weekly_weeks = 0
+            }
+            $cleanupPreview = Invoke-RestMethod -Method Post -Uri "$base/backups/prune" -Headers $headers -ContentType "application/json" -Body (@{
+                apply = $false
+                newest_count = $cleanupPolicy.newest_count
+                daily_days = $cleanupPolicy.daily_days
+                weekly_weeks = $cleanupPolicy.weekly_weeks
+            } | ConvertTo-Json -Compress)
+            if (([string]$cleanupPreview.preview_token).Length -lt 32 -or -not $cleanupPreview.expires_at) {
+                throw "Packaged sidecar backup cleanup preview did not issue a confirmation token"
+            }
+            $unconfirmedCleanup = Invoke-WebRequest -Method Post -Uri "$base/backups/prune" -Headers $headers -ContentType "application/json" -Body (@{
+                apply = $true
+                newest_count = $cleanupPolicy.newest_count
+                daily_days = $cleanupPolicy.daily_days
+                weekly_weeks = $cleanupPolicy.weekly_weeks
+            } | ConvertTo-Json -Compress) -SkipHttpErrorCheck
+            if ([int]$unconfirmedCleanup.StatusCode -ne 409) {
+                throw "Packaged sidecar allowed backup cleanup without an approved preview"
+            }
+            if ([int]$cleanupPreview.delete_count -gt 0) {
+                $cleanupApplied = Invoke-RestMethod -Method Post -Uri "$base/backups/prune" -Headers $headers -ContentType "application/json" -Body (@{
+                    apply = $true
+                    preview_token = [string]$cleanupPreview.preview_token
+                    newest_count = $cleanupPolicy.newest_count
+                    daily_days = $cleanupPolicy.daily_days
+                    weekly_weeks = $cleanupPolicy.weekly_weeks
+                } | ConvertTo-Json -Compress)
+                if ([int]$cleanupApplied.deleted_count -ne [int]$cleanupPreview.delete_count) {
+                    throw "Packaged sidecar did not execute the exact approved backup cleanup set"
+                }
+            }
             $prefs = Invoke-RestMethod -Method Get -Uri "$base/sync/preferences" -Headers $headers
             if (@($prefs.enabled_sources).Count -ne 0 -or $prefs.auto_push_on_edit -or $prefs.auto_pull_on_sync) {
                 throw "Packaged sidecar did not apply conservative local-only sync defaults"
@@ -283,7 +325,7 @@ Write-Host "=== NSIS install / launch / uninstall smoke ==="
 $nsisInstall = Start-Process -FilePath $nsis.FullName -ArgumentList "/S" -PassThru -Wait
 if ($nsisInstall.ExitCode -ne 0) { throw "NSIS silent install failed with $($nsisInstall.ExitCode)" }
 $nsisApp = Wait-ForVaultExecutable
-Launch-And-StopInstalledApp -App $nsisApp -DataDir (Join-Path $env:RUNNER_TEMP "vault-unified-nsis-app-data")
+Launch-And-StopInstalledApp -App $nsisApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-nsis-app-data")
 $uninstaller = Get-ChildItem -LiteralPath $nsisApp.DirectoryName -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $uninstaller) { throw "NSIS uninstaller was not found beside the installed application" }
 $nsisUninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -PassThru -Wait
@@ -294,7 +336,7 @@ Write-Host "=== MSI install / launch / uninstall smoke ==="
 $msiInstall = Start-Process -FilePath msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
 if (@(0, 3010) -notcontains $msiInstall.ExitCode) { throw "MSI install failed with $($msiInstall.ExitCode)" }
 $msiApp = Wait-ForVaultExecutable
-Launch-And-StopInstalledApp -App $msiApp -DataDir (Join-Path $env:RUNNER_TEMP "vault-unified-msi-app-data")
+Launch-And-StopInstalledApp -App $msiApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-msi-app-data")
 $msiUninstall = Start-Process -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
 if (@(0, 3010) -notcontains $msiUninstall.ExitCode) { throw "MSI uninstall failed with $($msiUninstall.ExitCode)" }
 
@@ -319,6 +361,7 @@ $manifest = [ordered]@{
         rust_tests = "passed-by-required-job"
         rustsec = "passed-by-required-job"
         packaged_sidecar_generated_data_smoke = "passed"
+        backup_cleanup_preview_confirmed = "passed"
         nsis_install_launch_uninstall = "passed"
         msi_install_launch_uninstall = "passed"
     }
