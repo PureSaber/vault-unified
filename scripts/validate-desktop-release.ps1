@@ -49,11 +49,42 @@ function Get-VaultInstallExecutable {
             $item = Get-ItemProperty -Path $key.PSPath -ErrorAction SilentlyContinue
             if (-not $item -or $item.DisplayName -notlike "Vault Unified*") { continue }
             $candidates = @()
+
             $installLocation = Convert-RegistryPath $item.InstallLocation
             if ($installLocation) {
                 $candidates += (Join-Path $installLocation "Vault Unified.exe")
             }
-            $displayIcon = Convert-RegistryPath (([string]$item.DisplayIcon -replace ',\d+
+
+            $displayIcon = ([string]$item.DisplayIcon).Trim()
+            $comma = $displayIcon.LastIndexOf(',')
+            $iconIndex = 0
+            if ($comma -gt 0 -and [int]::TryParse($displayIcon.Substring($comma + 1), [ref]$iconIndex)) {
+                $displayIcon = $displayIcon.Substring(0, $comma)
+            }
+            $displayIcon = Convert-RegistryPath $displayIcon
+            if ($displayIcon) {
+                $candidates += $displayIcon
+            }
+
+            if ($item.UninstallString) {
+                $uninstall = ([string]$item.UninstallString).Trim()
+                if ($uninstall.StartsWith('"')) {
+                    $quote = $uninstall.IndexOf('"', 1)
+                    if ($quote -gt 1) {
+                        $uninstallPath = $uninstall.Substring(1, $quote - 1)
+                        $candidates += (Join-Path (Split-Path $uninstallPath) "Vault Unified.exe")
+                    }
+                }
+            }
+
+            foreach ($candidate in $candidates) {
+                if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+                    return Get-Item -LiteralPath $candidate
+                }
+            }
+        }
+    }
+}
     $direct = @(
         (Join-Path $env:LOCALAPPDATA "Vault Unified\Vault Unified.exe"),
         (Join-Path $env:LOCALAPPDATA "Programs\Vault Unified\Vault Unified.exe"),
