@@ -84,7 +84,8 @@ function Get-VaultInstallExecutable {
             }
         }
     }
-}
+
+    ${env:ProgramFiles(x86)}
     $direct = @(
         (Join-Path $env:LOCALAPPDATA "Vault Unified\Vault Unified.exe"),
         (Join-Path $env:LOCALAPPDATA "Programs\Vault Unified\Vault Unified.exe"),
