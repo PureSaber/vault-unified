@@ -150,6 +150,10 @@ jobs:
           }
           foreach ($record in $manifest.assets) {
             $path = Join-Path $download ([string]$record.name)
+            if (-not (Test-Path -LiteralPath $path)) {
+              $normalizedName = ([string]$record.name).Replace(' ', '.')
+              $path = Join-Path $download $normalizedName
+            }
             if (-not (Test-Path -LiteralPath $path)) { throw "Downloaded asset missing: $($record.name)" }
             $file = Get-Item -LiteralPath $path
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
