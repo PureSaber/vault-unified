@@ -27,6 +27,16 @@ if ($LASTEXITCODE -ne 0 -or $actualSha -ne $SourceSha) {
     throw "Release validation source mismatch: expected $SourceSha, got $actualSha"
 }
 
+function Convert-RegistryPath {
+    param([object]$Value)
+    if ($null -eq $Value) { return "" }
+    $text = ([string]$Value).Trim()
+    if ($text.Length -ge 2 -and $text.StartsWith('"') -and $text.EndsWith('"')) {
+        $text = $text.Substring(1, $text.Length - 2)
+    }
+    return $text.Trim('"')
+}
+
 function Get-VaultInstallExecutable {
     $registryRoots = @(
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
