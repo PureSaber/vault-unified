@@ -38,6 +38,7 @@ function Convert-RegistryPath {
 }
 
 function Get-VaultInstallExecutable {
+    param([switch]$DeepSearch)
     $registryRoots = @(
         "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
         "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
@@ -96,6 +97,21 @@ function Get-VaultInstallExecutable {
     foreach ($candidate in $direct) {
         if (Test-Path -LiteralPath $candidate) {
             return Get-Item -LiteralPath $candidate
+        }
+    }
+    if ($DeepSearch) {
+        $searchRoots = @(
+            $env:LOCALAPPDATA,
+            $env:ProgramFiles,
+            ${env:ProgramFiles(x86)}
+        ) | Where-Object { $_ } | Select-Object -Unique
+        foreach ($root in $searchRoots) {
+            if (-not (Test-Path -LiteralPath $root)) { continue }
+            foreach ($fileName in @("Vault Unified.exe", "vault-unified-desktop.exe")) {
+                $found = Get-ChildItem -LiteralPath $root -Filter $fileName -File -Recurse -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+                if ($found) { return $found }
+            }
         }
     }
     return $null
