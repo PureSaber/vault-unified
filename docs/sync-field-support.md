@@ -12,6 +12,7 @@ the encrypted local vault or refuse a write that would require reconstructing th
 | Primary URL | Read/write | Read/write | Adapter mapping | Read/write |
 | Additional URLs and match rules | Preserved; first URL is editable | Not yet modeled | Not portable | Not yet modeled |
 | Notes | Read/write | Read/write | Read/write | Read/write |
+| Vault Unified tags | Local-only; preserved on pull | Local-only; preserved on pull | Local-only; preserved on pull | Local-only; preserved on pull |
 | Secure Note | Read/write without mapping notes into password | Not yet modeled | Adapter mapping | Not yet modeled |
 | TOTP seed | Preserved on existing and safely recreated personal items | Not yet modeled | Not yet modeled | Not yet modeled |
 | Custom fields | Preserved on existing and safely recreated personal items | Not yet modeled | Not yet modeled | Not yet modeled |
@@ -37,3 +38,7 @@ reconstructed safely by this adapter and silently dropping them would be data lo
 Source-specific metadata is deliberately not part of cross-manager conflict comparison. It
 is refreshed on successful Bitwarden pulls but is never pushed to a different password
 manager as though it were portable data.
+
+Vault Unified tags are also local metadata because none of the current external adapters has
+a lossless native tag mapping. They are excluded from remote read-back conflict comparison
+and are retained when a remote update is accepted.

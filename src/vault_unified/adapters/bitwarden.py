@@ -171,6 +171,8 @@ class BitwardenAdapter(CliAdapter):
         if result.returncode != 0:
             return None
         item = json.loads(result.stdout)
+        if item.get("deletedDate"):
+            return None
         return self._item_to_entry(item)
 
     def create_entry(
@@ -281,6 +283,8 @@ class BitwardenAdapter(CliAdapter):
         return template
 
     def _item_to_entry(self, item: dict[str, Any]) -> SecretEntry | None:
+        if item.get("deletedDate"):
+            return None
         item_type = item.get("type")
         if item_type not in (BITWARDEN_LOGIN, BITWARDEN_SECURE_NOTE):
             return None

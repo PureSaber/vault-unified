@@ -165,6 +165,7 @@ def apply_resolution(
         winner.id = local.id
         winner.created_at = local.created_at
         winner.linked_sources = {**local.linked_sources, **remote.linked_sources}
+        winner.tags = list(local.tags)
     elif choice == "merge" and merged:
         winner = merged
         winner.id = local.id

@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 LEDGER_VERSION = 1
 TOMBSTONE_RETENTION_DAYS = 30
 CONTENT_FIELDS = ("title", "username", "password", "url", "notes", "tags")
+REMOTE_SYNC_FIELDS = ("title", "username", "password", "url", "notes")
 OPERATION_KINDS = frozenset({"create", "update", "delete"})
 OPERATION_STATES = frozenset({"intent", "unknown", "acknowledged"})
 
@@ -89,6 +90,28 @@ def content_fingerprint(value: Any) -> str:
     snapshot = entry_snapshot(value) if not isinstance(value, dict) else validate_snapshot(value)
     encoded = json.dumps(
         snapshot,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def remote_sync_fingerprint(value: Any) -> str:
+    """Fingerprint fields supported by the current external adapters.
+
+    Tags are local Vault Unified metadata. None of the external adapters expose a
+    lossless tag mapping, so including tags in remote read-back comparison creates
+    false conflicts and can erase local tags during pull.
+    """
+    snapshot = (
+        entry_snapshot(value)
+        if not isinstance(value, dict)
+        else validate_snapshot(value)
+    )
+    portable = {name: snapshot[name] for name in REMOTE_SYNC_FIELDS}
+    encoded = json.dumps(
+        portable,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),

@@ -180,3 +180,22 @@ def test_source_metadata_round_trips_without_changing_legacy_empty_shape() -> No
     )
     restored = SecretEntry.from_dict(enriched.to_dict())
     assert restored.source_metadata == enriched.source_metadata
+
+
+def test_trashed_item_is_treated_as_deleted() -> None:
+    adapter = BitwardenAdapter()
+    trashed = {
+        "id": "item-in-trash",
+        "type": BITWARDEN_LOGIN,
+        "name": "Disposable",
+        "deletedDate": "2026-08-27T08:37:59Z",
+        "login": {
+            "username": "generated-user",
+            "password": "generated-secret",
+        },
+    }
+
+    with patch.object(adapter, "_bw", return_value=_completed(json.dumps(trashed))):
+        assert adapter.get_entry("item-in-trash") is None
+
+    assert adapter._item_to_entry(trashed) is None

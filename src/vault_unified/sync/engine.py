@@ -26,8 +26,8 @@ from vault_unified.sync.ledger import (
     Tombstone,
     apply_snapshot,
     capabilities_for,
-    content_fingerprint,
     entry_snapshot,
+    remote_sync_fingerprint,
 )
 from vault_unified.sync_prefs import load_prefs, save_prefs
 
@@ -161,6 +161,12 @@ class SyncEngine:
         linked_id = external_id or entry.get_linked_id(source)
         return entry.sync_ledger.replica(source.value, linked_id, capabilities)
 
+    @staticmethod
+    def _base_remote_fingerprint(replica: ReplicaState) -> str:
+        if replica.base_snapshot is None:
+            return ""
+        return remote_sync_fingerprint(replica.base_snapshot)
+
     def _remove_source_conflict(self, entry_id: str, source: Source) -> None:
         for conflict_id, record in list(self._conflicts.items()):
             if record.entry_id == entry_id and record.remote_source == source:
@@ -201,7 +207,9 @@ class SyncEngine:
         replica: ReplicaState,
         capabilities: AdapterCapabilities,
     ) -> None:
+        local_tags = list(local.tags)
         apply_snapshot(local, entry_snapshot(remote))
+        local.tags = local_tags
         local.updated_at = remote.updated_at
         local.remote_updated_at = remote.remote_updated_at
         local.sync_ledger.new_content_revision()
@@ -255,8 +263,8 @@ class SyncEngine:
     ) -> str:
         external_id = remote.get_linked_id(source) or remote.external_id
         replica = self._replica(local, source, capabilities, external_id)
-        local_fingerprint = content_fingerprint(local)
-        remote_fingerprint = content_fingerprint(remote)
+        local_fingerprint = remote_sync_fingerprint(local)
+        remote_fingerprint = remote_sync_fingerprint(remote)
         if replica.base_snapshot is None:
             if local.sync_status in {SyncStatus.DIRTY, SyncStatus.CONFLICT} and (
                 local_fingerprint != remote_fingerprint
@@ -265,7 +273,7 @@ class SyncEngine:
                 return "conflict"
             self._accept_remote(local, remote, source, replica, capabilities)
             return "updated"
-        base_fingerprint = replica.base_fingerprint
+        base_fingerprint = self._base_remote_fingerprint(replica)
         local_changed = local_fingerprint != base_fingerprint
         remote_changed = remote_fingerprint != base_fingerprint
         if not local_changed and not remote_changed:
@@ -321,7 +329,9 @@ class SyncEngine:
             remote = self._local_from_remote(entry, source)
             apply_snapshot(remote, replica.base_snapshot)
             remote.external_id = replica.external_id
-            if content_fingerprint(entry) != replica.base_fingerprint:
+            if remote_sync_fingerprint(entry) != remote_sync_fingerprint(
+                replica.base_snapshot
+            ):
                 self._create_conflict(
                     entry, remote, source, replica, remote_deleted=True
                 )
@@ -454,19 +464,24 @@ class SyncEngine:
             if remote is None and capabilities.delete_confirm:
                 self._ack_delete(entry, source, replica)
                 return "acknowledged"
-            if remote is not None and replica.base_fingerprint == content_fingerprint(remote):
+            if remote is not None and self._base_remote_fingerprint(
+                replica
+            ) == remote_sync_fingerprint(remote):
                 return "retry"
             operation.state = "unknown"
             self.vault.local.replace_entry(entry)
             raise SyncOperationPending(
                 "Delete outcome conflicts with remote state; retry is blocked"
             )
-        if remote is not None and content_fingerprint(remote) == content_fingerprint(entry):
+        if remote is not None and remote_sync_fingerprint(
+            remote
+        ) == remote_sync_fingerprint(entry):
             self._ack_replica(entry, replica, remote, capabilities)
             self.vault.local.replace_entry(entry)
             return "acknowledged"
         if operation.kind == "update" and remote is not None and (
-            replica.base_fingerprint == content_fingerprint(remote)
+            self._base_remote_fingerprint(replica)
+            == remote_sync_fingerprint(remote)
         ):
             return "retry"
         if operation.kind == "create" and remote is None and capabilities.idempotent_create:
@@ -514,7 +529,7 @@ class SyncEngine:
             remote = adapter.get_entry(external_id)
             if remote is None:
                 raise RuntimeError("Remote write could not be read back")
-            if content_fingerprint(remote) != content_fingerprint(entry):
+            if remote_sync_fingerprint(remote) != remote_sync_fingerprint(entry):
                 self._create_conflict(entry, remote, source, replica)
                 operation.state = "unknown"
                 self._persist_conflicts()
@@ -777,6 +792,10 @@ class SyncEngine:
                     ),
                     local_revision=resolved.sync_ledger.content_revision,
                 )
+                operation = replica.pending
+                if operation is not None:
+                    replica.last_operation_id = operation.operation_id
+                    replica.pending = None
         del self._conflicts[conflict_id]
         self._refresh_status(resolved)
         self.vault.local._entries[resolved.id] = resolved

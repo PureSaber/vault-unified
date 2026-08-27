@@ -10,7 +10,7 @@ from vault_unified.api.app import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.1.2"
+EXPECTED_VERSION = "1.1.3"
 
 
 def test_release_version_is_consistent_across_build_surfaces() -> None:
