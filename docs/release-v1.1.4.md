@@ -28,7 +28,7 @@ databases. It retains all v1.1.3 Bitwarden sync-state corrections.
   local edit/push/read-back, recoverable delete/tombstone acknowledgement, restart, and final
   clean sync.
 - A grouped KDBX entry was listed and read with its complete `group/entry` external ID.
-- The Python regression suite passes 236 tests, including explicit coverage for current CLI
+- The Python regression suite passes 237 tests, including explicit coverage for current CLI
   read syntax, database availability, full grouped paths, and language-independent recycle-bin
   filtering.
 
