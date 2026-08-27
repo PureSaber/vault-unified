@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from vault_unified.adapters.base import AdapterCapabilities, CliAdapter
@@ -42,8 +43,11 @@ class KeePassXCAdapter(CliAdapter):
     def is_available(self) -> bool:
         if not self.is_configured():
             return False
-        result = self._run_db(["ls"])
-        return result.returncode == 0
+        try:
+            self._list_entry_paths()
+        except RuntimeError:
+            return False
+        return True
 
     def _run_db(
         self,
@@ -67,29 +71,78 @@ class KeePassXCAdapter(CliAdapter):
         return self._run(cmd, input_text=stdin)
 
     def list_entries(self) -> list[SecretEntry]:
+        paths = self._list_entry_paths()
+        entries: list[SecretEntry] = []
+        for path in paths:
+            entry = self._read_entry(path)
+            if entry:
+                entries.append(entry)
+        return entries
+
+    def _list_entry_paths(self) -> list[str]:
         db = self._db_path()
         assert db is not None
-        settings = self._settings()
-        group = settings.get("KEEPASSXC_GROUP", "")
-        ls_args = ["ls", "-R", str(db)]
+        group = self._settings().get("KEEPASSXC_GROUP", "")
+        # Flat recursive output preserves the complete group path for every
+        # entry.  Tree output only exposes the leaf name, which is ambiguous
+        # across groups and cannot round-trip an external ID.
+        ls_args = ["ls", "-R", "-f", str(db)]
         if group:
             ls_args.append(group)
         result = self._run_db(ls_args)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to list KeePassXC entries")
         paths = self._parse_ls_paths(result.stdout)
-        entries: list[SecretEntry] = []
-        for path in paths:
-            entry = self.get_entry(path)
-            if entry:
-                entries.append(entry)
-        return entries
+        if group:
+            prefix = f"{group.rstrip('/')}/"
+            paths = [
+                path if path.startswith(prefix) else f"{prefix}{path}"
+                for path in paths
+            ]
+        recycle_bin = self._recycle_bin_group_name()
+        if recycle_bin:
+            recycle_prefix = f"{recycle_bin.rstrip('/')}/"
+            paths = [
+                path
+                for path in paths
+                if path != recycle_bin and not path.startswith(recycle_prefix)
+            ]
+        return paths
 
-    def get_entry(self, external_id: str) -> SecretEntry | None:
+    def _recycle_bin_group_name(self) -> str:
         db = self._db_path()
         assert db is not None
-        # -s/--show-protected reveals Password; -a alone may return PROTECTED.
-        result = self._run_db(["show", "-s", "-a", str(db), external_id])
+        result = self._run_db(["export", "--format", "xml", str(db)])
+        if result.returncode != 0:
+            raise RuntimeError(
+                result.stderr.strip()
+                or "Failed to identify the KeePassXC recycle bin"
+            )
+        try:
+            document = ET.fromstring(result.stdout)
+        except ET.ParseError as exc:
+            raise RuntimeError("KeePassXC XML export was malformed") from exc
+        recycle_uuid = (document.findtext("./Meta/RecycleBinUUID") or "").strip()
+        if not recycle_uuid:
+            return ""
+        for group in document.findall("./Root//Group"):
+            if (group.findtext("UUID") or "").strip() == recycle_uuid:
+                return (group.findtext("Name") or "").strip()
+        return ""
+
+    def get_entry(self, external_id: str) -> SecretEntry | None:
+        if external_id not in self._list_entry_paths():
+            return None
+        return self._read_entry(external_id)
+
+    def _read_entry(self, external_id: str) -> SecretEntry | None:
+        db = self._db_path()
+        assert db is not None
+        # --show-protected reveals Password and --all retains the standard
+        # field labels (Title, UserName, Password, URL, Notes).  `-a` takes
+        # an attribute name in current KeePassXC releases, so using it without
+        # a value shifts the database path into the option and makes reads fail.
+        result = self._run_db(["show", "-s", "--all", str(db), external_id])
         if result.returncode != 0:
             return None
         return self._parse_show(external_id, result.stdout)
@@ -146,6 +199,10 @@ class KeePassXCAdapter(CliAdapter):
         result = self._run_db(["rm", str(db), external_id])
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or "Failed to delete KeePassXC entry")
+        # KeePassXC moves entries to its recycle bin.  `_list_entry_paths`
+        # excludes that language-independent recycle-bin group, so follow-up
+        # sync reads treat the entry as deleted while preserving recoverability
+        # in the native KeePassXC database.
 
     def _entry_path(self, entry: SecretEntry) -> str:
         linked = entry.get_linked_id(Source.KEEPASSXC)

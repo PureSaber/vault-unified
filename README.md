@@ -1,4 +1,4 @@
-# Vault Unified v1.1.3
+# Vault Unified v1.1.4
 
 本地加密密码库 + **Tauri 桌面应用** + 多密码源 **双向同步**（Bitwarden、KeePassXC、gopass；Proton Pass 需 Plus）。
 
@@ -233,7 +233,7 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 
 ## 版本
 
-**v1.1.3** — 当前版，包含：
+**v1.1.4** — 当前版，包含：
 
 - 本地加密库 + CLI（`vault.cmd`）+ Tauri 桌面（中英切换）
 - **PyInstaller API sidecar** 打进安装包（`scripts/build-desktop-release.ps1`）
@@ -255,12 +255,14 @@ FastAPI sidecar（127.0.0.1 随机端口；每次启动新实例）
 - 外部源往返比较不再把本地 tag 误判为远端差异；远端更新保留本地 tag
 - 接受远端冲突版本会同时确认对应挂起操作，不再残留无效 dirty 状态
 - Bitwarden 回收站条目按已删除确认；已完成远端确认的保留 tombstone 不计入 dirty
+- KeePassXC 2.7.x 的连接检查、读取参数与分组路径均与官方 CLI 输出保持一致
+- KeePassXC 回收站按已删除处理：同步会保留其原生可恢复副本，但不会重新导入或卡住 tombstone 确认
 - 原子写入、崩溃恢复和非覆盖式备份；异常事务默认 fail closed
 - 桌面新库默认 Vault Format v3；CLI 创建、迁移与密钥轮换仍为显式操作
 - dry-run 优先的 legacy → v3 迁移、逐字节备份、恢复续作和显式回滚
 - Windows Credential Manager 设备解锁边界和可选回滚锚点
 - 多来源三方同步 ledger、durable operation saga、加密冲突快照和保留式删除 tombstone
 
-v1.1.3 不会自动改写现有 v1/v2/v3 保险库；新建桌面保险库默认使用 v3，legacy CLI/setup 创建路径继续保持兼容。迁移、设备解锁、密钥轮换和回滚仍需显式操作；降级前必须按运行手册恢复兼容备份。
+v1.1.4 不会自动改写现有 v1/v2/v3 保险库；新建桌面保险库默认使用 v3，legacy CLI/setup 创建路径继续保持兼容。迁移、设备解锁、密钥轮换和回滚仍需显式操作；降级前必须按运行手册恢复兼容备份。
 
 GitHub: https://github.com/PureSaber/vault-unified
