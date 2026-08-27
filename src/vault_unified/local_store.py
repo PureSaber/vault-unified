@@ -78,11 +78,17 @@ class LocalVault:
         return sorted(entries, key=lambda e: e.title.lower())
 
     def list_dirty(self) -> list[SecretEntry]:
-        return [
-            e
-            for e in self._entries.values()
-            if e.sync_status in (SyncStatus.DIRTY, SyncStatus.DELETED_PENDING)
-        ]
+        dirty: list[SecretEntry] = []
+        for entry in self._entries.values():
+            if entry.sync_status == SyncStatus.DIRTY:
+                dirty.append(entry)
+                continue
+            if entry.sync_status != SyncStatus.DELETED_PENDING:
+                continue
+            tombstone = entry.sync_ledger.tombstone
+            if tombstone is None or tombstone.pending_sources():
+                dirty.append(entry)
+        return dirty
 
     def list_conflicts(self) -> list[SecretEntry]:
         return [e for e in self._entries.values() if e.sync_status == SyncStatus.CONFLICT]

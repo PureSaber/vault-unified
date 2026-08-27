@@ -31,6 +31,7 @@ from vault_unified.sync.ledger import (
     Tombstone,
     content_fingerprint,
     entry_snapshot,
+    remote_sync_fingerprint,
 )
 from vault_unified.sync_prefs import save_prefs
 
@@ -529,6 +530,7 @@ def test_local_delete_persists_tombstone_before_remote_call_and_never_auto_purge
     persisted = LocalVault(path, FAKE_PASSWORD)
     assert soft_deleted is not None
     assert soft_deleted.sync_status == SyncStatus.DELETED_PENDING
+    assert vault.local.list_dirty() == [soft_deleted]
     assert vault.local.list_entries() == []
     assert persisted.get(local.id).sync_status == SyncStatus.DELETED_PENDING
     assert persisted.list_entries() == []
@@ -541,8 +543,85 @@ def test_local_delete_persists_tombstone_before_remote_call_and_never_auto_purge
     assert observed == {"tombstone": True}
     assert stored is not None
     assert stored.sync_ledger.tombstone.pending_sources() == []
+    assert vault.local.list_dirty() == []
     with pytest.raises(ValueError, match="retention"):
         engine.purge_tombstone(local.id)
+
+
+def test_remote_round_trip_ignores_and_preserves_local_tags(vault_setup) -> None:
+    vault, engine, _ = vault_setup
+    entry = SecretEntry(
+        title="Synthetic tagged entry",
+        password=LOCAL_SECRET,
+        tags=["local-only", "generated"],
+    )
+    vault.local.add(entry)
+    adapter = FakeAdapter(Source.BITWARDEN)
+    original_create = adapter.create_entry
+
+    def create_without_tags(candidate, *, operation_id=None):
+        created = original_create(candidate, operation_id=operation_id)
+        external_id = created.get_linked_id(Source.BITWARDEN)
+        adapter.entries[external_id].tags = []
+        created.tags = []
+        return created
+
+    adapter.create_entry = create_without_tags
+    with patch("vault_unified.sync.engine.get_adapter", return_value=adapter):
+        result = engine.push_entry(entry.id)
+
+    stored = vault.local.get(entry.id)
+    assert result == {"pushed": 1, "errors": 0}
+    assert stored.tags == ["local-only", "generated"]
+    assert stored.sync_status == SyncStatus.CLEAN
+    assert engine.list_conflicts() == []
+
+    remote_id = stored.get_linked_id(Source.BITWARDEN)
+    adapter.entries[remote_id].notes = "generated remote update"
+    adapter.entries[remote_id].remote_updated_at = "revision-remote-update"
+    with patch("vault_unified.sync.engine.get_adapter", return_value=adapter):
+        pulled = engine.pull_source(Source.BITWARDEN)
+
+    stored = vault.local.get(entry.id)
+    assert pulled["updated"] == 1
+    assert stored.notes == "generated remote update"
+    assert stored.tags == ["local-only", "generated"]
+    assert stored.sync_status == SyncStatus.CLEAN
+
+
+def test_remote_conflict_resolution_clears_unknown_pending_operation(
+    vault_setup,
+) -> None:
+    vault, engine, _ = vault_setup
+    entry = SecretEntry(
+        title="Synthetic pending conflict",
+        password=LOCAL_SECRET,
+        tags=["local-only"],
+    )
+    vault.local.add(entry)
+    adapter = FakeAdapter(Source.BITWARDEN)
+    original_create = adapter.create_entry
+
+    def create_with_remote_difference(candidate, *, operation_id=None):
+        created = original_create(candidate, operation_id=operation_id)
+        external_id = created.get_linked_id(Source.BITWARDEN)
+        adapter.entries[external_id].notes = "generated remote canonical note"
+        return created
+
+    adapter.create_entry = create_with_remote_difference
+    with patch("vault_unified.sync.engine.get_adapter", return_value=adapter):
+        result = engine.push_entry(entry.id)
+        conflict = engine.list_conflicts()[0]
+        resolved = engine.resolve_conflict(conflict.id, "remote")
+
+    replica = resolved.sync_ledger.replicas[Source.BITWARDEN.value]
+    assert result == {"pushed": 0, "errors": 1}
+    assert resolved.notes == "generated remote canonical note"
+    assert resolved.tags == ["local-only"]
+    assert replica.pending is None
+    assert replica.last_operation_id == adapter.create_operation_ids[0]
+    assert resolved.sync_status == SyncStatus.CLEAN
+    assert engine.list_conflicts() == []
 
 
 def test_disabled_replica_stays_pending_until_explicit_abandon_and_retention(
@@ -712,6 +791,11 @@ def test_content_fingerprint_is_deterministic_and_secret_sensitive() -> None:
     changed = dict(snapshot)
     changed["password"] = REMOTE_SECRET
     assert content_fingerprint(changed) != content_fingerprint(snapshot)
+
+    retagged = dict(snapshot)
+    retagged["tags"] = ["different-local-tag"]
+    assert content_fingerprint(retagged) != content_fingerprint(snapshot)
+    assert remote_sync_fingerprint(retagged) == remote_sync_fingerprint(snapshot)
 
 
 def test_empty_ledger_parser_rejects_unknown_conflict_shape() -> None:

@@ -16,8 +16,8 @@ from vault_unified.sync.engine import SyncEngine, SyncResult
 from vault_unified.sync.ledger import (
     Tombstone,
     capabilities_for,
-    content_fingerprint,
     entry_snapshot,
+    remote_sync_fingerprint,
 )
 from vault_unified.sync.preview import canonical_digest
 from vault_unified.sync_prefs import load_prefs, save_prefs
@@ -47,8 +47,8 @@ class MetadataPreservingSyncEngine(SyncEngine):
         remote: SecretEntry,
         source: Source,
     ) -> str:
-        local_fingerprint = content_fingerprint(local)
-        remote_fingerprint = content_fingerprint(remote)
+        local_fingerprint = remote_sync_fingerprint(local)
+        remote_fingerprint = remote_sync_fingerprint(remote)
         replica = local.sync_ledger.replicas.get(source.value)
         if replica is None or replica.base_snapshot is None:
             if local.sync_status in {SyncStatus.DIRTY, SyncStatus.CONFLICT} and (
@@ -57,7 +57,7 @@ class MetadataPreservingSyncEngine(SyncEngine):
                 return "conflict"
             return "updated"
 
-        base_fingerprint = replica.base_fingerprint
+        base_fingerprint = remote_sync_fingerprint(replica.base_snapshot)
         local_changed = local_fingerprint != base_fingerprint
         remote_changed = remote_fingerprint != base_fingerprint
         if not local_changed and not remote_changed:
@@ -232,8 +232,8 @@ class MetadataPreservingSyncEngine(SyncEngine):
                             ):
                                 continue
                             if (
-                                content_fingerprint(local)
-                                != replica.base_fingerprint
+                                remote_sync_fingerprint(local)
+                                != remote_sync_fingerprint(replica.base_snapshot)
                             ):
                                 pull_counts["conflict"] += 1
                             else:
