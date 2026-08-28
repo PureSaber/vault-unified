@@ -42,3 +42,11 @@ manager as though it were portable data.
 Vault Unified tags are also local metadata because none of the current external adapters has
 a lossless native tag mapping. They are excluded from remote read-back conflict comparison
 and are retained when a remote update is accepted.
+
+## gopass behavior
+
+gopass paths are normalized for portable, stable external IDs and therefore cannot always
+reconstruct a Vault Unified display title. Entries written by Vault Unified retain the original
+title in a `title:` line after the password. The adapter reads that line on pull; existing gopass
+entries without it continue to use the final path component as their title. The remaining portable
+fields use `username:` and `url:` lines followed by free-form notes.

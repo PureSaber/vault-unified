@@ -27,7 +27,23 @@ class GopassAdapter(CliAdapter):
 
     @staticmethod
     def _env() -> dict[str, str]:
-        return source_environment(Source.GOPASS.value)
+        env = source_environment(Source.GOPASS.value)
+        store = GopassAdapter._settings().get("GOPASS_STORE", "").strip()
+        if not store:
+            return env
+
+        # gopass uses ``mounts.path`` for its active root store.  Its
+        # ``PASSWORD_STORE_DIR`` compatibility variable only works while
+        # initializing a store, so map Vault Unified's runtime Store path
+        # setting through gopass' documented environment configuration API.
+        try:
+            config_count = max(0, int(env.get("GOPASS_CONFIG_COUNT", "0")))
+        except ValueError:
+            config_count = 0
+        env[f"GOPASS_CONFIG_KEY_{config_count}"] = "mounts.path"
+        env[f"GOPASS_CONFIG_VALUE_{config_count}"] = store
+        env["GOPASS_CONFIG_COUNT"] = str(config_count + 1)
+        return env
 
     def is_configured(self) -> bool:
         return super().is_configured()
@@ -111,6 +127,8 @@ class GopassAdapter(CliAdapter):
 
     def _format_body(self, entry: SecretEntry) -> str:
         lines = [entry.password or ""]
+        if entry.title:
+            lines.append(f"title: {entry.title}")
         if entry.username:
             lines.append(f"username: {entry.username}")
         if entry.url:
@@ -122,18 +140,20 @@ class GopassAdapter(CliAdapter):
     def _parse_show(self, path: str, output: str) -> SecretEntry:
         lines = [ln for ln in output.splitlines() if ln.strip()]
         password = lines[0] if lines else ""
+        title = path.rsplit("/", 1)[-1]
         username = ""
         url = ""
         notes_lines: list[str] = []
         for line in lines[1:]:
             lower = line.lower()
-            if lower.startswith("username:"):
+            if lower.startswith("title:"):
+                title = line.split(":", 1)[1].strip() or title
+            elif lower.startswith("username:"):
                 username = line.split(":", 1)[1].strip()
             elif lower.startswith("url:"):
                 url = line.split(":", 1)[1].strip()
             else:
                 notes_lines.append(line)
-        title = path.rsplit("/", 1)[-1]
         entry = SecretEntry(
             title=title,
             username=username,

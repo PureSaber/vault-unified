@@ -23,9 +23,24 @@ def test_entry_path_slug(adapter):
     assert adapter._entry_path(entry) == "services/git-hub"
 
 
+def test_store_path_uses_gopass_runtime_config_override(adapter, monkeypatch):
+    monkeypatch.setenv("GOPASS_STORE", r"C:\isolated\gopass-store")
+    monkeypatch.setenv("GOPASS_CONFIG_COUNT", "1")
+    monkeypatch.setenv("GOPASS_CONFIG_KEY_0", "show.autoclip")
+    monkeypatch.setenv("GOPASS_CONFIG_VALUE_0", "false")
+
+    env = adapter._env()
+
+    assert env["GOPASS_CONFIG_COUNT"] == "2"
+    assert env["GOPASS_CONFIG_KEY_0"] == "show.autoclip"
+    assert env["GOPASS_CONFIG_VALUE_0"] == "false"
+    assert env["GOPASS_CONFIG_KEY_1"] == "mounts.path"
+    assert env["GOPASS_CONFIG_VALUE_1"] == r"C:\isolated\gopass-store"
+
+
 def test_list_entries(adapter):
     ls_out = "services/github\nservices/other\n"
-    show_github = "ghp_token\nusername: repo\nurl: https://github.com\n"
+    show_github = "ghp_token\ntitle: GitHub Account\nusername: repo\nurl: https://github.com\n"
 
     def fake_run(cmd, **kwargs):
         if cmd[:2] == ["ls", "--flat"]:
@@ -41,6 +56,7 @@ def test_list_entries(adapter):
 
     assert len(entries) == 2
     gh = next(e for e in entries if e.external_id == "services/github")
+    assert gh.title == "GitHub Account"
     assert gh.password == "ghp_token"
     assert gh.username == "repo"
     assert gh.url == "https://github.com"
@@ -53,6 +69,7 @@ def test_create_entry_uses_insert_force(adapter):
         assert cmd[:3] == ["insert", "-f", "services/github"]
         body = kwargs.get("input_text", "")
         assert "p\n" in body
+        assert "title: GitHub" in body
         assert "username: u" in body
         return _completed()
 
