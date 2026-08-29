@@ -150,6 +150,41 @@ export interface Entry {
   tags: string[];
   sync_status: string;
   linked_sources: Record<string, string>;
+  entry_type: "login" | "secure_note" | "card" | "identity" | "ssh_key" | "recovery_code";
+  custom_fields: Array<{ label: string; value: string; concealed: boolean }>;
+  totp_secret: string;
+  has_totp_secret: boolean;
+  attachments: Attachment[];
+  history_count: number;
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size: number;
+  sha256: string;
+}
+
+export interface PersonalSettings {
+  lock_after_seconds: number;
+  auto_backup_enabled: boolean;
+  auto_backup_interval_hours: number;
+  auto_backup_destination: string;
+  last_auto_backup_at: string;
+}
+
+export interface MaintenanceNotice {
+  code: string;
+  level: "info" | "error";
+  message: string;
+}
+
+export interface BrowserPairing {
+  sidecar_url: string;
+  pairing_code: string;
+  expires_in_seconds: number;
+  message: string;
 }
 
 export interface IntegrationField {
@@ -310,6 +345,23 @@ export const api = {
   updateEntry: (id: string, data: Partial<Entry>) =>
     request<Entry>(`/entries/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   deleteEntry: (id: string) => request(`/entries/${id}`, { method: "DELETE" }),
+  addAttachment: (id: string, filename: string, mimeType: string, dataB64: string) =>
+    request<{ attachment: Attachment; entry: Entry }>(`/entries/${id}/attachments`, {
+      method: "POST",
+      body: JSON.stringify({ filename, mime_type: mimeType, data_b64: dataB64 }),
+    }),
+  removeAttachment: (id: string, attachmentId: string) =>
+    request<{ deleted: string; entry: Entry }>(`/entries/${id}/attachments/${attachmentId}`, {
+      method: "DELETE",
+    }),
+  downloadAttachment: (id: string, attachmentId: string) =>
+    request<Attachment & { data_b64: string }>(`/entries/${id}/attachments/${attachmentId}`),
+  entryHistory: (id: string, reveal = false) =>
+    request<{ history: Array<{ id: string; saved_at: string; snapshot: Record<string, unknown> }> }>(
+      `/entries/${id}/history?reveal=${reveal}`
+    ),
+  restoreEntryHistory: (id: string, historyId: string) =>
+    request<Entry>(`/entries/${id}/history/${historyId}/restore`, { method: "POST" }),
   copy: (id: string, field = "password") =>
     request(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
   generate: (length = 20, symbols = true) =>
@@ -372,6 +424,63 @@ export const api = {
       }
     ),
   status: () => request<{ components: Record<string, string> }>("/status"),
+  getPersonalSettings: () => request<PersonalSettings>("/personal/settings"),
+  savePersonalSettings: (settings: Partial<PersonalSettings>) =>
+    request<PersonalSettings>("/personal/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
+  runMaintenance: () =>
+    request<{ settings: PersonalSettings; components: Record<string, string>; notices: MaintenanceNotice[] }>(
+      "/personal/maintenance",
+      { method: "POST" }
+    ),
+  exportTransfer: (format: "json" | "csv") =>
+    request<{ format: string; filename: string; mime_type: string; content: string; warning: string }>(
+      "/transfer/export",
+      { method: "POST", body: JSON.stringify({ format, confirm_plaintext: true }) }
+    ),
+  importTransfer: (format: "json" | "csv", content: string) =>
+    request<{ imported: number; warning: string }>("/transfer/import", {
+      method: "POST",
+      body: JSON.stringify({ format, content, confirm_plaintext: true }),
+    }),
+  newRecoveryCode: () => request<{ recovery_code: string }>("/auth/recovery-code", { method: "POST" }),
+  createRecoveryKit: (recoveryCode: string, destinationDir?: string) =>
+    request<{ path: string; message: string }>("/auth/recovery-kit", {
+      method: "POST",
+      body: JSON.stringify({
+        recovery_code: recoveryCode,
+        confirm_recovery_code: recoveryCode,
+        destination_dir: destinationDir || null,
+      }),
+    }),
+  recoverFromKit: (
+    kitPath: string,
+    recoveryCode: string,
+    newPassword: string,
+    confirmNewPassword: string,
+  ) =>
+    request<{ token: string; message: string }>("/auth/recover", {
+      method: "POST",
+      body: JSON.stringify({
+        kit_path: kitPath,
+        recovery_code: recoveryCode,
+        new_password: newPassword,
+        confirm_new_password: confirmNewPassword,
+        confirm_recovery: true,
+      }),
+    }),
+  createBrowserPairing: async (): Promise<BrowserPairing> => {
+    const [result, config] = await Promise.all([
+      request<{ pairing_code: string; expires_in_seconds: number; message: string }>(
+        "/browser/pairing-code",
+        { method: "POST" },
+      ),
+      runtimeConfig(),
+    ]);
+    return { ...result, sidecar_url: config.base_url };
+  },
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
   savePrefs: (prefs: Partial<SyncPrefs>) =>
     request<SyncPrefs>("/sync/preferences", {

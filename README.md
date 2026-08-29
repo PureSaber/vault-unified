@@ -53,6 +53,7 @@ Vault Format v3 的兼容边界见 [`docs/vault-format-compatibility.md`](docs/v
 Legacy → v3 的 dry-run、显式迁移、崩溃续作与逐字节回滚见 [`docs/vault-v3-migration.md`](docs/vault-v3-migration.md)。
 V3 设备解锁、Windows keyring allowlist 与可选回滚锚点见 [`docs/vault-v3-keyring.md`](docs/vault-v3-keyring.md)。
 多来源三方比较、durable saga、冲突快照与删除 tombstone 见 [`docs/sync-ledger.md`](docs/sync-ledger.md)。
+个人自动备份、条目扩展、恢复包、浏览器填充与移动端边界见 [`docs/personal-edition.md`](docs/personal-edition.md)。
 
 ## 同步命令
 

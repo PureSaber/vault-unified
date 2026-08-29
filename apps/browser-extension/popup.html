@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Vault Unified Fill</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <h1>Vault Unified</h1>
+      <p id="status" role="status">Loading…</p>
+      <form id="pair-form" hidden>
+        <label>Local address<input id="sidecar-url" type="url" placeholder="http://127.0.0.1:12345" required></label>
+        <label>One-time pairing code<input id="pairing-code" type="password" required></label>
+        <button type="submit">Pair this browser</button>
+      </form>
+      <section id="matches" hidden aria-live="polite"></section>
+      <button id="forget" type="button" hidden>Forget pairing</button>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

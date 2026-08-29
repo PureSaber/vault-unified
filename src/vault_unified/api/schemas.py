@@ -22,6 +22,25 @@ class RestoreVaultRequest(BaseModel):
     remember: bool = False
 
 
+class RecoveryKitCreateIn(BaseModel):
+    recovery_code: str = Field(min_length=32, max_length=512)
+    confirm_recovery_code: str = Field(min_length=32, max_length=512)
+    destination_dir: str | None = Field(default=None, max_length=32768)
+
+
+class EmergencyRecoveryIn(BaseModel):
+    kit_path: str = Field(min_length=1, max_length=32768)
+    recovery_code: str = Field(min_length=32, max_length=512)
+    new_password: str = Field(min_length=1, max_length=1024)
+    confirm_new_password: str = Field(min_length=1, max_length=1024)
+    confirm_recovery: bool = False
+
+
+class BrowserFillIn(BaseModel):
+    entry_id: str = Field(min_length=1, max_length=128)
+    url: str = Field(min_length=1, max_length=8_192)
+
+
 class UnlockResponse(BaseModel):
     token: str
     message: str = "unlocked"
@@ -48,6 +67,12 @@ class EntryOut(BaseModel):
     linked_sources: dict[str, str] = Field(default_factory=dict)
     created_at: str
     updated_at: str
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] = "login"
+    custom_fields: list[dict[str, Any]] = Field(default_factory=list)
+    totp_secret: str = ""
+    has_totp_secret: bool = False
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    history_count: int = 0
 
 
 class EntryIn(BaseModel):
@@ -57,6 +82,9 @@ class EntryIn(BaseModel):
     url: str = ""
     notes: str = ""
     tags: list[str] = Field(default_factory=list)
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] = "login"
+    custom_fields: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    totp_secret: str = Field(default="", max_length=1024)
 
 
 class EntryUpdate(BaseModel):
@@ -66,6 +94,15 @@ class EntryUpdate(BaseModel):
     url: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] | None = None
+    custom_fields: list[dict[str, Any]] | None = Field(default=None, max_length=32)
+    totp_secret: str | None = Field(default=None, max_length=1024)
+
+
+class AttachmentIn(BaseModel):
+    filename: str = Field(min_length=1, max_length=255)
+    mime_type: str = Field(min_length=1, max_length=255)
+    data_b64: str = Field(min_length=1, max_length=1_400_000)
 
 
 class IntegrationFieldOut(BaseModel):
@@ -163,3 +200,29 @@ class ConflictResolveIn(BaseModel):
 
 class StatusOut(BaseModel):
     components: dict[str, str]
+
+
+class PersonalSettingsOut(BaseModel):
+    lock_after_seconds: int
+    auto_backup_enabled: bool
+    auto_backup_interval_hours: int
+    auto_backup_destination: str
+    last_auto_backup_at: str = ""
+
+
+class PersonalSettingsIn(BaseModel):
+    lock_after_seconds: int | None = Field(default=None, ge=60, le=3600)
+    auto_backup_enabled: bool | None = None
+    auto_backup_interval_hours: int | None = Field(default=None, ge=1, le=720)
+    auto_backup_destination: str | None = Field(default=None, max_length=32768)
+
+
+class TransferImportIn(BaseModel):
+    format: Literal["json", "csv"]
+    content: str = Field(min_length=1, max_length=14_000_000)
+    confirm_plaintext: bool = False
+
+
+class TransferExportIn(BaseModel):
+    format: Literal["json", "csv"]
+    confirm_plaintext: bool = False

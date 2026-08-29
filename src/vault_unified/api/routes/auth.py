@@ -6,12 +6,19 @@ from vault_unified.config import get_vault_path
 from vault_unified.api.deps import get_token, require_loopback
 from vault_unified.api.schemas import (
     CreateVaultRequest,
+    EmergencyRecoveryIn,
+    RecoveryKitCreateIn,
     RestoreVaultRequest,
     UnlockRequest,
     UnlockResponse,
     VaultInfoOut,
 )
 from vault_unified.session import sessions
+from vault_unified.recovery_kit import (
+    create_recovery_kit,
+    generate_recovery_code,
+    restore_from_recovery_kit,
+)
 from vault_unified.storage import RecoveryRequiredError
 from vault_unified.vault_format import (
     V3Container,
@@ -80,6 +87,60 @@ def restore_vault(body: RestoreVaultRequest, request: Request) -> UnlockResponse
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid password or backup vault") from exc
     return UnlockResponse(token=token, message="restored")
+
+
+@router.post("/recovery-code")
+def new_recovery_code(token: str = Depends(get_token)) -> dict:
+    # Require an existing unlocked vault before showing a high-value recovery
+    # code in the renderer.  The value is never persisted by the application.
+    try:
+        sessions.get(token)
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    return {"recovery_code": generate_recovery_code()}
+
+
+@router.post("/recovery-kit")
+def create_emergency_recovery_kit(
+    body: RecoveryKitCreateIn,
+    token: str = Depends(get_token),
+) -> dict:
+    if body.recovery_code != body.confirm_recovery_code:
+        raise HTTPException(status_code=400, detail="Recovery code confirmation does not match")
+    try:
+        vault = sessions.get(token)
+        path = create_recovery_kit(vault, body.recovery_code, body.destination_dir)
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "path": str(path),
+        "message": "Recovery kit created. Store this encrypted file separately from the recovery code.",
+    }
+
+
+@router.post("/recover", response_model=UnlockResponse)
+def emergency_recover(body: EmergencyRecoveryIn, request: Request) -> UnlockResponse:
+    _require_desktop(request)
+    if not body.confirm_recovery:
+        raise HTTPException(status_code=400, detail="confirm_recovery=true is required")
+    if body.new_password != body.confirm_new_password:
+        raise HTTPException(status_code=400, detail="New master password confirmation does not match")
+    try:
+        restore_from_recovery_kit(
+            get_vault_path(),
+            body.kit_path,
+            body.recovery_code,
+            body.new_password,
+        )
+        sessions.lock_all()
+        token, _ = sessions.unlock(body.new_password)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Recovery kit could not be authenticated or restored") from exc
+    return UnlockResponse(token=token, message="recovered")
 
 
 @router.post("/unlock", response_model=UnlockResponse)

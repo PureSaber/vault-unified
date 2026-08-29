@@ -12,6 +12,7 @@ from vault_unified.adapters.proton_pass import ProtonPassAdapter
 from vault_unified.adapters.registry import all_remote_adapters, get_adapter
 from vault_unified.local_store import LocalVault
 from vault_unified.models import SecretEntry, Source, SyncPreferences, SyncStatus
+from vault_unified.personal_data import merge_personal_metadata
 from vault_unified.sync.engine import SyncEngine, SyncResult
 from vault_unified.sync.ledger import (
     Tombstone,
@@ -34,9 +35,11 @@ class MetadataPreservingSyncEngine(SyncEngine):
         return local
 
     def _merge_remote(self, local, remote, source, capabilities) -> str:
+        local_metadata = copy.deepcopy(local.source_metadata)
         outcome = super()._merge_remote(local, remote, source, capabilities)
-        if outcome != "conflict" and local.source_metadata != remote.source_metadata:
-            local.source_metadata = copy.deepcopy(remote.source_metadata)
+        merged_metadata = merge_personal_metadata(local_metadata, remote.source_metadata)
+        if outcome != "conflict" and local.source_metadata != merged_metadata:
+            local.source_metadata = merged_metadata
             if outcome == "unchanged":
                 return "updated"
         return outcome

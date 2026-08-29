@@ -139,3 +139,37 @@ def test_patch_accepts_mask_like_values_and_explicit_empty_strings(client):
     assert clear.json()["notes"] == ""
     assert clear.json()["has_password"] is False
     assert clear.json()["has_notes"] is False
+
+
+def test_invalid_personal_extension_does_not_partially_persist_entry_changes(client):
+    headers = unlock_headers(client)
+    rejected_create = client.post(
+        "/api/entries",
+        json={
+            "title": "Invalid extension",
+            "custom_fields": [{"label": "", "value": "x", "concealed": False}],
+        },
+        headers=headers,
+    )
+    assert rejected_create.status_code == 400
+    assert client.get("/api/entries", headers=headers).json() == []
+
+    created = client.post(
+        "/api/entries",
+        json={"title": "Original", "username": "before", "password": "secret"},
+        headers=headers,
+    )
+    assert created.status_code == 200
+    rejected_patch = client.patch(
+        f"/api/entries/{created.json()['id']}",
+        json={
+            "title": "Should not save",
+            "custom_fields": [{"label": "", "value": "x", "concealed": False}],
+        },
+        headers=headers,
+    )
+    assert rejected_patch.status_code == 400
+    unchanged = client.get(f"/api/entries/{created.json()['id']}?reveal=true", headers=headers)
+    assert unchanged.status_code == 200
+    assert unchanged.json()["title"] == "Original"
+    assert unchanged.json()["username"] == "before"

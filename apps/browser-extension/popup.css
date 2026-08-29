@@ -1,0 +1,13 @@
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+body { width: 320px; margin: 0; background: #151b24; color: #e7ecf3; }
+main { padding: 16px; }
+h1 { font-size: 16px; margin: 0 0 12px; }
+p { color: #c5d0de; font-size: 13px; line-height: 1.4; }
+label { display: block; font-size: 12px; margin: 10px 0; color: #c5d0de; }
+input, button { box-sizing: border-box; width: 100%; margin-top: 4px; border-radius: 6px; font: inherit; }
+input { border: 1px solid #2f3b4a; background: #0c1016; color: #e7ecf3; padding: 8px; }
+button { border: 1px solid #2b6cb0; background: #2b6cb0; color: white; padding: 8px; cursor: pointer; }
+button.secondary, #forget { margin-top: 10px; background: transparent; border-color: #4a5568; }
+.match { margin: 8px 0; text-align: left; }
+.match small { display: block; margin-top: 3px; color: #c5d0de; overflow: hidden; text-overflow: ellipsis; }
+.error { color: #fc8181; }

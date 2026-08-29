@@ -150,6 +150,9 @@ class SessionManager:
     def lock(self, token: str) -> None:
         self._sessions.pop(token, None)
 
+    def lock_all(self) -> None:
+        self._sessions.clear()
+
     def is_unlocked(self, token: str) -> bool:
         session = self._sessions.get(token)
         return session is not None and not session.expired()

@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from vault_unified.api.routes import auth, backups, entries, integrations, sync
+from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer
 from vault_unified.env import load_env
 
 load_env()
@@ -59,6 +59,7 @@ def create_app(
             "tauri://localhost",
             "http://tauri.localhost",
         ],
+        allow_origin_regex=r"chrome-extension://[a-p]{32}",
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=[
@@ -66,13 +67,18 @@ def create_app(
             "Content-Type",
             "X-Vault-Bootstrap",
             "X-Vault-Client",
+            "X-Vault-Browser-Pairing",
+            "X-Vault-Browser-Token",
         ],
     )
     app.include_router(auth.router, prefix="/api")
+    app.include_router(browser.router, prefix="/api")
     app.include_router(backups.router, prefix="/api")
     app.include_router(entries.router, prefix="/api")
     app.include_router(integrations.router, prefix="/api")
+    app.include_router(personal.router, prefix="/api")
     app.include_router(sync.router, prefix="/api")
+    app.include_router(transfer.router, prefix="/api")
 
     @app.get("/api/health", include_in_schema=False)
     def health() -> dict[str, str]:
@@ -90,6 +96,18 @@ def create_app(
         if request.method == "OPTIONS":
             return await call_next(request)
         provided = request.headers.get("x-vault-bootstrap", "")
+        browser_pair = (
+            request.method == "POST"
+            and request.url.path == "/api/browser/pair"
+            and bool(request.headers.get("x-vault-browser-pairing"))
+        )
+        browser_token = (
+            request.method in {"GET", "POST"}
+            and request.url.path in {"/api/browser/matches", "/api/browser/fill"}
+            and bool(request.headers.get("x-vault-browser-token"))
+        )
+        if browser_pair or browser_token:
+            return await call_next(request)
         if not provided or not hmac.compare_digest(provided, secret):
             return JSONResponse(
                 {"detail": "Sidecar authentication failed"},

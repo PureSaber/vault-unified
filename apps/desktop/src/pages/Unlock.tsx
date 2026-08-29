@@ -30,6 +30,17 @@ const firstRunCopy = {
     mismatch: "两次输入的主密码不一致。",
     passwordRequired: "请输入主密码。",
     backupRequired: "请输入备份文件路径。",
+    recovery: "使用紧急恢复包",
+    recoveryTitle: "从紧急恢复包恢复",
+    recoveryHint: "这会用恢复包内容替换当前保险库，并自动保留替换前的加密副本。恢复码不会上传或保存。",
+    recoveryKitPath: "恢复包文件路径",
+    recoveryCode: "恢复码",
+    newPassword: "新的主密码",
+    confirmRecovery: "我确认使用恢复包替换当前保险库。",
+    recover: "恢复并解锁",
+    recovering: "正在验证和恢复…",
+    back: "返回",
+    recoveryRequired: "请填写恢复包、恢复码和新的主密码。",
   },
   en: {
     loading: "Checking the local vault…",
@@ -52,17 +63,35 @@ const firstRunCopy = {
     mismatch: "The master-password confirmation does not match.",
     passwordRequired: "Enter a master password.",
     backupRequired: "Enter a backup file path.",
+    recovery: "Use emergency recovery kit",
+    recoveryTitle: "Recover from an emergency kit",
+    recoveryHint: "This replaces the current vault with the kit contents and retains an encrypted pre-recovery copy. The recovery code is neither uploaded nor saved.",
+    recoveryKitPath: "Recovery-kit file path",
+    recoveryCode: "Recovery code",
+    newPassword: "New master password",
+    confirmRecovery: "I confirm that the recovery kit should replace the current vault.",
+    recover: "Recover and unlock",
+    recovering: "Validating and recovering…",
+    back: "Back",
+    recoveryRequired: "Enter the recovery kit, recovery code, and a new master password.",
   },
 } as const;
 
 export default function Unlock({ onUnlock }: Props) {
   const { t, locale } = useI18n();
+  const zh = locale === "zh";
   const copy = firstRunCopy[locale];
   const [info, setInfo] = useState<VaultInfo | null>(null);
   const [mode, setMode] = useState<SetupMode>("create");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [backupPath, setBackupPath] = useState("");
+  const [showRecovery, setShowRecovery] = useState(false);
+  const [recoveryKitPath, setRecoveryKitPath] = useState("");
+  const [recoveryCode, setRecoveryCode] = useState("");
+  const [newRecoveryPassword, setNewRecoveryPassword] = useState("");
+  const [confirmRecoveryPassword, setConfirmRecoveryPassword] = useState("");
+  const [confirmRecovery, setConfirmRecovery] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -185,6 +214,37 @@ export default function Unlock({ onUnlock }: Props) {
     }
   }
 
+  async function handleRecovery(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    if (!recoveryKitPath.trim() || !recoveryCode || !newRecoveryPassword) {
+      setError(copy.recoveryRequired);
+      return;
+    }
+    if (newRecoveryPassword !== confirmRecoveryPassword) {
+      setError(copy.mismatch);
+      return;
+    }
+    if (!confirmRecovery) {
+      setError(zh ? "请确认恢复将替换当前保险库。" : "Confirm that recovery will replace the current vault.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.recoverFromKit(
+        recoveryKitPath.trim(),
+        recoveryCode,
+        newRecoveryPassword,
+        confirmRecoveryPassword,
+      );
+      finish(res.token);
+    } catch (err) {
+      setError(normalizeError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   if (!info && !error) {
     return (
       <div className="unlock-shell">
@@ -214,7 +274,49 @@ export default function Unlock({ onUnlock }: Props) {
           </div>
         )}
 
-        {vaultUnreadable ? (
+        {!showRecovery && (
+          <div className="button-row" style={{ marginBottom: "var(--space-lg)" }}>
+            <button type="button" className="secondary" onClick={() => { setShowRecovery(true); setError(""); }}>
+              {copy.recovery}
+            </button>
+          </div>
+        )}
+
+        {showRecovery ? (
+          <form onSubmit={handleRecovery} noValidate>
+            <h2>{copy.recoveryTitle}</h2>
+            <p className="field-hint">{copy.recoveryHint}</p>
+            <div className="field">
+              <label className="field-label" htmlFor="recovery-kit-path">{copy.recoveryKitPath}</label>
+              <input id="recovery-kit-path" value={recoveryKitPath} onChange={(e) => setRecoveryKitPath(e.target.value)} autoFocus autoComplete="off" required />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="emergency-recovery-code">{copy.recoveryCode}</label>
+              <input id="emergency-recovery-code" type="password" value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} autoComplete="off" required />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="new-recovery-password">{copy.newPassword}</label>
+              <input id="new-recovery-password" type="password" value={newRecoveryPassword} onChange={(e) => setNewRecoveryPassword(e.target.value)} autoComplete="new-password" required />
+            </div>
+            <div className="field">
+              <label className="field-label" htmlFor="confirm-recovery-password">{copy.confirmPassword}</label>
+              <input id="confirm-recovery-password" type="password" value={confirmRecoveryPassword} onChange={(e) => setConfirmRecoveryPassword(e.target.value)} autoComplete="new-password" required />
+            </div>
+            <label className="checkbox-field">
+              <input type="checkbox" checked={confirmRecovery} onChange={(e) => setConfirmRecovery(e.target.checked)} />
+              <span>{copy.confirmRecovery}</span>
+            </label>
+            {error && <div className="error" role="alert">{error}</div>}
+            <div className="button-row">
+              <button className="primary" type="submit" disabled={loading}>
+                {loading ? copy.recovering : copy.recover}
+              </button>
+              <button className="secondary" type="button" disabled={loading} onClick={() => { setShowRecovery(false); setError(""); }}>
+                {copy.back}
+              </button>
+            </div>
+          </form>
+        ) : vaultUnreadable ? (
           <div className="error" role="alert">
             {copy.unreadable}
           </div>

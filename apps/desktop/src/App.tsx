@@ -15,19 +15,24 @@ import EntryForm from "./pages/EntryForm";
 import SyncPanel from "./pages/SyncPanel";
 import Settings from "./pages/Settings";
 import ConflictModal from "./pages/ConflictModal";
+import { useToast } from "./components/Toast";
 
 type Page = "list" | "add" | "sync" | "settings" | "conflicts";
 
-const IDLE_MS = 15 * 60 * 1000;
+const DEFAULT_IDLE_SECONDS = 15 * 60;
 const CONFLICT_POLL_MS = 60_000;
+const MAINTENANCE_POLL_MS = 60_000;
 
 function AppShell() {
   const { t, locale, setLocale } = useI18n();
+  const { showToast } = useToast();
   const [unlocked, setUnlocked] = useState(hasToken());
   const [page, setPage] = useState<Page>("list");
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
   const [conflictCount, setConflictCount] = useState(0);
+  const [lockAfterSeconds, setLockAfterSeconds] = useState(DEFAULT_IDLE_SECONDS);
   const idleTimer = useRef<number | null>(null);
+  const deliveredMaintenanceNotices = useRef(new Set<string>());
 
   const lockToUnlock = useCallback(() => {
     lockApp();
@@ -80,12 +85,56 @@ function AppShell() {
   useEffect(() => {
     if (!unlocked) {
       setConflictCount(0);
+      setLockAfterSeconds(DEFAULT_IDLE_SECONDS);
+      deliveredMaintenanceNotices.current.clear();
       return;
     }
     refreshConflicts();
     const id = window.setInterval(refreshConflicts, CONFLICT_POLL_MS);
     return () => window.clearInterval(id);
   }, [unlocked, refreshConflicts, page]);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    let cancelled = false;
+    api.getPersonalSettings()
+      .then((settings) => {
+        if (!cancelled) setLockAfterSeconds(settings.lock_after_seconds);
+      })
+      .catch(() => {
+        // The secure default remains active if personal settings cannot load.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unlocked]);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    let cancelled = false;
+    const runMaintenance = async () => {
+      try {
+        const result = await api.runMaintenance();
+        if (cancelled) return;
+        setLockAfterSeconds(result.settings.lock_after_seconds);
+        const conflicts = Number(result.components.conflicts || "0");
+        if (Number.isFinite(conflicts)) setConflictCount(conflicts);
+        for (const notice of result.notices) {
+          if (deliveredMaintenanceNotices.current.has(notice.code)) continue;
+          deliveredMaintenanceNotices.current.add(notice.code);
+          showToast(notice.message, notice.level === "error" ? "error" : "info");
+        }
+      } catch {
+        // Maintenance is best-effort; ordinary vault use must remain available.
+      }
+    };
+    void runMaintenance();
+    const id = window.setInterval(() => void runMaintenance(), MAINTENANCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [unlocked, showToast]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -99,7 +148,7 @@ function AppShell() {
           /* ignore */
         }
         lockToUnlock();
-      }, IDLE_MS);
+      }, lockAfterSeconds * 1000);
     };
 
     const events = ["mousemove", "mousedown", "keydown", "touchstart", "scroll"] as const;
@@ -110,7 +159,7 @@ function AppShell() {
       events.forEach((ev) => window.removeEventListener(ev, resetIdle));
       if (idleTimer.current) window.clearTimeout(idleTimer.current);
     };
-  }, [unlocked, lockToUnlock]);
+  }, [unlocked, lockAfterSeconds, lockToUnlock]);
 
   async function handleLock() {
     try {
