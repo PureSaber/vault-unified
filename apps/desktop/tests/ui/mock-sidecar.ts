@@ -33,6 +33,17 @@ type StoredConflict = {
   remote_source: string;
 };
 
+type EntryListBehavior = {
+  delayMs?: number;
+  status?: number;
+  detail?: string;
+  abort?: boolean;
+};
+
+export type MockSidecarOptions = {
+  restoreApplyFailure?: boolean;
+};
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "http://127.0.0.1:1420",
   "access-control-allow-headers":
@@ -133,19 +144,22 @@ export class MockAuthenticatedSidecar {
   };
   private backups: Array<Record<string, unknown>> = [];
   private restorePreviews = new Set<string>();
+  private entryListBehaviors = new Map<string, EntryListBehavior>();
 
   readonly writes = { create: 0, update: 0, delete: 0 };
   readonly importWrites = { apply: 0, undo: 0 };
   readonly syncWrites = { execute: 0 };
   readonly backupWrites = { create: 0, restore: 0 };
   readonly pairingWrites = { create: 0, cancel: 0 };
+  readonly copyWrites = { password: 0, username: 0 };
 
   constructor(
     private readonly lockAfterSeconds = 900,
     private readonly commitDelayMs = 0,
-    private readonly syncPreviewMode: "empty" | "deletion" = "empty",
+    private readonly syncPreviewMode: "empty" | "deletion" | "stale" | "unavailable" = "empty",
     conflictCount = 0,
     entryCount = 0,
+    private readonly options: MockSidecarOptions = {},
   ) {
     this.personalSettings.lock_after_seconds = lockAfterSeconds;
     this.conflicts = Array.from({ length: conflictCount }, (_, index) => ({
@@ -198,6 +212,10 @@ export class MockAuthenticatedSidecar {
 
   get persistedEntries(): StoredEntry[] {
     return Array.from(this.entries.values(), clone);
+  }
+
+  setEntryListBehavior(query: string, behavior: EntryListBehavior): void {
+    this.entryListBehaviors.set(query.trim().toLowerCase(), { ...behavior });
   }
 
   seedCompatibilityEntry(entryType: Exclude<StoredEntry["entry_type"], "login" | "secure_note">): string {
@@ -467,21 +485,22 @@ export class MockAuthenticatedSidecar {
         destructive: true,
         next_step: null,
       };
-      const operations = this.syncPreviewMode === "deletion" ? [operation] : [];
+      const operations = ["deletion", "stale"].includes(this.syncPreviewMode) ? [operation] : [];
+      const unavailable = this.syncPreviewMode === "unavailable";
       await this.respond(route, 200, {
         preview_token: `generated-sync-preview-${testData.runId}`,
         generated_at: "2026-08-31T00:00:00Z",
         expires_at: "2026-08-31T00:05:00Z",
         include_pull: true,
         include_push: true,
-        sources: ["bitwarden"],
+        sources: unavailable ? ["bitwarden", "keepassxc"] : ["bitwarden"],
         per_source: {
           bitwarden: {
             label: "Bitwarden",
             configured: true,
-            available: true,
-            status: "ready",
-            error: "",
+            available: !unavailable,
+            status: unavailable ? "unavailable" : "ready",
+            error: unavailable ? "Generated source is temporarily unavailable" : "",
             pull: {
               remote_total: 0,
               add: 0,
@@ -502,6 +521,34 @@ export class MockAuthenticatedSidecar {
             },
             operations,
           },
+          ...(unavailable ? {
+            keepassxc: {
+              label: "KeePassXC",
+              configured: true,
+              available: true,
+              status: "ready",
+              error: "",
+              pull: {
+                remote_total: 0,
+                add: 0,
+                update: 0,
+                conflict: 0,
+                unchanged: 0,
+                local_only: 0,
+                delete_observed: 0,
+                pending_verification: 0,
+              },
+              push: {
+                create: 0,
+                update: 0,
+                delete: 0,
+                pending: 0,
+                conflict: 0,
+                total: 0,
+              },
+              operations: [],
+            },
+          } : {}),
         },
         totals: {
           pull_add: 0,
@@ -513,16 +560,26 @@ export class MockAuthenticatedSidecar {
           push_delete: operations.length,
           push_conflict: 0,
           pending: 0,
-          unavailable_sources: 0,
+          unavailable_sources: unavailable ? 1 : 0,
         },
         destructive_count: operations.length,
-        warnings: operations.length ? ["The plan includes remote deletion"] : [],
+        warnings: unavailable
+          ? ["Bitwarden could not be checked; retry when the connection is available"]
+          : operations.length
+            ? ["The plan includes remote deletion"]
+            : [],
         operations,
       });
       return;
     }
 
     if (method === "POST" && url.pathname === "/sync/execute") {
+      if (this.syncPreviewMode === "stale") {
+        await this.respond(route, 409, {
+          detail: "The preview expired or state changed. Nothing was executed; create a new preview.",
+        });
+        return;
+      }
       if (this.syncPreviewMode !== "deletion") {
         await this.respond(route, 409, { detail: "No generated operation to execute" });
         return;
@@ -660,6 +717,12 @@ export class MockAuthenticatedSidecar {
     if (method === "POST" && url.pathname === "/backups/restore/apply") {
       const value = body(route);
       const token = String(value.preview_token || "");
+      if (this.options.restoreApplyFailure && this.restorePreviews.has(token)) {
+        await this.respond(route, 500, {
+          detail: "Restore failed; the active vault is unchanged",
+        });
+        return;
+      }
       if (!this.restorePreviews.delete(token)) {
         await this.respond(route, 409, { detail: "Restore preview expired or was already used" });
         return;
@@ -693,6 +756,20 @@ export class MockAuthenticatedSidecar {
 
     if (method === "GET" && url.pathname === "/entries") {
       const query = (url.searchParams.get("q") || "").trim().toLowerCase();
+      const behavior = this.entryListBehaviors.get(query);
+      if (behavior?.delayMs) {
+        await new Promise((resolve) => setTimeout(resolve, behavior.delayMs));
+      }
+      if (behavior?.abort) {
+        await route.abort("internetdisconnected");
+        return;
+      }
+      if (behavior?.status) {
+        await this.respond(route, behavior.status, {
+          detail: behavior.detail || "Generated entry-list failure",
+        });
+        return;
+      }
       const values = this.persistedEntries
         .filter((entry) =>
           !query
@@ -1080,7 +1157,9 @@ export class MockAuthenticatedSidecar {
 
     const copyMatch = url.pathname.match(/^\/entries\/([^/]+)\/copy$/);
     if (method === "POST" && copyMatch) {
-      await this.respond(route, 200, { copied: "password", clears_in_seconds: 45 });
+      const field = url.searchParams.get("field") === "username" ? "username" : "password";
+      this.copyWrites[field] += 1;
+      await this.respond(route, 200, { copied: field, clears_in_seconds: 45 });
       return;
     }
 

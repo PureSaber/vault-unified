@@ -1,6 +1,7 @@
-import { expect, test, type Page } from "@playwright/test";
+import type { Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { expect, test } from "./journey-test";
 import { testData } from "./test-data";
 
 const extensionRoot = fileURLToPath(new URL("../../../browser-extension/", import.meta.url));
