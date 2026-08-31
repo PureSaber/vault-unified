@@ -51,9 +51,17 @@ export class MockAuthenticatedSidecar {
   private entries = new Map<string, StoredEntry>();
   private transactionReceipts = new Map<string, string>();
   private histories = new Map<string, Array<{ id: string; saved_at: string; snapshot: StoredEntry }>>();
+  private importPreviews = new Map<string, {
+    revision: number;
+    before: StoredEntry[];
+    items: Array<Record<string, unknown>>;
+    rawEntries: Array<Record<string, unknown>>;
+  }>();
+  private importReceipts = new Map<string, { before: StoredEntry[]; after: StoredEntry[]; undone: boolean }>();
   private revision = 0;
 
   readonly writes = { create: 0, update: 0, delete: 0 };
+  readonly importWrites = { apply: 0, undo: 0 };
 
   constructor(
     private readonly lockAfterSeconds = 900,
@@ -178,6 +186,22 @@ export class MockAuthenticatedSidecar {
       return;
     }
 
+    if (method === "PUT" && url.pathname === "/personal/settings") {
+      await this.respond(route, 200, {
+        lock_after_seconds: this.lockAfterSeconds,
+        auto_backup_enabled: false,
+        auto_backup_interval_hours: 24,
+        auto_backup_destination: "",
+        last_auto_backup_at: "",
+      });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/integrations") {
+      await this.respond(route, 200, []);
+      return;
+    }
+
     if (method === "POST" && url.pathname === "/personal/maintenance") {
       await this.respond(route, 200, {
         settings: {
@@ -198,6 +222,31 @@ export class MockAuthenticatedSidecar {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/sync/preferences") {
+      await this.respond(route, 200, {
+        primary: "local",
+        auto_push_on_edit: false,
+        auto_pull_on_sync: false,
+        conflict_default: "manual",
+        proton_vault_name: "",
+        proton_share_id: "",
+        enabled_sources: [],
+      });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/backups") {
+      await this.respond(route, 200, {
+        backups: [],
+        count: 0,
+        total_bytes: 0,
+        verified_count: 0,
+        pinned_count: 0,
+        default_destination: `C:\\isolated-vault-tests\\${testData.runId}\\backups`,
+      });
+      return;
+    }
+
     if (method === "GET" && url.pathname === "/entries") {
       const query = (url.searchParams.get("q") || "").trim().toLowerCase();
       const values = this.persistedEntries
@@ -211,6 +260,241 @@ export class MockAuthenticatedSidecar {
         )
         .map((entry) => this.listed(entry));
       await this.respond(route, 200, values);
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/transfer/import/preview") {
+      const value = body(route);
+      const content = String(value.content || "");
+      let rawEntries: Array<Record<string, unknown>> = [];
+      try {
+        if (value.format === "json") {
+          const parsed = JSON.parse(content) as { entries?: Array<Record<string, unknown>> };
+          rawEntries = Array.isArray(parsed.entries) ? parsed.entries : [];
+        } else {
+          throw new Error("Generated UI mock only accepts JSON import fixtures");
+        }
+      } catch {
+        await this.respond(route, 400, { detail: "Transfer JSON is invalid" });
+        return;
+      }
+      const items = rawEntries.map((item, index) => {
+        const title = String(item.title || "");
+        const username = String(item.username || "");
+        const urlValue = String(item.url || "");
+        const host = (() => {
+          try { return new URL(urlValue).hostname; } catch { return ""; }
+        })();
+        const matches = this.persistedEntries.filter((entry) => {
+          const entryHost = (() => {
+            try { return new URL(entry.url).hostname; } catch { return ""; }
+          })();
+          return (entryHost && entryHost === host && entry.username === username)
+            || (entry.title === title && entry.username === username);
+        });
+        const exact = matches.find((entry) =>
+          entry.title === title
+          && entry.username === username
+          && entry.password === String(item.password || "")
+          && entry.url === urlValue
+          && entry.notes === String(item.notes || ""),
+        );
+        const classification = exact
+          ? "exact_duplicate"
+          : matches.length
+            ? "possible_duplicate"
+            : "new";
+        return {
+          preview_id: `item-${index + 1}`,
+          index: index + 1,
+          title,
+          username,
+          host,
+          classification,
+          reason: classification === "new" ? "New entry" : "Generated duplicate match",
+          default_action: classification === "new" ? "create" : "skip",
+          candidates: matches.map((entry) => ({
+            id: entry.id,
+            title: entry.title,
+            username: entry.username,
+            host,
+          })),
+          unsupported_fields: [],
+          attachment_count: 0,
+          attachment_bytes: 0,
+        };
+      });
+      const token = `generated-import-preview-${testData.runId}-${this.importPreviews.size + 1}`;
+      this.importPreviews.set(token, {
+        revision: this.revision,
+        before: this.persistedEntries,
+        items,
+        rawEntries,
+      });
+      const count = (classification: string) => items.filter((item) => item.classification === classification).length;
+      await this.respond(route, 200, {
+        preview_token: token,
+        source_file_digest: "a".repeat(64),
+        expires_at: "2026-08-31T00:05:00Z",
+        counts: {
+          total: items.length,
+          importable: count("new") + count("possible_duplicate"),
+          exact_duplicates: count("exact_duplicate"),
+          possible_duplicates: count("possible_duplicate"),
+          format_errors: 0,
+          skipped: count("exact_duplicate") + count("possible_duplicate"),
+          add: count("new"),
+          update: 0,
+          unsupported_fields: 0,
+          attachments: 0,
+          attachment_bytes: 0,
+        },
+        items,
+        warning: "Preview only",
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/transfer/import/cancel") {
+      const value = body(route);
+      const token = String(value.preview_token || "");
+      if (!this.importPreviews.delete(token)) {
+        await this.respond(route, 409, { detail: "Import preview expired, was cancelled, or was already used" });
+        return;
+      }
+      await this.respond(route, 200, { cancelled: true });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/transfer/import/apply") {
+      const value = body(route);
+      const token = String(value.preview_token || "");
+      const preview = this.importPreviews.get(token);
+      this.importPreviews.delete(token);
+      if (!preview) {
+        await this.respond(route, 409, { detail: "Import preview expired, was cancelled, or was already used" });
+        return;
+      }
+      if (preview.revision !== this.revision) {
+        await this.respond(route, 409, { detail: "Vault changed after the import preview; create a new preview" });
+        return;
+      }
+      const decisions = new Map(
+        (Array.isArray(value.decisions) ? value.decisions : []).map((decision) => {
+          const item = decision as Record<string, unknown>;
+          return [String(item.preview_id || ""), item];
+        }),
+      );
+      const addedIds: string[] = [];
+      const updatedIds: string[] = [];
+      let skipped = 0;
+      preview.items.forEach((item, index) => {
+        const raw = preview.rawEntries[index];
+        const decision = decisions.get(String(item.preview_id));
+        const action = String(decision?.action || item.default_action);
+        if (action === "skip") {
+          skipped += 1;
+          return;
+        }
+        const targetId = String(decision?.target_entry_id || "");
+        const existing = action === "update" ? this.entries.get(targetId) : undefined;
+        const id = existing?.id || `generated-imported-${testData.runId}-${index + 1}`;
+        const now = this.timestamp();
+        const stored: StoredEntry = {
+          id,
+          title: String(raw.title || ""),
+          username: String(raw.username || ""),
+          password: String(raw.password || ""),
+          url: String(raw.url || ""),
+          notes: String(raw.notes || ""),
+          has_password: Boolean(raw.password),
+          has_notes: Boolean(raw.notes),
+          source: "local",
+          tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
+          sync_status: "dirty",
+          linked_sources: existing?.linked_sources || {},
+          entry_type: (raw.entry_type || "login") as StoredEntry["entry_type"],
+          custom_fields: Array.isArray(raw.custom_fields) ? raw.custom_fields as StoredEntry["custom_fields"] : [],
+          totp_secret: String(raw.totp_secret || ""),
+          has_totp_secret: Boolean(raw.totp_secret),
+          attachments: [],
+          history_count: existing ? existing.history_count + 1 : 0,
+          created_at: existing?.created_at || now,
+          updated_at: now,
+        };
+        this.entries.set(id, stored);
+        if (existing) {
+          updatedIds.push(id);
+          this.writes.update += 1;
+        } else {
+          addedIds.push(id);
+          this.writes.create += 1;
+        }
+      });
+      if (!addedIds.length && !updatedIds.length) {
+        await this.respond(route, 200, {
+          applied: false,
+          added: 0,
+          updated: 0,
+          skipped,
+          receipt: null,
+          warning: "Nothing was imported",
+        });
+        return;
+      }
+      const transactionId = `generated-import-receipt-${testData.runId}-${this.importReceipts.size + 1}`;
+      const after = this.persistedEntries;
+      this.importReceipts.set(transactionId, { before: preview.before, after, undone: false });
+      this.importWrites.apply += 1;
+      await this.respond(route, 200, {
+        applied: true,
+        added: addedIds.length,
+        updated: updatedIds.length,
+        skipped,
+        receipt: {
+          transaction_id: transactionId,
+          source_file_digest: "a".repeat(64),
+          before_vault_digest: "b".repeat(64),
+          before_generation: preview.revision,
+          after_vault_digest: "c".repeat(64),
+          after_generation: this.revision,
+          added_entry_ids: addedIds,
+          updated_entry_ids: updatedIds,
+          created_at: "2026-08-31T00:00:00Z",
+          undone: false,
+        },
+        warning: "Imported entries remain local",
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/transfer/import/undo") {
+      const value = body(route);
+      const transactionId = String(value.transaction_id || "");
+      const receipt = this.importReceipts.get(transactionId);
+      if (!receipt || receipt.undone || JSON.stringify(receipt.after) !== JSON.stringify(this.persistedEntries)) {
+        await this.respond(route, 409, { detail: "Vault changed after the import; undo was refused" });
+        return;
+      }
+      this.entries = new Map(receipt.before.map((entry) => [entry.id, clone(entry)]));
+      receipt.undone = true;
+      this.importWrites.undo += 1;
+      await this.respond(route, 200, {
+        undone: true,
+        receipt: {
+          transaction_id: transactionId,
+          source_file_digest: "a".repeat(64),
+          before_vault_digest: "b".repeat(64),
+          before_generation: 0,
+          after_vault_digest: "c".repeat(64),
+          after_generation: 1,
+          added_entry_ids: [],
+          updated_entry_ids: [],
+          created_at: "2026-08-31T00:00:00Z",
+          undone: true,
+        },
+        restored_vault_digest: "b".repeat(64),
+      });
       return;
     }
 

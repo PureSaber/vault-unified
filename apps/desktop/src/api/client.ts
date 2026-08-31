@@ -282,6 +282,71 @@ export interface SyncPrefs {
   enabled_sources?: string[] | null;
 }
 
+export interface ImportPreviewCandidate {
+  id: string;
+  title: string;
+  username: string;
+  host: string;
+}
+
+export interface ImportPreviewItem {
+  preview_id: string;
+  index: number;
+  title: string;
+  username: string;
+  host: string;
+  classification: "new" | "exact_duplicate" | "possible_duplicate" | "invalid";
+  reason: string;
+  default_action: "create" | "skip";
+  candidates: ImportPreviewCandidate[];
+  unsupported_fields: string[];
+  attachment_count: number;
+  attachment_bytes: number;
+}
+
+export interface ImportPreview {
+  preview_token: string;
+  source_file_digest: string;
+  expires_at: string;
+  counts: {
+    total: number;
+    importable: number;
+    exact_duplicates: number;
+    possible_duplicates: number;
+    format_errors: number;
+    skipped: number;
+    add: number;
+    update: number;
+    unsupported_fields: number;
+    attachments: number;
+    attachment_bytes: number;
+  };
+  items: ImportPreviewItem[];
+  warning: string;
+}
+
+export interface ImportReceipt {
+  transaction_id: string;
+  source_file_digest: string;
+  before_vault_digest: string;
+  before_generation: number;
+  after_vault_digest: string;
+  after_generation: number;
+  added_entry_ids: string[];
+  updated_entry_ids: string[];
+  created_at: string;
+  undone: boolean;
+}
+
+export interface ImportApplyResult {
+  applied: boolean;
+  added: number;
+  updated: number;
+  skipped: number;
+  receipt: ImportReceipt | null;
+  warning: string;
+}
+
 export interface SyncSourcePreview {
   label: string;
   configured: boolean;
@@ -449,11 +514,36 @@ export const api = {
       "/transfer/export",
       { method: "POST", body: JSON.stringify({ format, confirm_plaintext: true }) }
     ),
-  importTransfer: (format: "json" | "csv", content: string) =>
-    request<{ imported: number; warning: string }>("/transfer/import", {
+  previewImport: (format: "json" | "csv", content: string) =>
+    request<ImportPreview>("/transfer/import/preview", {
       method: "POST",
       body: JSON.stringify({ format, content, confirm_plaintext: true }),
     }),
+  applyImport: (
+    previewToken: string,
+    decisions: Array<{
+      preview_id: string;
+      action: "skip" | "create" | "update";
+      target_entry_id: string | null;
+    }>,
+  ) =>
+    request<ImportApplyResult>("/transfer/import/apply", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken, decisions }),
+    }),
+  cancelImport: (previewToken: string) =>
+    request<{ cancelled: boolean }>("/transfer/import/cancel", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
+    }),
+  undoImport: (transactionId: string) =>
+    request<{ undone: boolean; receipt: ImportReceipt; restored_vault_digest: string }>(
+      "/transfer/import/undo",
+      {
+        method: "POST",
+        body: JSON.stringify({ transaction_id: transactionId }),
+      },
+    ),
   newRecoveryCode: () => request<{ recovery_code: string }>("/auth/recovery-code", { method: "POST" }),
   createRecoveryKit: (recoveryCode: string, destinationDir?: string) =>
     request<{ path: string; message: string }>("/auth/recovery-kit", {
