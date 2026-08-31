@@ -44,6 +44,12 @@ def create_pairing_code(token: str = Depends(get_token)) -> dict:
     }
 
 
+@router.post("/pairing/cancel")
+def cancel_pairing(token: str = Depends(get_token)) -> dict:
+    browser_pairings.cancel_session(token)
+    return {"cancelled": True}
+
+
 @router.post("/pair")
 def pair_browser(
     request: Request,

@@ -701,6 +701,8 @@ export const api = {
     ]);
     return { ...result, sidecar_url: config.base_url };
   },
+  cancelBrowserPairing: () =>
+    request<{ cancelled: boolean }>("/browser/pairing/cancel", { method: "POST" }),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
   savePrefs: (prefs: Partial<SyncPrefs>) =>
     request<SyncPrefs>("/sync/preferences", {

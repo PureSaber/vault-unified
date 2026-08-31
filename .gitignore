@@ -23,6 +23,7 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+/.pytest-*/
 .mypy_cache/
 .codex-tmp/
 
@@ -43,6 +44,8 @@ apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/binaries/*
 !apps/desktop/src-tauri/binaries/.gitkeep
 !apps/desktop/src-tauri/binaries/README.md
+Vault-Unified-Browser-Extension-v*.zip
+release-manifest-v*.json
 
 # PyInstaller
 *.spec
