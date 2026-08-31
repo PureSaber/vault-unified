@@ -73,7 +73,7 @@ def test_ci_trigger_and_release_job_contract():
 
     release = _block(lines, "release-desktop", 2)
     assert "    if: startsWith(github.ref, 'refs/tags/v')" in release
-    assert "    needs: [python, desktop, rustsec]" in release
+    assert "    needs: [python, desktop, ui-journey, rustsec]" in release
 
     cases = [
         ("push", "refs/heads/main", True, False),
@@ -99,11 +99,12 @@ def test_ci_action_and_permission_contract():
     ]
     expected = Counter(
         {
-            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1": 4,
+            "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1": 5,
             "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97": 2,
-            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020": 2,
+            "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020": 3,
             "dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c": 2,
             "softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228": 1,
+            "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02": 1,
         }
     )
     assert Counter(uses) == expected
@@ -115,7 +116,7 @@ def test_ci_action_and_permission_contract():
     release = _block(lines, "release-desktop", 2)
     release_permissions = _block(release, "permissions", 4)
     assert release_permissions == ["      contents: write"]
-    assert sum("persist-credentials: false" in line for line in lines) == 4
+    assert sum("persist-credentials: false" in line for line in lines) == 5
 
     rustsec = _block(lines, "rustsec", 2)
     assert any("cargo-audit/v0.22.2/" in line for line in rustsec)
@@ -126,6 +127,19 @@ def test_ci_action_and_permission_contract():
     )
     assert any("RustSec/advisory-db.git" in line for line in rustsec)
     assert not any("--ignore" in line for line in rustsec)
+
+
+def test_ui_journey_is_isolated_scanned_and_a_release_dependency():
+    lines = WORKFLOW.read_text(encoding="utf-8").splitlines()
+    journey = _block(lines, "ui-journey", 2)
+    release = _block(lines, "release-desktop", 2)
+
+    assert any("npm run test:ui:install" in line for line in journey)
+    assert any("npm run test:ui" in line for line in journey)
+    assert any("test-results/.artifacts-safe" in line for line in journey)
+    assert any("actions/upload-artifact@" in line for line in journey)
+    assert any("retention-days: 7" in line for line in journey)
+    assert "    needs: [python, desktop, ui-journey, rustsec]" in release
 
 
 def test_release_assets_are_smoke_tested_and_reverified_after_publication():
