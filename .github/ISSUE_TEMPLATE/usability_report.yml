@@ -1,0 +1,86 @@
+name: Novice usability report
+description: Record a sanitized observation from a real or simulated user journey
+title: "[Usability]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe observable difficulty, not the participant's identity. Automation and expert self-review must be labeled and do not count as real novice research. Never upload real credentials or vault data.
+  - type: dropdown
+    id: evidence_type
+    attributes:
+      label: Evidence type
+      options:
+        - Real novice session
+        - Repository-owner walkthrough
+        - Automated journey
+        - Accessibility audit
+        - Heuristic review
+    validations:
+      required: true
+  - type: dropdown
+    id: task
+    attributes:
+      label: Task
+      options:
+        - Install
+        - Create a vault
+        - Add the first account
+        - Find and copy a password
+        - Set up automatic backup
+        - Reopen and unlock
+        - Explain backup versus recovery kit
+        - Find browser-extension installation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: observation
+    attributes:
+      label: What happened?
+      description: Record actions, hesitation, errors, and help requested without identifying the participant.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected beginner-first behavior
+    validations:
+      required: true
+  - type: textarea
+    id: wording
+    attributes:
+      label: Confusing wording or control
+      description: Quote only product UI text; do not quote any value entered by the participant.
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: v1.3.0 candidate, Windows 11, 125% scaling, Chinese
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Blocked the task
+        - Required moderator help
+        - Caused a serious error or unsafe choice
+        - Caused hesitation but task completed
+        - Cosmetic only
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Privacy and evidence confirmation
+      options:
+        - label: The participant is not identified in this report.
+          required: true
+        - label: The session used generated fake data in an isolated test environment.
+          required: true
+        - label: The report and attachments contain no secret or personal data.
+          required: true
+        - label: I accurately labeled whether this evidence came from a real novice.
+          required: true

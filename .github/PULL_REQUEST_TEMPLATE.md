@@ -2,6 +2,8 @@
 
 <!-- What single, reviewable outcome does this PR deliver? -->
 
+Closes/relates to: <!-- issue or tracking link -->
+
 ## User-visible behavior
 
 <!-- Describe what users will notice. Write "None" for infrastructure-only changes. -->
@@ -40,3 +42,10 @@
 - [ ] Logs, exceptions, screenshots, traces, fixtures, receipts, and metadata contain no passwords, TOTP keys, recovery codes, attachment content, or tokens.
 - [ ] Data-format changes, if any, are additive, optional, namespaced, defaulted, backward-compatible, and include rollback/loss tests.
 - [ ] The v1.3 tracking issue is updated with status, remaining dependencies, and CI result.
+- [ ] Automated checks are described as automation, not as proof of real novice usability.
+
+## Release-only human gate
+
+Leave this unchecked unless the repository owner personally confirms the recorded real-novice results. Codex and CI must never check it.
+
+- [ ] Repository owner reviewed real novice usability results

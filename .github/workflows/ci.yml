@@ -23,9 +23,15 @@ jobs:
       - name: Install
         run: |
           python -m venv .venv
+          .\.venv\Scripts\python -m pip install pip==26.2.1
           .\.venv\Scripts\pip install -e ".[dev]"
+          .\.venv\Scripts\python -m pip install pip-audit==2.10.1
       - name: Test
         run: .\.venv\Scripts\pytest -q
+      - name: Audit Python dependencies
+        run: .\.venv\Scripts\python -m pip_audit --local --skip-editable --progress-spinner off
+      - name: Scan repository for secrets
+        run: .\.venv\Scripts\python scripts\scan_repository_secrets.py --repo-root .
 
   desktop:
     runs-on: windows-latest
