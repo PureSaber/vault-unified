@@ -47,10 +47,10 @@ test("previews duplicates without secrets, cancels with zero writes, applies onc
 
   const existingTitle = "Generated existing import account";
   await page.getByRole("button", { name: "Add password", exact: true }).click();
-  await page.getByLabel("Title", { exact: true }).fill(existingTitle);
+  await page.getByLabel("Website or app name", { exact: true }).fill(existingTitle);
   await page.getByLabel("Username", { exact: true }).fill("generated-import-user@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
-  await page.getByLabel("URL", { exact: true }).fill("https://import.example.invalid/login");
+  await page.getByLabel("Website address", { exact: true }).fill("https://import.example.invalid/login");
   await page.getByLabel("Notes", { exact: true }).fill("Generated import fixture only");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(existingTitle, { exact: true })).toBeVisible();

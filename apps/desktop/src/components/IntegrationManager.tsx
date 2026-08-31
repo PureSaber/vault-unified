@@ -9,6 +9,7 @@ import {
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 import ConfirmDialog from "./ConfirmDialog";
+import PathPicker from "./PathPicker";
 
 const copy = {
   zh: {
@@ -354,24 +355,46 @@ export default function IntegrationManager() {
             {selectedItem.cli_installed ? text.toolReady : text.toolMissing}
           </div>
 
-          {selectedItem.fields.map((field) => (
-            <div className="field" key={field.key}>
-              <label className="field-label" htmlFor={`${selectedItem.source}-${field.key}`}>
-                {field.label} {field.required ? `(${text.required})` : ""}
-              </label>
-              <input
-                id={`${selectedItem.source}-${field.key}`}
-                type={field.secret ? "password" : "text"}
-                value={drafts[selectedItem.source]?.[field.key] ?? ""}
-                onChange={(event) => updateDraft(selectedItem.source, field.key, event.target.value)}
-                placeholder={field.secret && field.present ? text.stored : ""}
-                autoComplete="off"
-              />
-              {showSelectedTechnical && field.origin && (
-                <p className="field-hint">{text.technicalSource}: {field.origin}</p>
-              )}
-            </div>
-          ))}
+          {selectedItem.fields.map((field) => {
+            const pathMode = field.key === "database_path"
+              ? "file"
+              : field.key.endsWith("_path")
+                ? "directory"
+                : null;
+            if (pathMode) {
+              return (
+                <PathPicker
+                  key={field.key}
+                  id={`${selectedItem.source}-${field.key}`}
+                  label={`${field.label} ${field.required ? `(${text.required})` : ""}`.trim()}
+                  mode={pathMode}
+                  value={drafts[selectedItem.source]?.[field.key] ?? ""}
+                  onChange={(value) => updateDraft(selectedItem.source, field.key, value)}
+                  extensions={field.key === "database_path" ? ["kdbx"] : undefined}
+                  required={field.required}
+                  hint={showSelectedTechnical && field.origin ? `${text.technicalSource}: ${field.origin}` : undefined}
+                />
+              );
+            }
+            return (
+              <div className="field" key={field.key}>
+                <label className="field-label" htmlFor={`${selectedItem.source}-${field.key}`}>
+                  {field.label} {field.required ? `(${text.required})` : ""}
+                </label>
+                <input
+                  id={`${selectedItem.source}-${field.key}`}
+                  type={field.secret ? "password" : "text"}
+                  value={drafts[selectedItem.source]?.[field.key] ?? ""}
+                  onChange={(event) => updateDraft(selectedItem.source, field.key, event.target.value)}
+                  placeholder={field.secret && field.present ? text.stored : ""}
+                  autoComplete="off"
+                />
+                {showSelectedTechnical && field.origin && (
+                  <p className="field-hint">{text.technicalSource}: {field.origin}</p>
+                )}
+              </div>
+            );
+          })}
 
           <div className="button-row">
             <button type="button" className="secondary" disabled={busy !== null} onClick={() => save(selectedItem.source)}>

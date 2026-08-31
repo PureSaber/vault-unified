@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { useI18n } from "../i18n";
 
 interface Props {
@@ -8,6 +9,7 @@ interface Props {
   onChange: (value: string) => void;
   hint?: string;
   required?: boolean;
+  action?: ReactNode;
 }
 
 export default function PasswordField({
@@ -17,6 +19,7 @@ export default function PasswordField({
   onChange,
   hint,
   required,
+  action,
 }: Props) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(false);
@@ -43,6 +46,7 @@ export default function PasswordField({
         >
           {visible ? t("list.hide") : t("list.show")}
         </button>
+        {action}
       </div>
       {hint && <p className="field-hint">{hint}</p>}
     </div>
