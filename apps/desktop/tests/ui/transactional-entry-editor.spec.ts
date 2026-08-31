@@ -12,7 +12,7 @@ async function createVault(page: Parameters<MockAuthenticatedSidecar["install"]>
 }
 
 async function addGeneratedEntry(page: Parameters<MockAuthenticatedSidecar["install"]>[0], title: string) {
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -24,7 +24,7 @@ test("keeps custom-field focus stable and guards navigation, cancel, and manual 
   await sidecar.install(page);
   await createVault(page);
 
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Generated unsaved draft");
   await page.getByRole("button", { name: "Add field", exact: true }).click();
   const label = page.getByLabel("Field label", { exact: true });
@@ -41,13 +41,13 @@ test("keeps custom-field focus stable and guards navigation, cancel, and manual 
   });
   expect(duplicateIds).toEqual([]);
 
-  await page.getByRole("button", { name: "Sync", exact: true }).click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(page.getByRole("alertdialog", { name: "Discard unsaved changes?" })).toBeVisible();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue("Generated unsaved draft");
-  await expect(page.getByRole("button", { name: "Sync", exact: true })).toBeFocused();
+  await expect(page.getByRole("button", { name: "Connections", exact: true })).toBeFocused();
 
-  await page.getByRole("button", { name: "Lock", exact: true }).click();
+  await page.getByRole("button", { name: "Lock now", exact: true }).click();
   await expect(page.getByRole("alertdialog", { name: "Discard unsaved changes?" })).toBeVisible();
   await page.getByRole("button", { name: "Keep editing", exact: true }).click();
   expect(sidecar.writes).toEqual({ create: 0, update: 0, delete: 0 });
@@ -66,7 +66,7 @@ test("a failed attachment batch leaves the persisted entry unchanged", async ({ 
   const title = "Generated attachment account";
   await addGeneratedEntry(page, title);
 
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: `Open ${title}`, exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Must not partially save");
   await page.getByLabel("Choose attachments").setInputFiles([
     { name: "generated-one.txt", mimeType: "text/plain", buffer: Buffer.from("generated-one") },
@@ -87,7 +87,7 @@ test("removing an attachment and then cancelling performs zero writes", async ({
   await sidecar.install(page);
   await createVault(page);
   const title = "Generated retained attachment";
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill(title);
   await page.getByLabel("Choose attachments").setInputFiles({
     name: "generated-retained.txt",
@@ -98,7 +98,7 @@ test("removing an attachment and then cancelling performs zero writes", async ({
   await expect(page.getByText(title, { exact: true })).toBeVisible();
   expect(sidecar.persistedEntries[0].attachments).toHaveLength(1);
 
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: `Open ${title}`, exact: true }).click();
   await page.getByRole("button", { name: "Remove on save", exact: true }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
@@ -115,12 +115,12 @@ test("history restore stays in the draft and cancel preserves the current versio
   const originalTitle = "Generated original history";
   const currentTitle = "Generated current history";
   await addGeneratedEntry(page, originalTitle);
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: `Open ${originalTitle}`, exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill(currentTitle);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(currentTitle, { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: `Open ${currentTitle}`, exact: true }).click();
   await page.getByRole("button", { name: "Preview in draft", exact: true }).click();
   await page.getByRole("button", { name: "Load draft", exact: true }).click();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue(originalTitle);
@@ -137,7 +137,7 @@ test("navigation is blocked during save and a double click commits only once", a
   await sidecar.install(page);
   await createVault(page);
   const title = "Generated single transaction";
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill(title);
   const save = page.getByRole("button", { name: "Save", exact: true });
   await save.evaluate((element) => {
@@ -145,7 +145,7 @@ test("navigation is blocked during save and a double click commits only once", a
     (element as HTMLButtonElement).click();
   });
   await expect(page.getByRole("button", { name: "Saving…", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Sync", exact: true }).click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(page.getByText("Save in progress; please wait", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Title", { exact: true })).toHaveValue(title);
   await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 3_000 });
@@ -157,7 +157,7 @@ test("automatic lock warns, clears the in-memory draft, and writes nothing", asy
   const sidecar = new MockAuthenticatedSidecar(2);
   await sidecar.install(page);
   await createVault(page);
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Generated auto-lock draft");
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
 

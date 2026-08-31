@@ -12,7 +12,9 @@ import { useToast } from "./Toast";
 const copy = {
   zh: {
     title: "备份与恢复",
-    hint: "备份保持加密。清理只会删除已验证、未固定的本地自动备份；手动备份、固定备份和无法验证的文件永远不会被自动选中。",
+    hint: "加密备份用于电脑损坏、文件丢失或误操作后的日常恢复。",
+    manageHistory: "管理历史备份",
+    hideHistory: "收起历史备份",
     loading: "正在检查备份…",
     destination: "手动备份目录（留空使用默认位置）",
     create: "立即创建加密备份",
@@ -53,7 +55,9 @@ const copy = {
   },
   en: {
     title: "Backup and restore",
-    hint: "Backups remain encrypted. Cleanup selects only verified, unpinned local atomic backups; manual, pinned, and unverifiable files are never selected automatically.",
+    hint: "Encrypted backups support everyday recovery after computer failure, file loss, or mistakes.",
+    manageHistory: "Manage backup history",
+    hideHistory: "Collapse backup history",
     loading: "Checking backups…",
     destination: "Manual backup directory (leave blank for the default)",
     create: "Create encrypted backup now",
@@ -120,6 +124,7 @@ export default function BackupCenter() {
   const [plan, setPlan] = useState<BackupPruneResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [showHistory, setShowHistory] = useState(false);
 
   const load = useCallback(async () => {
     setBusy("load");
@@ -242,12 +247,7 @@ export default function BackupCenter() {
           <dl className="status-grid">
             <div className="status-row"><dt>{text.total}</dt><dd>{summary.count}</dd></div>
             <div className="status-row"><dt>{text.storage}</dt><dd>{formatBytes(summary.total_bytes)}</dd></div>
-            <div className="status-row"><dt>{text.verified}</dt><dd>{summary.verified_count}</dd></div>
-            <div className="status-row"><dt>{text.pinned}</dt><dd>{summary.pinned_count}</dd></div>
           </dl>
-          <p className="field-hint">
-            {text.defaultDestination}: <span className="mono">{summary.default_destination}</span>
-          </p>
 
           <div className="field">
             <label className="field-label" htmlFor="backup-destination">
@@ -269,6 +269,22 @@ export default function BackupCenter() {
           >
             {busy === "create" ? text.creating : text.create}
           </button>
+
+          <div className="button-row">
+            <button type="button" className="ghost" onClick={() => setShowHistory((value) => !value)} aria-expanded={showHistory}>
+              {showHistory ? text.hideHistory : text.manageHistory}
+            </button>
+          </div>
+
+          {showHistory && (
+            <>
+              <dl className="status-grid">
+                <div className="status-row"><dt>{text.verified}</dt><dd>{summary.verified_count}</dd></div>
+                <div className="status-row"><dt>{text.pinned}</dt><dd>{summary.pinned_count}</dd></div>
+              </dl>
+              <p className="field-hint">
+                {text.defaultDestination}: <span className="mono">{summary.default_destination}</span>
+              </p>
 
           <div className="field" style={{ marginTop: "var(--space-xl)" }}>
             <label className="field-label" htmlFor="backup-old-password">
@@ -402,6 +418,8 @@ export default function BackupCenter() {
               </dl>
             )}
           </div>
+            </>
+          )}
         </>
       ) : null}
 

@@ -47,11 +47,13 @@ export default function ConflictModal({ onResolved }: Props) {
       setLoading(true);
       const data = (await api.listConflicts(true)) as unknown as Conflict[];
       setConflicts(data);
-      const next: Record<string, Record<Field, Side>> = {};
-      for (const c of data) {
-        next[c.id] = defaultPicks(c);
-      }
-      setPicks(next);
+      setPicks((previous) => {
+        const next: Record<string, Record<Field, Side>> = {};
+        for (const conflict of data) {
+          next[conflict.id] = previous[conflict.id] || defaultPicks(conflict);
+        }
+        return next;
+      });
     } catch (err) {
       setError(String(err).replace(/^Error:\s*/, ""));
     } finally {
@@ -67,7 +69,7 @@ export default function ConflictModal({ onResolved }: Props) {
     setResolvingId(id);
     try {
       await api.resolveConflict(id, choice, merged);
-      showToast(t("conflicts.resolved", { choice }));
+      showToast(t("conflicts.resolved"));
       await load();
       onResolved?.();
     } catch (err) {
@@ -114,6 +116,20 @@ export default function ConflictModal({ onResolved }: Props) {
   function displayValue(key: Field, value: string, showPassword: boolean) {
     if (key === "password" && value && !showPassword) return "••••••••";
     return value || "—";
+  }
+
+  function fieldLabel(field: Field) {
+    return t(`conflicts.field.${field}`);
+  }
+
+  function serviceLabel(source: string) {
+    const labels: Record<string, string> = {
+      proton_pass: "Proton Pass",
+      bitwarden: "Bitwarden",
+      keepassxc: "KeePassXC",
+      gopass: "gopass",
+    };
+    return labels[source] || t("conflicts.connectedService");
   }
 
   if (loading) {
@@ -175,7 +191,7 @@ export default function ConflictModal({ onResolved }: Props) {
                   const isDiff = value !== otherVal;
                   return (
                     <div key={key} className={`conflict-field${isDiff ? " is-diff" : ""}`}>
-                      <span className="conflict-field-label">{key}</span>
+                      <span className="conflict-field-label">{fieldLabel(key)}</span>
                       <span className="conflict-field-value">
                         {displayValue(key, value, showPw)}
                       </span>
@@ -187,7 +203,7 @@ export default function ConflictModal({ onResolved }: Props) {
                 className={`conflict-panel${c.default_choice === "remote" ? " is-primary" : ""}`}
               >
                 <h4>
-                  {c.remote_source}
+                  {serviceLabel(c.remote_source)}
                   {c.default_choice === "remote" ? t("conflicts.recommended") : ""}
                 </h4>
                 {FIELDS.map((key) => {
@@ -196,7 +212,7 @@ export default function ConflictModal({ onResolved }: Props) {
                   const isDiff = value !== otherVal;
                   return (
                     <div key={key} className={`conflict-field${isDiff ? " is-diff" : ""}`}>
-                      <span className="conflict-field-label">{key}</span>
+                      <span className="conflict-field-label">{fieldLabel(key)}</span>
                       <span className="conflict-field-value">
                         {displayValue(key, value, showPw)}
                       </span>
@@ -210,11 +226,12 @@ export default function ConflictModal({ onResolved }: Props) {
               <p className="section-title">{t("conflicts.fieldPick")}</p>
               {FIELDS.map((field) => (
                 <div className="conflict-pick-row" key={field}>
-                  <span className="conflict-field-label">{field}</span>
+                  <span className="conflict-field-label">{fieldLabel(field)}</span>
                   <div className="conflict-pick-btns">
                     <button
                       type="button"
                       className={pick[field] === "local" ? "primary" : "secondary"}
+                      aria-pressed={pick[field] === "local"}
                       disabled={busy}
                       onClick={() => setFieldPick(c.id, field, "local")}
                     >
@@ -223,6 +240,7 @@ export default function ConflictModal({ onResolved }: Props) {
                     <button
                       type="button"
                       className={pick[field] === "remote" ? "primary" : "secondary"}
+                      aria-pressed={pick[field] === "remote"}
                       disabled={busy}
                       onClick={() => setFieldPick(c.id, field, "remote")}
                     >

@@ -46,7 +46,7 @@ test("previews duplicates without secrets, cancels with zero writes, applies onc
   await createVault(page);
 
   const existingTitle = "Generated existing import account";
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill(existingTitle);
   await page.getByLabel("Username", { exact: true }).fill("generated-import-user@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
@@ -55,7 +55,7 @@ test("previews duplicates without secrets, cancels with zero writes, applies onc
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText(existingTitle, { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Import passwords" })).toBeVisible();
   const content = generatedImport(existingTitle);
   const input = page.getByLabel("Choose JSON / CSV file");

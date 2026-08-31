@@ -24,6 +24,15 @@ type StoredEntry = {
   updated_at: string;
 };
 
+type StoredConflict = {
+  id: string;
+  title: string;
+  default_choice: "local" | "remote";
+  local: Record<string, string>;
+  remote: Record<string, string>;
+  remote_source: string;
+};
+
 const CORS_HEADERS = {
   "access-control-allow-origin": "http://127.0.0.1:1420",
   "access-control-allow-headers":
@@ -58,6 +67,54 @@ export class MockAuthenticatedSidecar {
     rawEntries: Array<Record<string, unknown>>;
   }>();
   private importReceipts = new Map<string, { before: StoredEntry[]; after: StoredEntry[]; undone: boolean }>();
+  private integrations = [
+    {
+      source: "proton_pass",
+      label: "Proton Pass",
+      configured: false,
+      cli_installed: false,
+      fields: [
+        { key: "access_token", label: "Access token", secret: true, required: true, value: "", present: false, origin: "unset" },
+      ],
+    },
+    {
+      source: "bitwarden",
+      label: "Bitwarden",
+      configured: false,
+      cli_installed: true,
+      fields: [
+        { key: "server_url", label: "Server address", secret: false, required: false, value: "", present: false, origin: "default" },
+      ],
+    },
+    {
+      source: "keepassxc",
+      label: "KeePassXC",
+      configured: false,
+      cli_installed: false,
+      fields: [
+        { key: "database_path", label: "Database file", secret: false, required: true, value: "", present: false, origin: "unset" },
+      ],
+    },
+    {
+      source: "gopass",
+      label: "gopass",
+      configured: false,
+      cli_installed: false,
+      fields: [
+        { key: "store_path", label: "Store folder", secret: false, required: false, value: "", present: false, origin: "unset" },
+      ],
+    },
+  ];
+  private syncPrefs = {
+    primary: "local",
+    auto_push_on_edit: false,
+    auto_pull_on_sync: false,
+    conflict_default: "manual",
+    proton_vault_name: "",
+    proton_share_id: "",
+    enabled_sources: [] as string[],
+  };
+  private conflicts: StoredConflict[] = [];
   private revision = 0;
 
   readonly writes = { create: 0, update: 0, delete: 0 };
@@ -68,7 +125,56 @@ export class MockAuthenticatedSidecar {
     private readonly lockAfterSeconds = 900,
     private readonly commitDelayMs = 0,
     private readonly syncPreviewMode: "empty" | "deletion" = "empty",
-  ) {}
+    conflictCount = 0,
+    entryCount = 0,
+  ) {
+    this.conflicts = Array.from({ length: conflictCount }, (_, index) => ({
+      id: `generated-conflict-${index + 1}`,
+      title: `Generated conflict ${index + 1}`,
+      default_choice: index % 2 === 0 ? "local" : "remote",
+      local: {
+        title: `Generated conflict ${index + 1}`,
+        username: `device-${index + 1}@example.invalid`,
+        password: testData.entryPassword,
+        url: `https://device-${index + 1}.example.invalid`,
+        notes: "Generated device note",
+      },
+      remote: {
+        title: `Generated conflict ${index + 1}`,
+        username: `service-${index + 1}@example.invalid`,
+        password: `${testData.entryPassword}-service`,
+        url: `https://service-${index + 1}.example.invalid`,
+        notes: "Generated service note",
+      },
+      remote_source: "bitwarden",
+    }));
+    for (let index = 1; index <= entryCount; index += 1) {
+      const suffix = String(index).padStart(4, "0");
+      const entry: StoredEntry = {
+        id: `generated-entry-${suffix}`,
+        title: `Generated account ${suffix}`,
+        username: `person-${suffix}@example.invalid`,
+        password: testData.entryPassword,
+        url: `https://account-${suffix}.example.invalid/login`,
+        notes: "Generated scale fixture",
+        has_password: true,
+        has_notes: true,
+        source: "local",
+        tags: index % 10 === 0 ? ["generated-scale"] : [],
+        sync_status: "clean",
+        linked_sources: {},
+        entry_type: "login",
+        custom_fields: [],
+        totp_secret: "",
+        has_totp_secret: false,
+        attachments: [],
+        history_count: 0,
+        created_at: "2026-08-31T00:00:00Z",
+        updated_at: "2026-08-31T00:00:00Z",
+      };
+      this.entries.set(entry.id, entry);
+    }
+  }
 
   get persistedEntries(): StoredEntry[] {
     return Array.from(this.entries.values(), clone);
@@ -200,7 +306,38 @@ export class MockAuthenticatedSidecar {
     }
 
     if (method === "GET" && url.pathname === "/integrations") {
-      await this.respond(route, 200, []);
+      await this.respond(route, 200, clone(this.integrations));
+      return;
+    }
+
+    if ((method === "PUT" || method === "DELETE") && url.pathname.startsWith("/integrations/")) {
+      const source = decodeURIComponent(url.pathname.split("/").pop() || "");
+      const index = this.integrations.findIndex((item) => item.source === source);
+      if (index < 0) {
+        await this.respond(route, 404, { detail: "Generated connection not found" });
+        return;
+      }
+      const values = body(route);
+      const current = this.integrations[index];
+      const fields = current.fields.map((field) => {
+        const nextValue = method === "DELETE" ? "" : String(values.values && typeof values.values === "object" ? (values.values as Record<string, unknown>)[field.key] || "" : "");
+        return { ...field, value: field.secret ? "" : nextValue, present: Boolean(nextValue), origin: nextValue ? "saved" : "unset" };
+      });
+      this.integrations[index] = { ...current, configured: method !== "DELETE", fields };
+      await this.respond(route, 200, clone(this.integrations[index]));
+      return;
+    }
+
+    if (method === "POST" && url.pathname.startsWith("/integrations/") && url.pathname.endsWith("/test")) {
+      const source = decodeURIComponent(url.pathname.split("/")[2] || "");
+      const item = this.integrations.find((candidate) => candidate.source === source);
+      const available = Boolean(item?.configured && item.cli_installed);
+      await this.respond(route, 200, {
+        source,
+        configured: Boolean(item?.configured),
+        available,
+        message: available ? "Connection test passed" : "Connection needs setup",
+      });
       return;
     }
 
@@ -213,27 +350,43 @@ export class MockAuthenticatedSidecar {
           auto_backup_destination: "",
           last_auto_backup_at: "",
         },
-        components: { conflicts: "0" },
+        components: { conflicts: String(this.conflicts.length) },
         notices: [],
       });
       return;
     }
 
     if (method === "GET" && url.pathname === "/sync/conflicts") {
-      await this.respond(route, 200, []);
+      const reveal = url.searchParams.get("reveal") === "true";
+      const response = this.conflicts.map((conflict) => reveal ? conflict : {
+        ...conflict,
+        local: { ...conflict.local, password: "", notes: "" },
+        remote: { ...conflict.remote, password: "", notes: "" },
+      });
+      await this.respond(route, 200, clone(response));
+      return;
+    }
+
+    if (method === "POST" && /^\/sync\/conflicts\/[^/]+\/resolve$/.test(url.pathname)) {
+      const conflictId = decodeURIComponent(url.pathname.split("/")[3] || "");
+      const before = this.conflicts.length;
+      this.conflicts = this.conflicts.filter((conflict) => conflict.id !== conflictId);
+      if (this.conflicts.length === before) {
+        await this.respond(route, 404, { detail: "Generated conflict not found" });
+        return;
+      }
+      await this.respond(route, 200, { resolved: true });
       return;
     }
 
     if (method === "GET" && url.pathname === "/sync/preferences") {
-      await this.respond(route, 200, {
-        primary: "local",
-        auto_push_on_edit: false,
-        auto_pull_on_sync: false,
-        conflict_default: "manual",
-        proton_vault_name: "",
-        proton_share_id: "",
-        enabled_sources: [],
-      });
+      await this.respond(route, 200, clone(this.syncPrefs));
+      return;
+    }
+
+    if (method === "PUT" && url.pathname === "/sync/preferences") {
+      this.syncPrefs = { ...this.syncPrefs, ...body(route) } as typeof this.syncPrefs;
+      await this.respond(route, 200, clone(this.syncPrefs));
       return;
     }
 

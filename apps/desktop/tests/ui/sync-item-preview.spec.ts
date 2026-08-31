@@ -17,7 +17,8 @@ test("lists deletion items, requires review, and cancel performs zero writes", a
   await sidecar.install(page);
   await createVault(page);
 
-  await page.getByRole("button", { name: "Sync", exact: true }).click();
+  await page.getByRole("button", { name: "Connections", exact: true }).click();
+  await page.getByRole("button", { name: "Review sync details", exact: true }).click();
   await page.getByRole("button", { name: "Preview bidirectional sync" }).click();
 
   await expect(page.getByText("Generated deletion review", { exact: true })).toBeVisible();

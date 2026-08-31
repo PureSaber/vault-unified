@@ -300,6 +300,57 @@ def test_api_requires_preview_and_invalidates_it_after_local_change(
         assert adapter.create_calls == 0
 
 
+def test_disabled_connection_can_be_previewed_but_never_executed(
+    api_client,
+) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    remote = SecretEntry(
+        title="Preview before enabling",
+        username="preview@example.test",
+        password="generated-disabled-preview-secret",
+        source=Source.BITWARDEN,
+        external_id="disabled-preview",
+        remote_updated_at="disabled-revision",
+    )
+    remote.link_source(Source.BITWARDEN, "disabled-preview")
+    adapter.entries["disabled-preview"] = remote
+    token = _unlock(client)
+    disabled = client.put(
+        "/api/sync/preferences",
+        json={"enabled_sources": []},
+        headers=_headers(token),
+    )
+    assert disabled.status_code == 200
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": True,
+                "include_push": False,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        assert preview.json()["operations"][0]["title"] == "Preview before enabling"
+
+        execute = client.post(
+            "/api/sync/execute",
+            json={"preview_token": preview.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert execute.status_code == 409
+        assert "Enable every selected connection" in execute.json()["detail"]
+        assert adapter.create_calls == 0
+        assert adapter.update_calls == 0
+        assert adapter.delete_calls == 0
+
+
 def test_api_executes_unchanged_preview_once(api_client) -> None:
     client, _ = api_client
     adapter = FakeBitwarden()

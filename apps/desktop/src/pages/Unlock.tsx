@@ -12,13 +12,16 @@ const firstRunCopy = {
   zh: {
     loading: "检查本地保险库…",
     missingTitle: "开始使用 Vault Unified",
-    missingHint: "未找到本地保险库。请选择创建新的 v3 保险库，或从已有加密备份恢复。",
+    missingHint: "你可以创建新的密码库，或从已有的加密备份恢复。",
     createTab: "创建新保险库",
     restoreTab: "从备份恢复",
     confirmPassword: "再次输入主密码",
     create: "创建并解锁",
     creating: "正在创建…",
-    createHint: "新保险库默认使用 Argon2id + AES-256-GCM 的 Vault Format v3。不会迁移或覆盖任何已有文件。",
+    createHint: "密码会在这台设备上加密保存。创建过程不会覆盖已有文件。",
+    technicalDetails: "技术细节",
+    hideTechnicalDetails: "隐藏技术细节",
+    technicalCreate: "新密码库使用 Vault Format v3、Argon2id 和 AES-256-GCM。",
     restorePath: "加密备份文件路径",
     restorePlaceholder: "例如 D:\\Backups\\secrets.vault.bak.1234",
     restore: "验证、恢复并解锁",
@@ -45,13 +48,16 @@ const firstRunCopy = {
   en: {
     loading: "Checking the local vault…",
     missingTitle: "Get started with Vault Unified",
-    missingHint: "No local vault was found. Create a new v3 vault or restore an encrypted backup.",
+    missingHint: "Create a new password vault or restore an existing encrypted backup.",
     createTab: "Create new vault",
     restoreTab: "Restore backup",
     confirmPassword: "Confirm master password",
     create: "Create and unlock",
     creating: "Creating…",
-    createHint: "New vaults use Vault Format v3 with Argon2id and AES-256-GCM. Existing files are never migrated or overwritten.",
+    createHint: "Passwords are stored encrypted on this device. Creation never overwrites an existing file.",
+    technicalDetails: "Technical details",
+    hideTechnicalDetails: "Hide technical details",
+    technicalCreate: "New vaults use Vault Format v3, Argon2id, and AES-256-GCM.",
     restorePath: "Encrypted backup file path",
     restorePlaceholder: "e.g. D:\\Backups\\secrets.vault.bak.1234",
     restore: "Validate, restore, and unlock",
@@ -92,6 +98,7 @@ export default function Unlock({ onUnlock }: Props) {
   const [newRecoveryPassword, setNewRecoveryPassword] = useState("");
   const [confirmRecoveryPassword, setConfirmRecoveryPassword] = useState("");
   const [confirmRecovery, setConfirmRecovery] = useState(false);
+  const [showTechnical, setShowTechnical] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -267,14 +274,24 @@ export default function Unlock({ onUnlock }: Props) {
           {vaultMissing ? copy.missingHint : t("unlock.subtitle")}
         </p>
 
-        {info && (
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setShowTechnical((value) => !value)}
+          aria-expanded={showTechnical}
+        >
+          {showTechnical ? copy.hideTechnicalDetails : copy.technicalDetails}
+        </button>
+
+        {info && showTechnical && (
           <div className="field-hint" style={{ marginBottom: "var(--space-lg)" }}>
             <div><strong>{copy.currentFormat}:</strong> {info.format}</div>
             <div className="mono"><strong>{copy.currentPath}:</strong> {info.path}</div>
+            {vaultMissing && <div>{copy.technicalCreate}</div>}
           </div>
         )}
 
-        {!showRecovery && (
+        {!showRecovery && !vaultMissing && (
           <div className="button-row" style={{ marginBottom: "var(--space-lg)" }}>
             <button type="button" className="secondary" onClick={() => { setShowRecovery(true); setError(""); }}>
               {copy.recovery}
@@ -440,6 +457,11 @@ export default function Unlock({ onUnlock }: Props) {
                 </div>
               </form>
             )}
+            <div className="button-row">
+              <button type="button" className="ghost" onClick={() => { setShowRecovery(true); setError(""); }}>
+                {copy.recovery}
+              </button>
+            </div>
           </>
         ) : (
           <form onSubmit={handleUnlock} noValidate>

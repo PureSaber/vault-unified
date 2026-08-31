@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, BrowserPairing, Integration, PersonalSettings } from "../api/client";
+import { api, PersonalSettings } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 import ImportWizard from "./ImportWizard";
@@ -27,20 +27,15 @@ export default function PersonalCenter() {
   const { showToast } = useToast();
   const zh = locale === "zh";
   const [settings, setSettings] = useState<PersonalSettings>(defaults);
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [recoveryDestination, setRecoveryDestination] = useState("");
-  const [browserPairing, setBrowserPairing] = useState<BrowserPairing | null>(null);
 
   useEffect(() => {
-    Promise.all([api.getPersonalSettings(), api.integrations()])
-      .then(([personal, sources]) => {
-        setSettings(personal);
-        setIntegrations(sources);
-      })
+    api.getPersonalSettings()
+      .then(setSettings)
       .catch((error) => showToast(String(error).replace(/^Error:\s*/, ""), "error"))
       .finally(() => setLoading(false));
   }, [showToast]);
@@ -96,16 +91,6 @@ export default function PersonalCenter() {
       showToast(zh ? `恢复包已创建：${result.path}` : `Recovery kit created: ${result.path}`);
       setRecoveryCode("");
       setRecoveryConfirm("");
-    } catch (error) {
-      showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    }
-  }
-
-  async function createBrowserPairing() {
-    try {
-      const pairing = await api.createBrowserPairing();
-      setBrowserPairing(pairing);
-      showToast(zh ? "浏览器配对码已生成，5 分钟后失效" : "Browser pairing code created; it expires in five minutes");
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
     }
@@ -197,34 +182,6 @@ export default function PersonalCenter() {
         <ImportWizard />
       </section>
 
-      <section className="settings-section" aria-labelledby="browser-heading">
-        <h3 id="browser-heading" className="section-title">{zh ? "Chromium 浏览器填充" : "Chromium browser fill"}</h3>
-        <p className="field-hint">
-          {zh
-            ? "扩展只在你点击其弹窗中的条目后填充；它不会获得桌面端启动密钥，也不会在保险库锁定后继续工作。"
-            : "The extension fills only after you click an entry in its popup. It never receives the desktop bootstrap secret and stops working when the vault locks."}
-        </p>
-        <button className="secondary" type="button" onClick={createBrowserPairing}>
-          {zh ? "生成一次性配对码" : "Create one-time pairing code"}
-        </button>
-        {browserPairing && (
-          <div className="result-panel" aria-live="polite">
-            <div>{zh ? "扩展目录：apps/browser-extension（在 Chrome/Edge 的开发者模式中“加载已解压的扩展程序”）" : "Extension folder: apps/browser-extension (use Load unpacked in Chrome/Edge developer mode)"}</div>
-            <div>{zh ? "本机地址：" : "Local address: "}{browserPairing.sidecar_url}</div>
-            <div>{zh ? "一次性配对码：" : "One-time pairing code: "}{browserPairing.pairing_code}</div>
-          </div>
-        )}
-      </section>
-
-      <section className="settings-section" aria-labelledby="mobile-heading">
-        <h3 id="mobile-heading" className="section-title">{zh ? "移动端使用边界" : "Mobile-use boundary"}</h3>
-        <p className="field-hint">
-          {zh
-            ? "桌面端 API 只绑定本机回环地址，不会为了手机访问而开放局域网端口。当前可安全使用方式是选择已连接的 Bitwarden 或 Proton Pass 作为同步目标，并使用其官方移动端；本地专属附件、历史和自定义字段仍保留在加密桌面库中。"
-            : "The desktop API stays bound to loopback; it never opens a LAN port for a phone. Today’s safe mobile path is a connected Bitwarden or Proton Pass target and that provider’s official mobile app; desktop-only attachments, history, and custom fields remain in the encrypted local vault."}
-        </p>
-      </section>
-
       <section className="settings-section" aria-labelledby="recovery-heading">
         <h3 id="recovery-heading" className="section-title">{zh ? "紧急恢复包" : "Emergency recovery kit"}</h3>
         <p className="field-hint">
@@ -258,21 +215,6 @@ export default function PersonalCenter() {
         )}
       </section>
 
-      <section className="settings-section" aria-labelledby="onboarding-heading">
-        <h3 id="onboarding-heading" className="section-title">{zh ? "连接引导" : "Connection checklist"}</h3>
-        <p className="field-hint">
-          {zh ? "先安装官方 CLI，再在下方的连接管理器中保存凭据并执行测试。" : "Install the official CLI first, then save credentials and run a test in the connection manager below."}
-        </p>
-        <ul className="backup-list">
-          {integrations.map((item) => (
-            <li key={item.source}>
-              <strong>{item.label}</strong>
-              {": "}
-              {item.cli_installed ? (item.configured ? (zh ? "已连接" : "connected") : (zh ? "CLI 已安装，待配置" : "CLI installed; needs setup")) : (zh ? "需要安装官方 CLI" : "official CLI required")}
-            </li>
-          ))}
-        </ul>
-      </section>
     </>
   );
 }
