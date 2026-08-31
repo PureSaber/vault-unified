@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   api,
   type SyncPreview,
+  type SyncPreviewOperation,
   type SyncSourcePreview,
 } from "../api/client";
 import { useToast } from "../components/Toast";
@@ -43,9 +44,31 @@ const copy = {
     warning: "风险提示",
     confirm: "确认并执行",
     executing: "正在执行…",
-    confirmNormal: "确认执行这份同步预览？预览令牌只能使用一次。",
-    confirmDestructive:
-      "这份计划包含删除操作。当前数据可能被远端删除或远端条目可能被删除。确认继续？",
+    operationDetails: "逐条变更",
+    account: "账号",
+    website: "网站",
+    changedFields: "变化字段",
+    noChangedFields: "无需改写内容字段",
+    technicalDetails: "技术细节",
+    nextStep: "下一步",
+    reviewedDeletions: "我已查看这 {count} 个删除操作",
+    willDeleteDevice: "将从这台设备删除",
+    willDeleteService: "将从 {service} 删除",
+    actions: {
+      add: "新增",
+      update: "更新",
+      delete: "删除",
+      conflict: "两处都发生了修改",
+      unchanged: "不变",
+      pending_verification: "结果待核对",
+    },
+    fields: {
+      title: "名称",
+      username: "用户名",
+      password: "密码",
+      url: "网站地址",
+      notes: "备注",
+    },
     previewReady: "同步预览已生成，请核对后确认。",
     stale:
       "预览已失效或数据发生变化。软件没有执行同步，请重新生成预览。",
@@ -75,10 +98,31 @@ const copy = {
     warning: "Warnings",
     confirm: "Confirm and execute",
     executing: "Executing…",
-    confirmNormal:
-      "Execute this reviewed sync plan? The preview token can be used only once.",
-    confirmDestructive:
-      "This plan includes deletions. Local data may reflect remote deletion or remote entries may be deleted. Continue?",
+    operationDetails: "Item-level changes",
+    account: "Account",
+    website: "Website",
+    changedFields: "Changed fields",
+    noChangedFields: "No content fields need rewriting",
+    technicalDetails: "Technical details",
+    nextStep: "Next step",
+    reviewedDeletions: "I reviewed these {count} deletion operations",
+    willDeleteDevice: "Will be deleted from this device",
+    willDeleteService: "Will be deleted from {service}",
+    actions: {
+      add: "Add",
+      update: "Update",
+      delete: "Delete",
+      conflict: "Changed in both locations",
+      unchanged: "Unchanged",
+      pending_verification: "Pending verification",
+    },
+    fields: {
+      title: "name",
+      username: "username",
+      password: "password",
+      url: "website",
+      notes: "notes",
+    },
     previewReady: "Sync preview is ready. Review it before confirming.",
     stale:
       "The preview expired or state changed. Nothing was executed; create a new preview.",
@@ -103,6 +147,7 @@ export default function SyncPanel({
   const [preview, setPreview] = useState<SyncPreview | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<"preview" | "execute" | null>(null);
+  const [deletionsReviewed, setDeletionsReviewed] = useState(false);
 
   async function loadStatus() {
     try {
@@ -139,6 +184,7 @@ export default function SyncPanel({
         sources
       );
       setPreview(plan);
+      setDeletionsReviewed(false);
       showToast(text.previewReady);
     } catch (err) {
       const msg = String(err).replace(/^Error:\s*/, "");
@@ -152,11 +198,7 @@ export default function SyncPanel({
 
   async function executePreview() {
     if (!preview) return;
-    const prompt =
-      preview.destructive_count > 0
-        ? text.confirmDestructive
-        : text.confirmNormal;
-    if (!window.confirm(prompt)) return;
+    if (preview.destructive_count > 0 && !deletionsReviewed) return;
 
     setError("");
     setBusy("execute");
@@ -166,6 +208,7 @@ export default function SyncPanel({
       )) as SyncResultData;
       setResult(res);
       setPreview(null);
+      setDeletionsReviewed(false);
       showToast(t("sync.completed"));
       await loadStatus();
       onSyncDone?.();
@@ -180,6 +223,59 @@ export default function SyncPanel({
     } finally {
       setBusy(null);
     }
+  }
+
+  function actionLabel(action: SyncPreviewOperation["action"]): string {
+    return text.actions[action];
+  }
+
+  function fieldLabel(field: string): string {
+    return text.fields[field as keyof typeof text.fields] || field;
+  }
+
+  function interpolate(template: string, values: Record<string, string | number>): string {
+    return Object.entries(values).reduce(
+      (resultText, [key, value]) => resultText.replace(`{${key}}`, String(value)),
+      template,
+    );
+  }
+
+  function renderOperation(operation: SyncPreviewOperation) {
+    const deletionText = operation.deletion_side === "this_device"
+      ? text.willDeleteDevice
+      : operation.deletion_side === "connected_service"
+        ? interpolate(text.willDeleteService, { service: operation.source_label })
+        : "";
+    return (
+      <li className="sync-operation" key={operation.operation_id}>
+        <div className="sync-operation-heading">
+          <strong>{operation.title || "—"}</strong>
+          <span className="badge">{operation.direction === "pull" ? text.pull : text.push}</span>
+        </div>
+        <div className="sync-operation-meta">
+          {operation.username_display && <span>{text.account}: {operation.username_display}</span>}
+          {operation.website_host && <span>{text.website}: {operation.website_host}</span>}
+        </div>
+        {operation.changed_fields.length > 0 ? (
+          <p>{text.changedFields}: {operation.changed_fields.map(fieldLabel).join(", ")}</p>
+        ) : operation.action !== "delete" && (
+          <p className="sync-muted">{text.noChangedFields}</p>
+        )}
+        {deletionText && <p className="sync-deletion-target">{deletionText}</p>}
+        {operation.next_step && (
+          <p className="sync-warning">{text.nextStep}: {operation.next_step.replace(/_/g, " ")}</p>
+        )}
+        <details>
+          <summary>{text.technicalDetails}</summary>
+          <dl className="sync-operation-technical">
+            <div><dt>Operation ID</dt><dd>{operation.operation_id}</dd></div>
+            {operation.local_id && <div><dt>Device ID</dt><dd>{operation.local_id}</dd></div>}
+            {operation.remote_id && <div><dt>Service ID</dt><dd>{operation.remote_id}</dd></div>}
+            <div><dt>Reason</dt><dd>{operation.reason}</dd></div>
+          </dl>
+        </details>
+      </li>
+    );
   }
 
   return (
@@ -270,18 +366,26 @@ export default function SyncPanel({
             {new Date(preview.expires_at).toLocaleString()}
           </p>
 
-          <dl className="status-grid">
+          <div className="sync-preview-sources">
             {(Object.entries(preview.per_source) as [
               string,
               SyncSourcePreview
-            ][]).map(([source, item]) => (
-                <div className="status-row" key={source}>
-                  <dt>
-                    {source.replace(/_/g, " ")}
+            ][]).map(([source, item]) => {
+              const grouped = item.operations.reduce<Record<string, SyncPreviewOperation[]>>(
+                (groups, operation) => {
+                  (groups[operation.action] ||= []).push(operation);
+                  return groups;
+                },
+                {},
+              );
+              return (
+                <section className="sync-source-preview" key={source}>
+                  <h4>
+                    {item.label || source.replace(/_/g, " ")}
                     <br />
                     <span className="sync-muted">{item.status}</span>
-                  </dt>
-                  <dd>
+                  </h4>
+                  <div className="sync-source-counts">
                     {preview.include_pull && (
                       <div>
                         <strong>{text.pull}</strong>:{" "}
@@ -306,11 +410,26 @@ export default function SyncPanel({
                     {item.error && (
                       <div className="sync-error">{item.error}</div>
                     )}
-                  </dd>
-                </div>
-              )
-            )}
-          </dl>
+                  </div>
+                  {item.operations.length > 0 && (
+                    <div className="sync-operation-groups">
+                      <strong>{text.operationDetails}</strong>
+                      {Object.entries(grouped).map(([action, operations]) => (
+                        <section
+                          className={`sync-operation-group${action === "delete" ? " sync-operation-danger" : ""}`}
+                          key={action}
+                          aria-label={`${actionLabel(action as SyncPreviewOperation["action"])} ${operations.length}`}
+                        >
+                          <h5>{actionLabel(action as SyncPreviewOperation["action"])} ({operations.length})</h5>
+                          <ul>{operations.map(renderOperation)}</ul>
+                        </section>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              );
+            })}
+          </div>
 
           <div className="result-panel">
             {text.add}: {preview.totals.pull_add}; {text.update}:{" "}
@@ -337,11 +456,22 @@ export default function SyncPanel({
             </div>
           )}
 
+          {preview.destructive_count > 0 && (
+            <label className="checkbox-field sync-deletion-review">
+              <input
+                type="checkbox"
+                checked={deletionsReviewed}
+                onChange={(event) => setDeletionsReviewed(event.target.checked)}
+              />
+              <span>{interpolate(text.reviewedDeletions, { count: preview.destructive_count })}</span>
+            </label>
+          )}
+
           <div className="button-row">
             <button
               className="primary"
               type="button"
-              disabled={anyBusy}
+              disabled={anyBusy || (preview.destructive_count > 0 && !deletionsReviewed)}
               onClick={executePreview}
             >
               {busy === "execute"
@@ -352,7 +482,10 @@ export default function SyncPanel({
               className="secondary"
               type="button"
               disabled={anyBusy}
-              onClick={() => setPreview(null)}
+              onClick={() => {
+                setPreview(null);
+                setDeletionsReviewed(false);
+              }}
             >
               {t("confirm.cancel")}
             </button>

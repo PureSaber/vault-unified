@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -43,12 +44,13 @@ class FakeBitwarden:
         self.create_calls = 0
         self.update_calls = 0
         self.delete_calls = 0
+        self.available = True
 
     def is_configured(self) -> bool:
         return True
 
     def is_available(self) -> bool:
-        return True
+        return self.available
 
     def list_entries(self) -> list[SecretEntry]:
         return [copy.deepcopy(entry) for entry in self.entries.values()]
@@ -158,6 +160,16 @@ def test_preview_is_read_only_and_digest_is_stable(tmp_path: Path) -> None:
 
     assert first["totals"]["pull_add"] == 1
     assert first["totals"]["push_create"] == 1
+    assert len(first["operations"]) == 2
+    assert {
+        (operation["direction"], operation["action"])
+        for operation in first["operations"]
+    } == {("pull", "add"), ("push", "add")}
+    rendered = json.dumps(first, ensure_ascii=False)
+    assert "local-password" not in rendered
+    assert "remote-password" not in rendered
+    assert "local-user" not in rendered
+    assert "remote-user" not in rendered
     assert first["_state_digest"] == second["_state_digest"]
     assert vault_path.read_bytes() == before_bytes
     assert [
@@ -179,6 +191,7 @@ def test_preview_tokens_are_single_use_and_expire() -> None:
         include_push=False,
         local_fingerprint="local",
         plan_digest="remote",
+        operation_digest="operations",
     )
     consumed = store.consume(issued.token, session_token="session-a")
     assert consumed == issued
@@ -192,6 +205,7 @@ def test_preview_tokens_are_single_use_and_expire() -> None:
         include_push=True,
         local_fingerprint="local",
         plan_digest="remote",
+        operation_digest="operations",
     )
     now[0] += 6
     with pytest.raises(SyncPreviewExpired):
@@ -318,6 +332,11 @@ def test_api_executes_unchanged_preview_once(api_client) -> None:
         assert preview.status_code == 200
         payload = preview.json()
         assert payload["totals"]["push_create"] == 1
+        assert len(payload["operations"]) == 1
+        approved_id = payload["operations"][0]["operation_id"]
+        assert payload["operations"][0]["title"] == "Ready to sync"
+        assert payload["operations"][0]["username_display"] == "u***r"
+        assert "secret" not in json.dumps(payload)
 
         first = client.post(
             "/api/sync/execute",
@@ -326,6 +345,11 @@ def test_api_executes_unchanged_preview_once(api_client) -> None:
         )
         assert first.status_code == 200
         assert first.json()["pushed"]["pushed"] == 1
+        assert [
+            operation["operation_id"]
+            for operation in first.json()["operations"]
+        ] == [approved_id]
+        assert first.json()["operations"][0]["status"] == "completed"
         assert adapter.create_calls == 1
 
         second = client.post(
@@ -335,3 +359,368 @@ def test_api_executes_unchanged_preview_once(api_client) -> None:
         )
         assert second.status_code == 409
         assert adapter.create_calls == 1
+
+
+def test_remote_state_change_invalidates_item_level_preview(api_client) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    token = _unlock(client)
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": True,
+                "include_push": False,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+
+        remote = SecretEntry(
+            title="Appeared after preview",
+            username="later@example.test",
+            password="generated-later-secret",
+            source=Source.BITWARDEN,
+            external_id="remote-later",
+            remote_updated_at="revision-later",
+        )
+        remote.link_source(Source.BITWARDEN, "remote-later")
+        adapter.entries["remote-later"] = remote
+
+        execute = client.post(
+            "/api/sync/execute",
+            json={"preview_token": preview.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert execute.status_code == 409
+        assert "Remote sync state changed" in execute.json()["detail"]
+
+
+def test_remote_delete_preview_names_exact_item_and_execution_result(
+    api_client,
+) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    token = _unlock(client)
+    created = client.post(
+        "/api/entries",
+        json={
+            "title": "Delete from service",
+            "username": "delete.user@example.test",
+            "password": "generated-delete-secret",
+            "url": "https://Accounts.Example.test/private?token=hidden",
+        },
+        headers=_headers(token),
+    )
+    assert created.status_code == 200
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        initial = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": False,
+                "include_push": True,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        synced = client.post(
+            "/api/sync/execute",
+            json={"preview_token": initial.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert synced.status_code == 200
+
+        deleted = client.delete(
+            f"/api/entries/{created.json()['id']}",
+            headers=_headers(token),
+        )
+        assert deleted.status_code == 200
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": False,
+                "include_push": True,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        payload = preview.json()
+        deletion = payload["operations"][0]
+        assert deletion["action"] == "delete"
+        assert deletion["deletion_side"] == "connected_service"
+        assert deletion["title"] == "Delete from service"
+        assert deletion["username_display"] == "d***@example.test"
+        assert deletion["website_host"] == "accounts.example.test"
+        assert deletion["destructive"] is True
+        assert "generated-delete-secret" not in json.dumps(payload)
+        assert "token=hidden" not in json.dumps(payload)
+
+        execute = client.post(
+            "/api/sync/execute",
+            json={"preview_token": payload["preview_token"]},
+            headers=_headers(token),
+        )
+        assert execute.status_code == 200
+        outcome = execute.json()["operations"][0]
+        assert outcome["operation_id"] == deletion["operation_id"]
+        assert outcome["status"] == "completed"
+        assert adapter.delete_calls == 1
+
+
+def test_update_preview_lists_only_field_names_and_safe_display(api_client) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    remote = SecretEntry(
+        title="Updated account",
+        username="full.user@example.test",
+        password="generated-before-update-secret",
+        url="https://accounts.example.test/old?private=before",
+        notes="generated private note before",
+        source=Source.BITWARDEN,
+        external_id="remote-update",
+        remote_updated_at="revision-before",
+    )
+    remote.link_source(Source.BITWARDEN, "remote-update")
+    adapter.entries["remote-update"] = remote
+    token = _unlock(client)
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        initial = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": True,
+                "include_push": False,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        pulled = client.post(
+            "/api/sync/execute",
+            json={"preview_token": initial.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert pulled.status_code == 200
+
+        changed = copy.deepcopy(adapter.entries["remote-update"])
+        changed.password = "generated-after-update-secret"
+        changed.url = "https://accounts.example.test/new?private=after"
+        changed.notes = "generated private note after"
+        changed.remote_updated_at = "revision-after"
+        adapter.entries["remote-update"] = changed
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": True,
+                "include_push": False,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        payload = preview.json()
+        operation = payload["operations"][0]
+        assert operation["action"] == "update"
+        assert operation["changed_fields"] == ["password", "url", "notes"]
+        assert operation["username_display"] == "f***@example.test"
+        assert operation["website_host"] == "accounts.example.test"
+        rendered = json.dumps(payload)
+        for secret in (
+            "full.user@example.test",
+            "generated-before-update-secret",
+            "generated-after-update-secret",
+            "generated private note before",
+            "generated private note after",
+            "private=before",
+            "private=after",
+        ):
+            assert secret not in rendered
+
+
+def test_connected_service_delete_previews_device_deletion(api_client) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    adapter.capabilities = AdapterCapabilities(
+        authoritative_list=True,
+        revision_token=True,
+        idempotent_create=False,
+        delete_confirm=True,
+        absence_is_delete=True,
+    )
+    remote = SecretEntry(
+        title="Removed remotely",
+        username="remote.delete@example.test",
+        password="generated-remote-delete-secret",
+        url="https://vault.example.test/login",
+        source=Source.BITWARDEN,
+        external_id="remote-delete",
+        remote_updated_at="revision-delete",
+    )
+    remote.link_source(Source.BITWARDEN, "remote-delete")
+    adapter.entries["remote-delete"] = remote
+    token = _unlock(client)
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        initial = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": True,
+                "include_push": False,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        pulled = client.post(
+            "/api/sync/execute",
+            json={"preview_token": initial.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert pulled.status_code == 200
+        entries = client.get("/api/entries", headers=_headers(token))
+        assert entries.status_code == 200
+        local_id = entries.json()[0]["id"]
+        adapter.entries.clear()
+
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": True,
+                "include_push": False,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        deletion = preview.json()["operations"][0]
+        assert deletion["action"] == "delete"
+        assert deletion["deletion_side"] == "this_device"
+        assert deletion["local_id"] == local_id
+        assert deletion["title"] == "Removed remotely"
+
+        execute = client.post(
+            "/api/sync/execute",
+            json={"preview_token": preview.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert execute.status_code == 200
+        outcome = execute.json()["operations"][0]
+        assert outcome["operation_id"] == deletion["operation_id"]
+        assert outcome["status"] == "completed"
+
+
+def test_executor_never_scans_or_pushes_an_unapproved_dirty_entry(
+    tmp_path: Path,
+) -> None:
+    vault_path = tmp_path / "approved-only.vault"
+    local = LocalVault.create(vault_path, "generated-approved-only-password")
+    save_prefs(vault_path, SyncPreferences(enabled_sources=["bitwarden"]))
+    first = local.add(
+        SecretEntry(
+            title="Approved entry",
+            username="approved@example.test",
+            password="generated-approved-secret",
+        )
+    )
+    second = local.add(
+        SecretEntry(
+            title="Not approved entry",
+            username="not-approved@example.test",
+            password="generated-not-approved-secret",
+        )
+    )
+    vault = MagicMock()
+    vault.local = local
+    vault.vault_path = vault_path
+    vault._last_errors = []
+    engine = MetadataPreservingSyncEngine(vault)
+    vault.sync = engine
+    adapter = FakeBitwarden()
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        plan = engine.preview_explicit(
+            [Source.BITWARDEN],
+            include_pull=False,
+            include_push=True,
+        )
+        approved = next(
+            operation
+            for operation in plan["operations"]
+            if operation["local_id"] == first.id
+        )
+        result = engine.execute_explicit(
+            [Source.BITWARDEN],
+            include_pull=False,
+            include_push=True,
+            approved_operations=[approved],
+        )
+
+    assert adapter.create_calls == 1
+    assert len(adapter.entries) == 1
+    assert result.operations[0]["operation_id"] == approved["operation_id"]
+    assert result.operations[0]["status"] == "completed"
+    assert local.get(second.id).sync_status.value == "dirty"
+    assert local.get(second.id).get_linked_id(Source.BITWARDEN) == ""
+
+
+def test_unavailable_source_operation_is_never_reported_as_success(
+    api_client,
+) -> None:
+    client, _ = api_client
+    adapter = FakeBitwarden()
+    adapter.available = False
+    token = _unlock(client)
+    created = client.post(
+        "/api/entries",
+        json={
+            "title": "Unavailable source item",
+            "username": "offline@example.test",
+            "password": "generated-offline-secret",
+        },
+        headers=_headers(token),
+    )
+    assert created.status_code == 200
+
+    with (
+        patch("vault_unified.manager.get_adapter", return_value=adapter),
+        patch("vault_unified.sync.engine.get_adapter", return_value=adapter),
+    ):
+        preview = client.post(
+            "/api/sync/preview",
+            json={
+                "include_pull": False,
+                "include_push": True,
+                "sources": ["bitwarden"],
+            },
+            headers=_headers(token),
+        )
+        assert preview.status_code == 200
+        assert preview.json()["per_source"]["bitwarden"]["status"] == "unavailable"
+
+        execute = client.post(
+            "/api/sync/execute",
+            json={"preview_token": preview.json()["preview_token"]},
+            headers=_headers(token),
+        )
+        assert execute.status_code == 200
+        outcome = execute.json()["operations"][0]
+        assert outcome["status"] == "failed"
+        assert outcome["next_step"] == "create_new_preview"
+        assert execute.json()["pushed"] == {"pushed": 0, "errors": 1}

@@ -361,14 +361,53 @@ export interface SyncSourcePreview {
     unchanged: number;
     local_only: number;
     delete_observed: number;
+    pending_verification: number;
   };
   push: {
     create: number;
     update: number;
     delete: number;
     pending: number;
+    conflict: number;
     total: number;
   };
+  operations: SyncPreviewOperation[];
+}
+
+export type SyncOperationAction =
+  | "add"
+  | "update"
+  | "delete"
+  | "conflict"
+  | "unchanged"
+  | "pending_verification";
+
+export interface SyncPreviewOperation {
+  operation_id: string;
+  source: string;
+  source_label: string;
+  direction: "pull" | "push";
+  action: SyncOperationAction;
+  local_id: string | null;
+  remote_id: string | null;
+  title: string;
+  username_display: string;
+  website_host: string;
+  changed_fields: string[];
+  deletion_side: "this_device" | "connected_service" | null;
+  reason: string;
+  destructive: boolean;
+  next_step: string | null;
+}
+
+export interface SyncOperationResult extends SyncPreviewOperation {
+  status:
+    | "completed"
+    | "unchanged"
+    | "conflict"
+    | "pending_verification"
+    | "failed";
+  outcome_reason: string;
 }
 
 export interface SyncPreview {
@@ -387,11 +426,13 @@ export interface SyncPreview {
     push_create: number;
     push_update: number;
     push_delete: number;
+    push_conflict: number;
     pending: number;
     unavailable_sources: number;
   };
   destructive_count: number;
   warnings: string[];
+  operations: SyncPreviewOperation[];
 }
 
 export const api = {

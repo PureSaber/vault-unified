@@ -33,6 +33,7 @@ class SyncPreviewIntent:
     include_push: bool
     local_fingerprint: str
     plan_digest: str
+    operation_digest: str
     created_at: float
     expires_at: float
 
@@ -71,6 +72,7 @@ class SyncPreviewStore:
         include_push: bool,
         local_fingerprint: str,
         plan_digest: str,
+        operation_digest: str,
     ) -> SyncPreviewIntent:
         now = self._clock()
         token = secrets.token_urlsafe(32)
@@ -82,6 +84,7 @@ class SyncPreviewStore:
             include_push=include_push,
             local_fingerprint=local_fingerprint,
             plan_digest=plan_digest,
+            operation_digest=operation_digest,
             created_at=now,
             expires_at=now + self._ttl_seconds,
         )

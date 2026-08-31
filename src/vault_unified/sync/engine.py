@@ -42,6 +42,7 @@ class SyncResult:
     pushed: dict[str, int] = field(default_factory=dict)
     conflicts: list[ConflictRecord] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    operations: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +50,7 @@ class SyncResult:
             "pushed": self.pushed,
             "conflicts": [conflict.to_dict() for conflict in self.conflicts],
             "errors": self.errors,
+            "operations": self.operations,
         }
 
 

@@ -22,6 +22,7 @@ from vault_unified.models import (
 from vault_unified.sync.preview import (
     SyncPreviewExpired,
     SyncPreviewSessionMismatch,
+    canonical_digest,
     preview_store,
     sync_state_fingerprint,
 )
@@ -133,6 +134,7 @@ def preview_sync(
         )
 
     state_digest = plan.pop("_state_digest")
+    operation_digest = canonical_digest(plan["operations"])
     intent = preview_store.issue(
         session_token=session_token,
         sources=tuple(source.value for source in sources),
@@ -140,6 +142,7 @@ def preview_sync(
         include_push=body.include_push,
         local_fingerprint=before,
         plan_digest=state_digest,
+        operation_digest=operation_digest,
     )
     return {
         **plan,
@@ -192,10 +195,18 @@ def execute_previewed_sync(
             detail="Remote sync state changed; create a new preview",
         )
 
+    approved_operations = fresh_plan["operations"]
+    if canonical_digest(approved_operations) != intent.operation_digest:
+        raise HTTPException(
+            status_code=409,
+            detail="Sync operation set changed; create a new preview",
+        )
+
     result = vault.execute_sync(
         sources,
         include_pull=intent.include_pull,
         include_push=intent.include_push,
+        approved_operations=approved_operations,
     )
     return result.to_dict()
 

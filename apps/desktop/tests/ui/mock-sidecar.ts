@@ -62,10 +62,12 @@ export class MockAuthenticatedSidecar {
 
   readonly writes = { create: 0, update: 0, delete: 0 };
   readonly importWrites = { apply: 0, undo: 0 };
+  readonly syncWrites = { execute: 0 };
 
   constructor(
     private readonly lockAfterSeconds = 900,
     private readonly commitDelayMs = 0,
+    private readonly syncPreviewMode: "empty" | "deletion" = "empty",
   ) {}
 
   get persistedEntries(): StoredEntry[] {
@@ -231,6 +233,125 @@ export class MockAuthenticatedSidecar {
         proton_vault_name: "",
         proton_share_id: "",
         enabled_sources: [],
+      });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/status") {
+      await this.respond(route, 200, {
+        components: {
+          local: `ready (${this.entries.size} entries)`,
+          dirty: "0",
+          conflicts: "0",
+          bitwarden: "ready (enabled)",
+        },
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/sync/preview") {
+      const operation = {
+        operation_id: "a".repeat(64),
+        source: "bitwarden",
+        source_label: "Bitwarden",
+        direction: "push",
+        action: "delete",
+        local_id: "generated-local-entry-id",
+        remote_id: "generated-remote-entry-id",
+        title: "Generated deletion review",
+        username_display: "g***@example.invalid",
+        website_host: "sync.example.invalid",
+        changed_fields: [],
+        deletion_side: "connected_service",
+        reason: "deleted_on_this_device",
+        destructive: true,
+        next_step: null,
+      };
+      const operations = this.syncPreviewMode === "deletion" ? [operation] : [];
+      await this.respond(route, 200, {
+        preview_token: `generated-sync-preview-${testData.runId}`,
+        generated_at: "2026-08-31T00:00:00Z",
+        expires_at: "2026-08-31T00:05:00Z",
+        include_pull: true,
+        include_push: true,
+        sources: ["bitwarden"],
+        per_source: {
+          bitwarden: {
+            label: "Bitwarden",
+            configured: true,
+            available: true,
+            status: "ready",
+            error: "",
+            pull: {
+              remote_total: 0,
+              add: 0,
+              update: 0,
+              conflict: 0,
+              unchanged: 0,
+              local_only: 0,
+              delete_observed: 0,
+              pending_verification: 0,
+            },
+            push: {
+              create: 0,
+              update: 0,
+              delete: operations.length,
+              pending: 0,
+              conflict: 0,
+              total: operations.length,
+            },
+            operations,
+          },
+        },
+        totals: {
+          pull_add: 0,
+          pull_update: 0,
+          pull_conflict: 0,
+          pull_delete_observed: 0,
+          push_create: 0,
+          push_update: 0,
+          push_delete: operations.length,
+          push_conflict: 0,
+          pending: 0,
+          unavailable_sources: 0,
+        },
+        destructive_count: operations.length,
+        warnings: operations.length ? ["The plan includes remote deletion"] : [],
+        operations,
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/sync/execute") {
+      if (this.syncPreviewMode !== "deletion") {
+        await this.respond(route, 409, { detail: "No generated operation to execute" });
+        return;
+      }
+      this.syncWrites.execute += 1;
+      await this.respond(route, 200, {
+        pulled: {},
+        pushed: { pushed: 1, errors: 0 },
+        conflicts: [],
+        errors: [],
+        operations: [{
+          operation_id: "a".repeat(64),
+          source: "bitwarden",
+          source_label: "Bitwarden",
+          direction: "push",
+          action: "delete",
+          local_id: "generated-local-entry-id",
+          remote_id: "generated-remote-entry-id",
+          title: "Generated deletion review",
+          username_display: "g***@example.invalid",
+          website_host: "sync.example.invalid",
+          changed_fields: [],
+          deletion_side: "connected_service",
+          reason: "deleted_on_this_device",
+          destructive: true,
+          next_step: null,
+          status: "completed",
+          outcome_reason: "connected_service_state_verified",
+        }],
       });
       return;
     }
