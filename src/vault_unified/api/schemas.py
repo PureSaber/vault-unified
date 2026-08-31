@@ -244,8 +244,29 @@ class PersonalSettingsIn(BaseModel):
 
 class TransferImportIn(BaseModel):
     format: Literal["json", "csv"]
-    content: str = Field(min_length=1, max_length=14_000_000)
+    # Secret-bearing content is size-checked inside the import parser so a
+    # Pydantic 422 response cannot echo the plaintext as a rejected input.
+    content: str = ""
     confirm_plaintext: bool = False
+
+
+class TransferImportDecisionIn(BaseModel):
+    preview_id: str = Field(min_length=1, max_length=64)
+    action: Literal["skip", "create", "update"]
+    target_entry_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+
+class TransferImportApplyIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+    decisions: list[TransferImportDecisionIn] = Field(default_factory=list, max_length=5_000)
+
+
+class TransferImportCancelIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+
+
+class TransferImportUndoIn(BaseModel):
+    transaction_id: str = Field(min_length=16, max_length=128)
 
 
 class TransferExportIn(BaseModel):

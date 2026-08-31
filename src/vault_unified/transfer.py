@@ -82,6 +82,38 @@ def _entry_from_json(value: Any) -> ImportedEntry:
     )
 
 
+def imported_entry_from_value(value: Any) -> ImportedEntry:
+    """Parse one transfer item without exposing its values in errors."""
+
+    try:
+        return _entry_from_json(value)
+    except (TypeError, PersonalDataError) as exc:
+        raise ValueError(str(exc)) from exc
+
+
+def prepare_imported_entry(item: ImportedEntry) -> SecretEntry:
+    """Validate and materialize an imported item entirely in memory."""
+
+    entry = SecretEntry(
+        title=item.title,
+        username=item.username,
+        password=item.password,
+        url=item.url,
+        notes=item.notes,
+        tags=item.tags,
+    )
+    update_data(
+        entry,
+        entry_type=item.entry_type,
+        custom_fields=item.custom_fields,
+        totp_secret=item.totp_secret,
+    )
+    personal = data_for(entry)
+    personal["attachments"] = item.attachments
+    set_data(entry, personal)
+    return entry
+
+
 def parse_transfer(text: str, format_name: str) -> list[ImportedEntry]:
     if len(text.encode("utf-8")) > MAX_TRANSFER_BYTES:
         raise ValueError("transfer file exceeds the 10 MiB limit")
@@ -124,7 +156,7 @@ def parse_transfer(text: str, format_name: str) -> list[ImportedEntry]:
     if len(values) > MAX_TRANSFER_ENTRIES:
         raise ValueError("transfer contains too many entries")
     try:
-        return [_entry_from_json(item) for item in values]
+        return [imported_entry_from_value(item) for item in values]
     except (TypeError, PersonalDataError) as exc:
         raise ValueError(str(exc)) from exc
 
@@ -134,26 +166,7 @@ def import_entries(vault: Any, entries: list[ImportedEntry]) -> dict[str, int]:
     # vault.  Once prepared, LocalVault performs a single atomic save.
     prepared: list[SecretEntry] = []
     for item in entries:
-        entry = SecretEntry(
-            title=item.title,
-            username=item.username,
-            password=item.password,
-            url=item.url,
-            notes=item.notes,
-            tags=item.tags,
-        )
-        update_data(
-            entry,
-            entry_type=item.entry_type,
-            custom_fields=item.custom_fields,
-            totp_secret=item.totp_secret,
-        )
-        personal = data_for(entry)
-        # Attachment integrity and size limits are validated through the same
-        # personal-data schema before the entry is saved.
-        personal["attachments"] = item.attachments
-        set_data(entry, personal)
-        prepared.append(entry)
+        prepared.append(prepare_imported_entry(item))
     vault.local.import_entries(prepared, from_remote=False)
     return {"imported": len(entries)}
 
