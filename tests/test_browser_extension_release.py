@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 import zipfile
 from pathlib import Path
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from scripts.build_browser_extension import (
     ARCHIVE_FILES,
@@ -12,9 +17,6 @@ from scripts.build_browser_extension import (
     verify_extension_archive,
 )
 from scripts.version_contract import component_versions, require_version_contract
-
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_all_shipped_components_share_one_release_version() -> None:
