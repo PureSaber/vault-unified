@@ -12,13 +12,15 @@ import SkipLink from "./components/SkipLink";
 import Unlock, { lockApp } from "./pages/Unlock";
 import VaultList from "./pages/VaultList";
 import EntryForm from "./pages/EntryForm";
-import SyncPanel from "./pages/SyncPanel";
 import Settings from "./pages/Settings";
 import ConflictModal from "./pages/ConflictModal";
+import Connections from "./pages/Connections";
+import SecurityRecovery from "./pages/SecurityRecovery";
 import { useToast } from "./components/Toast";
 import ConfirmDialog from "./components/ConfirmDialog";
 
-type Page = "list" | "add" | "sync" | "settings" | "conflicts";
+type TopPage = "passwords" | "security" | "connections" | "settings";
+type Page = TopPage | "editor" | "conflicts";
 type PendingAction = { kind: "navigate"; page: Page } | { kind: "lock" };
 
 const DEFAULT_IDLE_SECONDS = 15 * 60;
@@ -26,12 +28,13 @@ const CONFLICT_POLL_MS = 60_000;
 const MAINTENANCE_POLL_MS = 60_000;
 
 function AppShell() {
-  const { t, locale, setLocale } = useI18n();
+  const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [unlocked, setUnlocked] = useState(hasToken());
-  const [page, setPage] = useState<Page>("list");
+  const [page, setPage] = useState<Page>("passwords");
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
   const [conflictCount, setConflictCount] = useState(0);
+  const [backupCount, setBackupCount] = useState<number | null>(null);
   const [lockAfterSeconds, setLockAfterSeconds] = useState(DEFAULT_IDLE_SECONDS);
   const [editorDirty, setEditorDirty] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
@@ -46,7 +49,7 @@ function AppShell() {
     lockApp();
     setUnlocked(false);
     setEditEntry(null);
-    setPage("list");
+    setPage("passwords");
     setEditorDirty(false);
     setEditorSaving(false);
     setPendingAction(null);
@@ -105,6 +108,21 @@ function AppShell() {
     const id = window.setInterval(refreshConflicts, CONFLICT_POLL_MS);
     return () => window.clearInterval(id);
   }, [unlocked, refreshConflicts, page]);
+
+  useEffect(() => {
+    if (!unlocked || page !== "passwords") return;
+    let cancelled = false;
+    api.backups()
+      .then((summary) => {
+        if (!cancelled) setBackupCount(summary.count);
+      })
+      .catch(() => {
+        if (!cancelled) setBackupCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [unlocked, page]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -218,7 +236,7 @@ function AppShell() {
     setEditorDirty(false);
     setEditEntry(null);
     setPage(target);
-    if (target === "conflicts" || target === "sync") void refreshConflicts();
+    if (target === "conflicts" || target === "connections") void refreshConflicts();
   }
 
   function handleLock() {
@@ -242,15 +260,14 @@ function AppShell() {
       void performLock();
     } else if (action?.kind === "navigate") {
       setPage(action.page);
-      if (action.page === "conflicts" || action.page === "sync") void refreshConflicts();
+      if (action.page === "conflicts" || action.page === "connections") void refreshConflicts();
     }
   }
 
-  const navItems: { id: Page; label: string }[] = [
-    { id: "list", label: t("nav.vault") },
-    { id: "add", label: t("nav.add") },
-    { id: "sync", label: t("nav.sync") },
-    { id: "conflicts", label: t("nav.conflicts") },
+  const navItems: { id: TopPage; label: string }[] = [
+    { id: "passwords", label: t("nav.passwords") },
+    { id: "security", label: t("nav.securityRecovery") },
+    { id: "connections", label: t("nav.connections") },
     { id: "settings", label: t("nav.settings") },
   ];
 
@@ -267,24 +284,6 @@ function AppShell() {
       <SkipLink />
       <header className="header">
         <h1>{t("app.title")}</h1>
-        <div className="header-locale" role="group" aria-label={t("lang.label")}>
-          <button
-            type="button"
-            className={locale === "zh" ? "active" : ""}
-            onClick={() => setLocale("zh")}
-            aria-pressed={locale === "zh"}
-          >
-            {t("lang.zh")}
-          </button>
-          <button
-            type="button"
-            className={locale === "en" ? "active" : ""}
-            onClick={() => setLocale("en")}
-            aria-pressed={locale === "en"}
-          >
-            {t("lang.en")}
-          </button>
-        </div>
         <nav className="nav" aria-label={t("nav.main")}>
           {navItems.map(({ id, label }) => (
             <button
@@ -295,49 +294,66 @@ function AppShell() {
               aria-current={page === id ? "page" : undefined}
             >
               {label}
-              {id === "conflicts" && conflictCount > 0 && (
-                <span className="nav-badge" title={t("nav.conflictBadge", { count: conflictCount })}>
-                  {conflictCount}
-                </span>
-              )}
             </button>
           ))}
           <button type="button" className="nav-lock" onClick={handleLock}>
-            {t("nav.lock")}
+            {t("nav.lockNow")}
           </button>
         </nav>
       </header>
       <main className="main" id="main-content">
-        {page === "list" && (
-          <VaultList
-            onEdit={(e) => {
-              setEditEntry(e);
-              setEditorDirty(false);
-              setPage("add");
-            }}
-            onOpenConflicts={() => setPage("conflicts")}
-          />
+        {page === "passwords" && (
+          <>
+            {conflictCount > 0 && (
+              <div className="context-notice context-notice-warning" role="status">
+                <span>{t("conflicts.contextNotice", { count: conflictCount })}</span>
+                <button type="button" className="secondary" onClick={() => setPage("conflicts")}>
+                  {t("conflicts.review")}
+                </button>
+              </div>
+            )}
+            {backupCount === 0 && (
+              <div className="context-notice" role="status">
+                <span>{t("security.noBackupReminder")}</span>
+                <button type="button" className="secondary" onClick={() => requestNavigation("security")}>
+                  {t("security.setBackup")}
+                </button>
+              </div>
+            )}
+            <VaultList
+              onAdd={() => requestNavigation("editor")}
+              onEdit={(e) => {
+                setEditEntry(e);
+                setEditorDirty(false);
+                setPage("editor");
+              }}
+            />
+          </>
         )}
-        {page === "add" && (
+        {page === "editor" && (
           <EntryForm
             entry={editEntry}
             onDirtyChange={setEditorDirty}
             onSavingChange={setEditorSaving}
-            onDone={(saved) => requestNavigation("list", Boolean(saved))}
+            onDone={(saved) => requestNavigation("passwords", Boolean(saved))}
           />
         )}
-        {page === "sync" && (
-          <SyncPanel
-            onOpenConflicts={() => {
-              refreshConflicts();
-              setPage("conflicts");
-            }}
+        {page === "security" && <SecurityRecovery />}
+        {page === "connections" && (
+          <Connections
+            conflictCount={conflictCount}
+            onOpenConflicts={() => setPage("conflicts")}
             onSyncDone={refreshConflicts}
           />
         )}
         {page === "settings" && <Settings />}
         {page === "conflicts" && (
-          <ConflictModal onResolved={refreshConflicts} />
+          <>
+            <button type="button" className="ghost page-back" onClick={() => setPage("passwords")}>
+              {t("conflicts.backToPasswords")}
+            </button>
+            <ConflictModal onResolved={refreshConflicts} />
+          </>
         )}
       </main>
       {idleCountdown !== null && editorDirty && (

@@ -16,14 +16,14 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   await page.getByRole("button", { name: "Create and unlock" }).click();
   await expect(page.getByLabel("Search vault")).toBeVisible();
 
-  await page.getByRole("button", { name: "Lock", exact: true }).click();
+  await page.getByRole("button", { name: "Lock now", exact: true }).click();
   await expect(page.getByRole("button", { name: "Unlock", exact: true })).toBeVisible();
   await page.getByLabel("Master password", { exact: true }).fill(testData.masterPassword);
   await page.getByRole("button", { name: "Unlock", exact: true }).click();
   await expect(page.getByLabel("Search vault")).toBeVisible();
 
   const accountTitle = `Generated account ${testData.runId.slice(0, 8)}`;
-  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Add password", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill(accountTitle);
   await page.getByLabel("Username", { exact: true }).fill("beginner@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
@@ -38,7 +38,7 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   await search.fill("beginner@example.invalid");
   await expect(page.getByText(accountTitle, { exact: true })).toBeVisible();
 
-  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  await page.getByRole("button", { name: `Open ${accountTitle}`, exact: true }).click();
   const titleField = page.getByLabel("Title", { exact: true });
   await expect(titleField).toHaveValue(accountTitle);
   await titleField.fill(`${accountTitle} cancelled draft`);
@@ -69,6 +69,6 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   expect(JSON.stringify(browserStorage)).not.toContain(testData.bearerToken);
   expect(JSON.stringify(browserStorage)).not.toContain(testData.bootstrapSecret);
 
-  await page.getByRole("button", { name: "Lock", exact: true }).click();
+  await page.getByRole("button", { name: "Lock now", exact: true }).click();
   await expect(page.getByRole("button", { name: "Unlock", exact: true })).toBeVisible();
 });

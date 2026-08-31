@@ -70,6 +70,8 @@ def update_preferences(
 def _resolve_sources(
     vault: UnifiedVault,
     requested: list[str] | None,
+    *,
+    allow_disabled_explicit: bool = False,
 ) -> list[Source]:
     enabled = vault.get_prefs().get_enabled_sources()
     enabled_set = set(enabled)
@@ -90,7 +92,7 @@ def _resolve_sources(
                     status_code=400,
                     detail="Local is not an external sync source",
                 )
-            if source not in enabled_set:
+            if source not in enabled_set and not allow_disabled_explicit:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Source {value} is disabled in sync preferences",
@@ -116,7 +118,11 @@ def preview_sync(
             status_code=400,
             detail="Preview must include pull, push, or both",
         )
-    sources = _resolve_sources(vault, body.sources)
+    sources = _resolve_sources(
+        vault,
+        body.sources,
+        allow_disabled_explicit=body.sources is not None,
+    )
     before = sync_state_fingerprint(vault)
     try:
         plan = vault.preview_sync(
@@ -174,6 +180,12 @@ def execute_previewed_sync(
         )
 
     sources = [Source(value) for value in intent.sources]
+    enabled_sources = set(vault.get_prefs().get_enabled_sources())
+    if any(source not in enabled_sources for source in sources):
+        raise HTTPException(
+            status_code=409,
+            detail="Enable every selected connection before executing this preview",
+        )
     try:
         fresh_plan = vault.preview_sync(
             sources,
