@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, clearToken, setToken, type VaultInfo } from "../api/client";
 import { useI18n } from "../i18n";
+import PathPicker from "../components/PathPicker";
 
 interface Props {
   onUnlock: () => void;
@@ -303,10 +304,15 @@ export default function Unlock({ onUnlock }: Props) {
           <form onSubmit={handleRecovery} noValidate>
             <h2>{copy.recoveryTitle}</h2>
             <p className="field-hint">{copy.recoveryHint}</p>
-            <div className="field">
-              <label className="field-label" htmlFor="recovery-kit-path">{copy.recoveryKitPath}</label>
-              <input id="recovery-kit-path" value={recoveryKitPath} onChange={(e) => setRecoveryKitPath(e.target.value)} autoFocus autoComplete="off" required />
-            </div>
+            <PathPicker
+              id="recovery-kit-path"
+              label={copy.recoveryKitPath}
+              mode="file"
+              value={recoveryKitPath}
+              onChange={setRecoveryKitPath}
+              extensions={["json"]}
+              required
+            />
             <div className="field">
               <label className="field-label" htmlFor="emergency-recovery-code">{copy.recoveryCode}</label>
               <input id="emergency-recovery-code" type="password" value={recoveryCode} onChange={(e) => setRecoveryCode(e.target.value)} autoComplete="off" required />
@@ -412,20 +418,15 @@ export default function Unlock({ onUnlock }: Props) {
               </form>
             ) : (
               <form onSubmit={handleRestore} noValidate>
-                <div className="field">
-                  <label className="field-label" htmlFor="backup-path">
-                    {copy.restorePath}
-                  </label>
-                  <input
-                    id="backup-path"
-                    value={backupPath}
-                    onChange={(e) => setBackupPath(e.target.value)}
-                    placeholder={copy.restorePlaceholder}
-                    autoFocus
-                    autoComplete="off"
-                    required
-                  />
-                </div>
+                <PathPicker
+                  id="backup-path"
+                  label={copy.restorePath}
+                  mode="file"
+                  value={backupPath}
+                  onChange={setBackupPath}
+                  placeholder={copy.restorePlaceholder}
+                  required
+                />
                 <div className="field">
                   <label className="field-label" htmlFor="restore-master-password">
                     {t("unlock.password")}

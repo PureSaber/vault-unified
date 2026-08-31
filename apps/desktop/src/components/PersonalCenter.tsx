@@ -3,6 +3,7 @@ import { api, PersonalSettings } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 import ImportWizard from "./ImportWizard";
+import PathPicker from "./PathPicker";
 
 const defaults: PersonalSettings = {
   lock_after_seconds: 15 * 60,
@@ -151,17 +152,14 @@ export default function PersonalCenter() {
                   }
                 />
               </div>
-              <div className="field">
-                <label className="field-label" htmlFor="auto-backup-destination">
-                  {zh ? "备份目录" : "Backup folder"}
-                </label>
-                <input
-                  id="auto-backup-destination"
-                  value={settings.auto_backup_destination}
-                  onChange={(e) => setSettings({ ...settings, auto_backup_destination: e.target.value })}
-                  placeholder={zh ? "例如 D:\\OneDrive\\VaultBackups" : "For example D:\\OneDrive\\VaultBackups"}
-                />
-              </div>
+              <PathPicker
+                id="auto-backup-destination"
+                label={zh ? "备份目录" : "Backup folder"}
+                mode="directory"
+                value={settings.auto_backup_destination}
+                onChange={(auto_backup_destination) => setSettings({ ...settings, auto_backup_destination })}
+                placeholder={zh ? "例如 D:\\OneDrive\\VaultBackups" : "For example D:\\OneDrive\\VaultBackups"}
+              />
             </>
           )}
           <button className="secondary" type="submit" disabled={saving}>
@@ -204,10 +202,13 @@ export default function PersonalCenter() {
               <label className="field-label" htmlFor="recovery-confirm">{zh ? "重新输入恢复码以确认" : "Re-enter recovery code to confirm"}</label>
               <input id="recovery-confirm" value={recoveryConfirm} onChange={(e) => setRecoveryConfirm(e.target.value)} autoComplete="off" />
             </div>
-            <div className="field">
-              <label className="field-label" htmlFor="recovery-destination">{zh ? "恢复包目录（建议 U 盘或其他位置）" : "Recovery-kit folder (prefer USB or another location)"}</label>
-              <input id="recovery-destination" value={recoveryDestination} onChange={(e) => setRecoveryDestination(e.target.value)} />
-            </div>
+            <PathPicker
+              id="recovery-destination"
+              label={zh ? "恢复包目录（建议 U 盘或其他位置）" : "Recovery-kit folder (prefer USB or another location)"}
+              mode="directory"
+              value={recoveryDestination}
+              onChange={setRecoveryDestination}
+            />
             <button className="secondary" type="button" onClick={createRecoveryKit}>
               {zh ? "创建恢复包" : "Create recovery kit"}
             </button>

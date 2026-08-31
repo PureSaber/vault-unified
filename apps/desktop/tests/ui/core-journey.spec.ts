@@ -24,10 +24,10 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
 
   const accountTitle = `Generated account ${testData.runId.slice(0, 8)}`;
   await page.getByRole("button", { name: "Add password", exact: true }).click();
-  await page.getByLabel("Title", { exact: true }).fill(accountTitle);
+  await page.getByLabel("Website or app name", { exact: true }).fill(accountTitle);
   await page.getByLabel("Username", { exact: true }).fill("beginner@example.invalid");
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
-  await page.getByLabel("URL", { exact: true }).fill("https://example.invalid/login");
+  await page.getByLabel("Website address", { exact: true }).fill("https://example.invalid/login");
   await page.getByLabel("Notes", { exact: true }).fill("Generated UI journey data only");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
@@ -39,7 +39,7 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   await expect(page.getByText(accountTitle, { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: `Open ${accountTitle}`, exact: true }).click();
-  const titleField = page.getByLabel("Title", { exact: true });
+  const titleField = page.getByLabel("Website or app name", { exact: true });
   await expect(titleField).toHaveValue(accountTitle);
   await titleField.fill(`${accountTitle} cancelled draft`);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();

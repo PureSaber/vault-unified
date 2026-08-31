@@ -8,6 +8,7 @@ import {
 } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
+import PathPicker from "./PathPicker";
 
 const copy = {
   zh: {
@@ -249,18 +250,14 @@ export default function BackupCenter() {
             <div className="status-row"><dt>{text.storage}</dt><dd>{formatBytes(summary.total_bytes)}</dd></div>
           </dl>
 
-          <div className="field">
-            <label className="field-label" htmlFor="backup-destination">
-              {text.destination}
-            </label>
-            <input
-              id="backup-destination"
-              value={destination}
-              onChange={(event) => setDestination(event.target.value)}
-              placeholder={summary.default_destination}
-              autoComplete="off"
-            />
-          </div>
+          <PathPicker
+            id="backup-destination"
+            label={text.destination}
+            mode="directory"
+            value={destination}
+            onChange={setDestination}
+            placeholder={summary.default_destination}
+          />
           <button
             type="button"
             className="primary"

@@ -513,6 +513,7 @@ fn shutdown_api_sidecar(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![get_api_runtime_config])
         .setup(|app| {
             let resource_dir = app.path().resource_dir().ok();

@@ -180,6 +180,34 @@ export class MockAuthenticatedSidecar {
     return Array.from(this.entries.values(), clone);
   }
 
+  seedCompatibilityEntry(entryType: Exclude<StoredEntry["entry_type"], "login" | "secure_note">): string {
+    const id = `generated-compatibility-${entryType}`;
+    const entry: StoredEntry = {
+      id,
+      title: "Generated compatibility item",
+      username: "compatibility@example.invalid",
+      password: testData.entryPassword,
+      url: "https://compatibility.example.invalid",
+      notes: "Generated compatibility notes",
+      has_password: true,
+      has_notes: true,
+      source: "bitwarden",
+      tags: ["generated", "compatibility"],
+      sync_status: "clean",
+      linked_sources: { bitwarden: "generated-remote-id" },
+      entry_type: entryType,
+      custom_fields: [{ label: "Generated field", value: "Generated value", concealed: false }],
+      totp_secret: "",
+      has_totp_secret: false,
+      attachments: [],
+      history_count: 0,
+      created_at: "2026-08-31T00:00:00Z",
+      updated_at: this.timestamp(),
+    };
+    this.entries.set(id, entry);
+    return id;
+  }
+
   private timestamp(): string {
     this.revision += 1;
     return `2026-08-31T00:00:${String(this.revision).padStart(2, "0")}Z`;
