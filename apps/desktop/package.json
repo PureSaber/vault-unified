@@ -7,6 +7,9 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "tsc --noEmit",
+    "test:ui:install": "playwright install chromium",
+    "test:ui:serve": "npm run build && vite preview --host 127.0.0.1 --port 1420",
+    "test:ui": "pwsh -NoProfile -File ../../scripts/run-ui-journeys.ps1",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -17,6 +20,8 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@playwright/test": "^1.62.1",
     "@tauri-apps/cli": "^2.2.0",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
