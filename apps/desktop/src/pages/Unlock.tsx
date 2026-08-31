@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { api, clearToken, setToken, type VaultInfo } from "../api/client";
+import { api, clearToken, setToken, type RecoveryKitPreview, type StartupRestorePreview, type VaultInfo } from "../api/client";
 import { useI18n } from "../i18n";
 import PathPicker from "../components/PathPicker";
+import ConfirmDialog from "../components/ConfirmDialog";
 
 interface Props {
   onUnlock: () => void;
@@ -40,7 +41,6 @@ const firstRunCopy = {
     recoveryKitPath: "恢复包文件路径",
     recoveryCode: "恢复码",
     newPassword: "新的主密码",
-    confirmRecovery: "我确认使用恢复包替换当前保险库。",
     recover: "恢复并解锁",
     recovering: "正在验证和恢复…",
     back: "返回",
@@ -76,7 +76,6 @@ const firstRunCopy = {
     recoveryKitPath: "Recovery-kit file path",
     recoveryCode: "Recovery code",
     newPassword: "New master password",
-    confirmRecovery: "I confirm that the recovery kit should replace the current vault.",
     recover: "Recover and unlock",
     recovering: "Validating and recovering…",
     back: "Back",
@@ -98,7 +97,8 @@ export default function Unlock({ onUnlock }: Props) {
   const [recoveryCode, setRecoveryCode] = useState("");
   const [newRecoveryPassword, setNewRecoveryPassword] = useState("");
   const [confirmRecoveryPassword, setConfirmRecoveryPassword] = useState("");
-  const [confirmRecovery, setConfirmRecovery] = useState(false);
+  const [restorePreview, setRestorePreview] = useState<StartupRestorePreview | null>(null);
+  const [recoveryPreview, setRecoveryPreview] = useState<RecoveryKitPreview | null>(null);
   const [showTechnical, setShowTechnical] = useState(false);
   const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
@@ -200,8 +200,23 @@ export default function Unlock({ onUnlock }: Props) {
     }
     setLoading(true);
     try {
-      const res = await api.restoreVault(backupPath.trim(), password, remember);
-      finish(res.token);
+      setRestorePreview(await api.previewVaultRestore(backupPath.trim(), password, remember));
+    } catch (err) {
+      setError(normalizeError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyRestore() {
+    if (!restorePreview) return;
+    const preview = restorePreview;
+    setRestorePreview(null);
+    setLoading(true);
+    try {
+      await api.applyVaultRestore(preview.preview_token, password, remember);
+      clearToken();
+      window.location.reload();
     } catch (err) {
       setError(normalizeError(err));
     } finally {
@@ -233,19 +248,30 @@ export default function Unlock({ onUnlock }: Props) {
       setError(copy.mismatch);
       return;
     }
-    if (!confirmRecovery) {
-      setError(zh ? "请确认恢复将替换当前保险库。" : "Confirm that recovery will replace the current vault.");
-      return;
-    }
     setLoading(true);
     try {
-      const res = await api.recoverFromKit(
-        recoveryKitPath.trim(),
+      setRecoveryPreview(await api.previewRecoveryKit(recoveryKitPath.trim(), recoveryCode));
+    } catch (err) {
+      setError(normalizeError(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function applyRecovery() {
+    if (!recoveryPreview) return;
+    const preview = recoveryPreview;
+    setRecoveryPreview(null);
+    setLoading(true);
+    try {
+      await api.applyRecoveryKit(
+        preview.preview_token,
         recoveryCode,
         newRecoveryPassword,
         confirmRecoveryPassword,
       );
-      finish(res.token);
+      clearToken();
+      window.location.reload();
     } catch (err) {
       setError(normalizeError(err));
     } finally {
@@ -310,7 +336,7 @@ export default function Unlock({ onUnlock }: Props) {
               mode="file"
               value={recoveryKitPath}
               onChange={setRecoveryKitPath}
-              extensions={["json"]}
+              extensions={["vault"]}
               required
             />
             <div className="field">
@@ -325,10 +351,6 @@ export default function Unlock({ onUnlock }: Props) {
               <label className="field-label" htmlFor="confirm-recovery-password">{copy.confirmPassword}</label>
               <input id="confirm-recovery-password" type="password" value={confirmRecoveryPassword} onChange={(e) => setConfirmRecoveryPassword(e.target.value)} autoComplete="new-password" required />
             </div>
-            <label className="checkbox-field">
-              <input type="checkbox" checked={confirmRecovery} onChange={(e) => setConfirmRecovery(e.target.checked)} />
-              <span>{copy.confirmRecovery}</span>
-            </label>
             {error && <div className="error" role="alert">{error}</div>}
             <div className="button-row">
               <button className="primary" type="submit" disabled={loading}>
@@ -514,6 +536,38 @@ export default function Unlock({ onUnlock }: Props) {
           </form>
         )}
       </div>
+      <ConfirmDialog
+        open={restorePreview !== null}
+        idPrefix="startup-restore-confirm"
+        title={copy.restoreTab}
+        message={restorePreview ? `${new Date(restorePreview.backup.modified_at).toLocaleString()} · ${restorePreview.backup.path} · ${(restorePreview.backup.size / 1024).toFixed(1)} KiB. ${restorePreview.impact}` : ""}
+        confirmLabel={copy.restore}
+        cancelLabel={zh ? "取消" : "Cancel"}
+        variant="danger"
+        onConfirm={() => void applyRestore()}
+        onCancel={() => {
+          if (restorePreview) void api.cancelVaultRestore(restorePreview.preview_token).catch(() => undefined);
+          setRestorePreview(null);
+          setPassword("");
+        }}
+      />
+      <ConfirmDialog
+        open={recoveryPreview !== null}
+        idPrefix="recovery-kit-confirm"
+        title={copy.recoveryTitle}
+        message={recoveryPreview ? `${new Date(recoveryPreview.kit.modified_at).toLocaleString()} · ${recoveryPreview.kit.path} · ${recoveryPreview.kit.entry_count} ${zh ? "个条目" : "entries"}. ${recoveryPreview.impact}` : ""}
+        confirmLabel={copy.recover}
+        cancelLabel={zh ? "取消" : "Cancel"}
+        variant="danger"
+        onConfirm={() => void applyRecovery()}
+        onCancel={() => {
+          if (recoveryPreview) void api.cancelRecoveryKit(recoveryPreview.preview_token).catch(() => undefined);
+          setRecoveryPreview(null);
+          setRecoveryCode("");
+          setNewRecoveryPassword("");
+          setConfirmRecoveryPassword("");
+        }}
+      />
     </div>
   );
 }

@@ -4,11 +4,17 @@ import {
   clearToken,
   type BackupPruneResult,
   type BackupRecord,
+  type BackupRestorePreview,
   type BackupSummary,
 } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 import PathPicker from "./PathPicker";
+import ConfirmDialog from "./ConfirmDialog";
+
+function notifyStatusChanged() {
+  window.dispatchEvent(new Event("vault-security-status-changed"));
+}
 
 const copy = {
   zh: {
@@ -31,8 +37,8 @@ const copy = {
     unpin: "取消固定",
     restorePassword: "旧备份密码（当前密码可解密时留空）",
     restore: "恢复这个备份",
+    previewRestore: "预览恢复影响",
     restoring: "正在恢复…",
-    restoreConfirm: "恢复会替换当前密码库，但当前版本会先被原子备份保留。确认继续？",
     restoreDone: "恢复完成，需要重新解锁。",
     retention: "备份保留策略",
     newest: "保留最近版本数",
@@ -53,6 +59,11 @@ const copy = {
     format: "格式",
     modified: "时间",
     defaultDestination: "默认目录",
+    verifyLatest: "验证最新备份",
+    verifying: "正在验证…",
+    verificationPassed: "最新备份已通过认证和解析，当前保险库未被修改。",
+    retry: "立即重试",
+    restoreFromBackup: "从备份恢复",
   },
   en: {
     title: "Backup and restore",
@@ -74,8 +85,8 @@ const copy = {
     unpin: "Unpin",
     restorePassword: "Old backup password (leave blank when the current credential works)",
     restore: "Restore this backup",
+    previewRestore: "Preview restore impact",
     restoring: "Restoring…",
-    restoreConfirm: "Restore replaces the active vault, but its current bytes will first be retained as an atomic backup. Continue?",
     restoreDone: "Restore completed. Unlock the vault again.",
     retention: "Backup retention policy",
     newest: "Newest versions to keep",
@@ -96,6 +107,11 @@ const copy = {
     format: "Format",
     modified: "Modified",
     defaultDestination: "Default directory",
+    verifyLatest: "Verify latest backup",
+    verifying: "Verifying…",
+    verificationPassed: "The latest backup passed authentication and parsing. The active vault was not changed.",
+    retry: "Retry now",
+    restoreFromBackup: "Restore from backup",
   },
 } as const;
 
@@ -126,6 +142,8 @@ export default function BackupCenter() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
+  const [restorePlan, setRestorePlan] = useState<BackupRestorePreview | null>(null);
+  const [confirmCleanup, setConfirmCleanup] = useState(false);
 
   const load = useCallback(async () => {
     setBusy("load");
@@ -140,7 +158,9 @@ export default function BackupCenter() {
   }, []);
 
   useEffect(() => {
-    load();
+    void load();
+    window.addEventListener("vault-security-status-changed", load);
+    return () => window.removeEventListener("vault-security-status-changed", load);
   }, [load]);
 
   async function createBackup() {
@@ -150,11 +170,13 @@ export default function BackupCenter() {
       const result = await api.createBackup(destination.trim() || undefined);
       setSummary(result);
       setPlan(null);
-      showToast(text.created);
+      showToast(result.warning || text.created, result.warning ? "error" : "info");
+      notifyStatusChanged();
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
+      notifyStatusChanged();
     } finally {
       setBusy(null);
     }
@@ -195,7 +217,7 @@ export default function BackupCenter() {
 
   async function applyCleanup() {
     if (!plan || !plan.preview_token || plan.delete_count === 0) return;
-    if (!window.confirm(text.applyConfirm)) return;
+    setConfirmCleanup(false);
     setBusy("apply");
     setError("");
     try {
@@ -216,19 +238,54 @@ export default function BackupCenter() {
     }
   }
 
-  async function restore(record: BackupRecord) {
-    if (!window.confirm(text.restoreConfirm)) return;
-    setBusy(`restore:${record.path}`);
+  async function previewRestore(record: BackupRecord) {
+    setBusy(`restore-preview:${record.path}`);
     setError("");
     try {
-      await api.restoreBackup(record.path, restorePassword, true);
+      setRestorePlan(await api.previewBackupRestore(record.path, restorePassword));
+    } catch (err) {
+      const message = String(err).replace(/^Error:\s*/, "");
+      setError(message);
+      showToast(message, "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restore() {
+    if (!restorePlan) return;
+    const plan = restorePlan;
+    setRestorePlan(null);
+    setBusy(`restore:${plan.backup.path}`);
+    setError("");
+    try {
+      await api.applyBackupRestore(plan.preview_token, restorePassword, true);
       showToast(text.restoreDone);
+      setRestorePassword("");
       clearToken();
       window.location.reload();
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function verifyLatest() {
+    setBusy("verify");
+    setError("");
+    try {
+      const result = await api.verifyBackup();
+      showToast(result.warning || text.verificationPassed, result.warning ? "error" : "info");
+      await load();
+      notifyStatusChanged();
+    } catch (err) {
+      const message = String(err).replace(/^Error:\s*/, "");
+      setError(message);
+      showToast(message, "error");
+      notifyStatusChanged();
     } finally {
       setBusy(null);
     }
@@ -266,6 +323,17 @@ export default function BackupCenter() {
           >
             {busy === "create" ? text.creating : text.create}
           </button>
+          <div className="button-row">
+            <button type="button" className="secondary" disabled={busy !== null || summary.backups.length === 0} onClick={() => void verifyLatest()}>
+              {busy === "verify" ? text.verifying : text.verifyLatest}
+            </button>
+            <button type="button" className="secondary" disabled={busy !== null || summary.backups.length === 0} onClick={() => setShowHistory(true)}>
+              {text.restoreFromBackup}
+            </button>
+            {summary.health.last_error_summary && (
+              <button type="button" className="secondary" disabled={busy !== null} onClick={() => void createBackup()}>{text.retry}</button>
+            )}
+          </div>
 
           <div className="button-row">
             <button type="button" className="ghost" onClick={() => setShowHistory((value) => !value)} aria-expanded={showHistory}>
@@ -316,7 +384,7 @@ export default function BackupCenter() {
                   </div>
                   <p className="field-hint mono"><strong>{text.path}:</strong> {record.path}</p>
                   <p className="field-hint">
-                    <strong>{text.modified}:</strong> {new Date(record.modified_at).toLocaleString()} · {formatBytes(record.size)} · SHA-256 {record.sha256.slice(0, 12)}…
+                    <strong>{text.modified}:</strong> {new Date(record.modified_at).toLocaleString()} · {formatBytes(record.size)} · SHA-256 {record.sha256}
                   </p>
                   <div className="button-row">
                     <button
@@ -331,9 +399,9 @@ export default function BackupCenter() {
                       type="button"
                       className="danger"
                       disabled={busy !== null}
-                      onClick={() => restore(record)}
+                      onClick={() => void previewRestore(record)}
                     >
-                      {busy === `restore:${record.path}` ? text.restoring : text.restore}
+                      {busy === `restore-preview:${record.path}` ? text.restoring : text.previewRestore}
                     </button>
                   </div>
                 </article>
@@ -403,7 +471,7 @@ export default function BackupCenter() {
                   !plan.preview_token ||
                   plan.delete_count === 0
                 }
-                onClick={applyCleanup}
+                onClick={() => setConfirmCleanup(true)}
               >
                 {busy === "apply" ? text.applying : text.apply}
               </button>
@@ -421,6 +489,32 @@ export default function BackupCenter() {
       ) : null}
 
       {error && <div className="error" role="alert">{error}</div>}
+      <ConfirmDialog
+        open={restorePlan !== null}
+        idPrefix="backup-restore-confirm"
+        title={text.restore}
+        message={restorePlan ? `${text.modified}: ${new Date(restorePlan.backup.modified_at).toLocaleString()} · ${text.path}: ${restorePlan.backup.path} · ${text.format}: ${restorePlan.backup.format}. ${restorePlan.impact}` : ""}
+        confirmLabel={text.restore}
+        cancelLabel={locale === "zh" ? "取消" : "Cancel"}
+        variant="danger"
+        onConfirm={() => void restore()}
+        onCancel={() => {
+          if (restorePlan) void api.cancelBackupRestore(restorePlan.preview_token).catch(() => undefined);
+          setRestorePlan(null);
+          setRestorePassword("");
+        }}
+      />
+      <ConfirmDialog
+        open={confirmCleanup}
+        idPrefix="backup-cleanup-confirm"
+        title={locale === "zh" ? "执行备份清理？" : "Apply backup cleanup?"}
+        message={text.applyConfirm}
+        confirmLabel={text.apply}
+        cancelLabel={locale === "zh" ? "取消" : "Cancel"}
+        variant="danger"
+        onConfirm={() => void applyCleanup()}
+        onCancel={() => setConfirmCleanup(false)}
+      />
     </section>
   );
 }

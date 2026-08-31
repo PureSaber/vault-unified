@@ -192,6 +192,14 @@ export interface PersonalSettings {
   auto_backup_interval_hours: number;
   auto_backup_destination: string;
   last_auto_backup_at: string;
+  backup_status: {
+    last_success_at: string;
+    last_error_at: string;
+    last_error_summary: string;
+    last_verification_at: string;
+    last_verification_status: "unverified" | "passed" | "failed";
+    recovery_kit_created_at: string;
+  };
 }
 
 export interface MaintenanceNotice {
@@ -251,6 +259,35 @@ export interface BackupSummary {
   verified_count: number;
   pinned_count: number;
   default_destination: string;
+  health: PersonalSettings["backup_status"] & {
+    backup_location: string;
+    next_eligible_at: string;
+    auto_backup_enabled: boolean;
+  };
+}
+
+export interface BackupRestorePreview {
+  preview_token: string;
+  expires_at: string;
+  backup: BackupRecord;
+  impact: string;
+  warning: string;
+}
+
+export interface StartupRestorePreview {
+  preview_token: string;
+  expires_at: string;
+  backup: { path: string; size: number; modified_at: string; sha256: string };
+  impact: string;
+  warning: string;
+}
+
+export interface RecoveryKitPreview {
+  preview_token: string;
+  expires_at: string;
+  kit: { path: string; size: number; modified_at: string; sha256: string; format: string; entry_count: number };
+  impact: string;
+  warning: string;
 }
 
 export interface BackupPruneResult {
@@ -446,10 +483,20 @@ export const api = {
         remember,
       }),
     }),
-  restoreVault: (backupPath: string, password: string, remember = false) =>
-    request<{ token: string }>("/auth/restore", {
+  previewVaultRestore: (backupPath: string, password: string, remember = false) =>
+    request<StartupRestorePreview>("/auth/restore/preview", {
       method: "POST",
       body: JSON.stringify({ backup_path: backupPath, password, remember }),
+    }),
+  applyVaultRestore: (previewToken: string, password: string, remember = false) =>
+    request<{ locked: boolean; message: string }>("/auth/restore/apply", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken, password, remember, confirm_restore: true }),
+    }),
+  cancelVaultRestore: (previewToken: string) =>
+    request<{ cancelled: boolean }>("/auth/restore/cancel", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
     }),
   unlock: (password: string, remember = false) =>
     request<{ token: string }>("/auth/unlock", {
@@ -504,7 +551,7 @@ export const api = {
     ),
   backups: () => request<BackupSummary>("/backups"),
   createBackup: (destinationDir?: string) =>
-    request<BackupSummary & { created: BackupRecord }>("/backups/create", {
+    request<BackupSummary & { created: BackupRecord; warning: string }>("/backups/create", {
       method: "POST",
       body: JSON.stringify({ destination_dir: destinationDir || null }),
     }),
@@ -526,18 +573,38 @@ export const api = {
         preview_token: previewToken || null,
       }),
     }),
-  restoreBackup: (path: string, password = "", confirmRestore = false) =>
+  testBackupDestination: (destinationDir: string) =>
+    request<{ path: string; exists: boolean; writable: boolean; free_bytes: number; message: string }>(
+      "/backups/test-destination",
+      { method: "POST", body: JSON.stringify({ destination_dir: destinationDir }) },
+    ),
+  verifyBackup: (path?: string) =>
+    request<{ verified: boolean; verified_at: string; backup: BackupRecord; message: string; warning: string }>(
+      "/backups/verify",
+      { method: "POST", body: JSON.stringify({ path: path || null }) },
+    ),
+  previewBackupRestore: (path: string, password = "") =>
+    request<BackupRestorePreview>("/backups/restore/preview", {
+      method: "POST",
+      body: JSON.stringify({ path, password }),
+    }),
+  applyBackupRestore: (previewToken: string, password = "", confirmRestore = false) =>
     request<{ restored: string; locked: boolean; message: string }>(
-      "/backups/restore",
+      "/backups/restore/apply",
       {
         method: "POST",
         body: JSON.stringify({
-          path,
+          preview_token: previewToken,
           password,
           confirm_restore: confirmRestore,
         }),
       }
     ),
+  cancelBackupRestore: (previewToken: string) =>
+    request<{ cancelled: boolean }>("/backups/restore/cancel", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
+    }),
   status: () => request<{ components: Record<string, string> }>("/status"),
   getPersonalSettings: () => request<PersonalSettings>("/personal/settings"),
   savePersonalSettings: (settings: Partial<PersonalSettings>) =>
@@ -587,7 +654,7 @@ export const api = {
     ),
   newRecoveryCode: () => request<{ recovery_code: string }>("/auth/recovery-code", { method: "POST" }),
   createRecoveryKit: (recoveryCode: string, destinationDir?: string) =>
-    request<{ path: string; message: string }>("/auth/recovery-kit", {
+    request<{ path: string; message: string; warning: string }>("/auth/recovery-kit", {
       method: "POST",
       body: JSON.stringify({
         recovery_code: recoveryCode,
@@ -595,21 +662,34 @@ export const api = {
         destination_dir: destinationDir || null,
       }),
     }),
-  recoverFromKit: (
-    kitPath: string,
+  previewRecoveryKit: (kitPath: string, recoveryCode: string) =>
+    request<RecoveryKitPreview>("/auth/recover/preview", {
+      method: "POST",
+      body: JSON.stringify({
+        kit_path: kitPath,
+        recovery_code: recoveryCode,
+      }),
+    }),
+  applyRecoveryKit: (
+    previewToken: string,
     recoveryCode: string,
     newPassword: string,
     confirmNewPassword: string,
   ) =>
-    request<{ token: string; message: string }>("/auth/recover", {
+    request<{ locked: boolean; message: string }>("/auth/recover/apply", {
       method: "POST",
       body: JSON.stringify({
-        kit_path: kitPath,
+        preview_token: previewToken,
         recovery_code: recoveryCode,
         new_password: newPassword,
         confirm_new_password: confirmNewPassword,
         confirm_recovery: true,
       }),
+    }),
+  cancelRecoveryKit: (previewToken: string) =>
+    request<{ cancelled: boolean }>("/auth/recover/cancel", {
+      method: "POST",
+      body: JSON.stringify({ preview_token: previewToken }),
     }),
   createBrowserPairing: async (): Promise<BrowserPairing> => {
     const [result, config] = await Promise.all([

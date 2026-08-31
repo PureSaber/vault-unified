@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from vault_unified.api.deps import get_vault
@@ -8,7 +10,10 @@ from vault_unified.manager import UnifiedVault
 from vault_unified.personal_settings import (
     load_personal_settings,
     maybe_create_scheduled_backup,
+    ScheduledBackupStatusError,
+    save_backup_status,
     save_personal_settings,
+    update_backup_status,
     update_personal_settings,
 )
 
@@ -23,6 +28,7 @@ def _out(settings) -> PersonalSettingsOut:
         auto_backup_interval_hours=settings.auto_backup_interval_hours,
         auto_backup_destination=settings.auto_backup_destination,
         last_auto_backup_at=settings.last_auto_backup_at,
+        backup_status=settings.backup_status,
     )
 
 
@@ -63,7 +69,35 @@ def run_maintenance(vault: UnifiedVault = Depends(get_vault)) -> dict:
                     "message": f"Scheduled encrypted backup created: {backup.path}",
                 }
             )
+    except ScheduledBackupStatusError:
+        try:
+            settings = load_personal_settings()
+            update_backup_status(
+                settings,
+                last_error_at=datetime.now(timezone.utc).isoformat(),
+                last_error_summary="Encrypted backup was created, but its schedule status could not be saved",
+            )
+            save_backup_status(settings.backup_status)
+        except (OSError, ValueError):
+            pass
+        notices.append(
+            {
+                "code": "scheduled-backup-status-error",
+                "level": "error",
+                "message": "Encrypted backup was created, but its schedule status could not be saved",
+            }
+        )
     except (OSError, ValueError) as exc:
+        try:
+            settings = load_personal_settings()
+            update_backup_status(
+                settings,
+                last_error_at=datetime.now(timezone.utc).isoformat(),
+                last_error_summary="Automatic encrypted backup could not be created",
+            )
+            save_backup_status(settings.backup_status)
+        except (OSError, ValueError):
+            pass
         notices.append(
             {
                 "code": f"scheduled-backup-error:{type(exc).__name__}",

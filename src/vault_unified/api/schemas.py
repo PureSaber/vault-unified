@@ -22,6 +22,13 @@ class RestoreVaultRequest(BaseModel):
     remember: bool = False
 
 
+class RestoreVaultApplyIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+    password: str = Field(min_length=1, max_length=1024)
+    remember: bool = False
+    confirm_restore: bool = False
+
+
 class RecoveryKitCreateIn(BaseModel):
     recovery_code: str = Field(min_length=32, max_length=512)
     confirm_recovery_code: str = Field(min_length=32, max_length=512)
@@ -30,6 +37,19 @@ class RecoveryKitCreateIn(BaseModel):
 
 class EmergencyRecoveryIn(BaseModel):
     kit_path: str = Field(min_length=1, max_length=32768)
+    recovery_code: str = Field(min_length=32, max_length=512)
+    new_password: str = Field(min_length=1, max_length=1024)
+    confirm_new_password: str = Field(min_length=1, max_length=1024)
+    confirm_recovery: bool = False
+
+
+class EmergencyRecoveryPreviewIn(BaseModel):
+    kit_path: str = Field(min_length=1, max_length=32768)
+    recovery_code: str = Field(min_length=32, max_length=512)
+
+
+class EmergencyRecoveryApplyIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
     recovery_code: str = Field(min_length=32, max_length=512)
     new_password: str = Field(min_length=1, max_length=1024)
     confirm_new_password: str = Field(min_length=1, max_length=1024)
@@ -183,6 +203,29 @@ class BackupRestoreIn(BaseModel):
     confirm_restore: bool = False
 
 
+class BackupRestorePreviewIn(BaseModel):
+    path: str = Field(min_length=1, max_length=32768)
+    password: str = Field(default="", max_length=1024)
+
+
+class BackupRestoreApplyIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+    password: str = Field(default="", max_length=1024)
+    confirm_restore: bool = False
+
+
+class RestorePreviewCancelIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+
+
+class BackupVerifyIn(BaseModel):
+    path: str | None = Field(default=None, max_length=32768)
+
+
+class BackupDestinationTestIn(BaseModel):
+    destination_dir: str = Field(min_length=1, max_length=32768)
+
+
 class SyncPreferencesOut(BaseModel):
     primary: str
     auto_push_on_edit: bool
@@ -233,6 +276,7 @@ class PersonalSettingsOut(BaseModel):
     auto_backup_interval_hours: int
     auto_backup_destination: str
     last_auto_backup_at: str = ""
+    backup_status: dict[str, str] = Field(default_factory=dict)
 
 
 class PersonalSettingsIn(BaseModel):

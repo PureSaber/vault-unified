@@ -1237,6 +1237,24 @@ button.conflict-chip-btn:hover:not(:disabled) {
   padding: var(--space-lg);
 }
 
+.security-summary .status-grid {
+  margin-bottom: var(--space-md);
+  width: 100%;
+}
+
+.status-row-danger {
+  border-color: var(--color-error);
+}
+
+.status-row-danger dt,
+.status-row-danger dd {
+  color: var(--color-error);
+}
+
+.path-break {
+  overflow-wrap: anywhere;
+}
+
 .connection-card-grid {
   display: grid;
   gap: var(--space-md);
@@ -1364,6 +1382,16 @@ button.conflict-chip-btn:hover:not(:disabled) {
   .attachment-row {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .security-status-grid .status-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--space-xs);
+  }
+
+  .security-status-grid .status-row dd {
+    text-align: left;
   }
 }
 

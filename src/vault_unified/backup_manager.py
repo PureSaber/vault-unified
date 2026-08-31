@@ -3,7 +3,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 import re
+import secrets
+import shutil
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +14,7 @@ from typing import Any
 
 from vault_unified.config import get_config_dir
 from vault_unified.crypto import decrypt_payload
+from vault_unified.models import SecretEntry
 from vault_unified.storage import atomic_write_bytes, require_clean_storage
 from vault_unified.v3_crypto import V3Credential
 from vault_unified.vault_format import V3Container, inspect_vault_format_file
@@ -220,6 +224,76 @@ def create_manual_backup(
     return record
 
 
+def test_backup_destination(destination_dir: str | Path) -> dict[str, Any]:
+    """Probe an existing directory with a short-lived, non-secret file."""
+
+    destination = Path(destination_dir).expanduser().resolve()
+    result: dict[str, Any] = {
+        "path": str(destination),
+        "exists": destination.exists(),
+        "writable": False,
+        "free_bytes": 0,
+    }
+    if not destination.exists():
+        result["message"] = "Backup folder does not exist"
+        return result
+    if destination.is_symlink() or not destination.is_dir():
+        result["message"] = "Backup destination must be a regular directory"
+        return result
+    result["free_bytes"] = shutil.disk_usage(destination).free
+    probe = destination / f".vault-unified-write-test-{secrets.token_hex(12)}"
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(probe, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.write(descriptor, b"vault-unified generated write test\n")
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+        probe.unlink()
+        result["writable"] = True
+        result["message"] = "Backup folder is writable"
+    except OSError:
+        result["message"] = "Backup folder is not writable"
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if probe.exists():
+            probe.unlink()
+    return result
+
+
+def verify_backup(
+    vault_path: Path,
+    backup_path: str | Path,
+    credential: V3Credential,
+) -> BackupRecord:
+    """Authenticate and parse a registered backup without changing the vault."""
+
+    canonical = _canonical(backup_path)
+    records = {record.path: record for record in list_backups(vault_path, credential)}
+    record = records.get(canonical)
+    if record is None:
+        raise KeyError("Backup is not registered or is not a local atomic backup")
+    source = Path(canonical)
+    if source.is_symlink() or not source.is_file():
+        raise FileNotFoundError("Backup was not found")
+    data = source.read_bytes()
+    if hashlib.sha256(data).hexdigest() != record.sha256:
+        raise ValueError("Backup changed while it was being verified")
+    payload = decrypt_payload(credential, data)
+    if (
+        not isinstance(payload, dict)
+        or payload.get("version") not in {1, 2}
+        or not isinstance(payload.get("entries"), dict)
+    ):
+        raise ValueError("Backup payload is not supported")
+    for entry_id, entry in payload["entries"].items():
+        if not isinstance(entry_id, str) or not isinstance(entry, dict):
+            raise ValueError("Backup entry schema is invalid")
+        SecretEntry.from_dict(entry)
+    return BackupRecord(**{**record.to_dict(), "verified": True})
+
+
 def set_backup_pinned(
     vault_path: Path,
     backup_path: str | Path,
@@ -361,6 +435,9 @@ def restore_backup(
     vault_path: Path,
     backup_path: str | Path,
     credential: V3Credential,
+    *,
+    expected_active_sha256: str | None = None,
+    expected_backup_sha256: str | None = None,
 ) -> None:
     active = vault_path.resolve()
     canonical = _canonical(backup_path)
@@ -370,13 +447,18 @@ def restore_backup(
         raise KeyError("Backup is not registered or is not a local atomic backup")
     source = Path(canonical)
     data = source.read_bytes()
+    source_digest = hashlib.sha256(data).hexdigest()
+    if expected_backup_sha256 is not None and source_digest != expected_backup_sha256:
+        raise ValueError("Backup changed after the restore preview")
     decrypt_payload(credential, data)
     if active.is_symlink() or not active.is_file():
         raise FileNotFoundError(f"Active vault not found: {active}")
     expected = hashlib.sha256(active.read_bytes()).hexdigest()
+    if expected_active_sha256 is not None and expected != expected_active_sha256:
+        raise ValueError("Active vault changed after the restore preview")
     atomic_write_bytes(
         active,
         data,
         validator=lambda candidate: decrypt_payload(credential, candidate),
-        expected_old_sha256=expected,
+        expected_old_sha256=expected_active_sha256 or expected,
     )
