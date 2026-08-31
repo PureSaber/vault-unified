@@ -185,11 +185,11 @@ export default function PersonalCenter() {
                 />
               </div>
               <div className="field">
-                <label className="field-label" htmlFor="backup-destination">
+                <label className="field-label" htmlFor="auto-backup-destination">
                   {zh ? "备份目录" : "Backup folder"}
                 </label>
                 <input
-                  id="backup-destination"
+                  id="auto-backup-destination"
                   value={settings.auto_backup_destination}
                   onChange={(e) => setSettings({ ...settings, auto_backup_destination: e.target.value })}
                   placeholder={zh ? "例如 D:\\OneDrive\\VaultBackups" : "For example D:\\OneDrive\\VaultBackups"}

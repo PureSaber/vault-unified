@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 from vault_unified.crypto import read_encrypted_file, write_encrypted_file
@@ -9,6 +10,10 @@ from vault_unified.v3_crypto import V3Credential
 from vault_unified.sync.ledger import Tombstone
 
 VAULT_VERSION = 2
+
+
+class EntryTransactionConflict(ValueError):
+    """The editor attempted to commit against a different entry generation."""
 
 
 class LocalVault:
@@ -52,12 +57,42 @@ class LocalVault:
             for item_id, entry in entries_raw.items()
         }
 
-    def _save(self) -> None:
+    def _save_entries(self, entries: dict[str, SecretEntry]) -> None:
         payload = {
             "version": VAULT_VERSION,
-            "entries": {item_id: entry.to_dict() for item_id, entry in self._entries.items()},
+            "entries": {item_id: entry.to_dict() for item_id, entry in entries.items()},
         }
         write_encrypted_file(self.vault_path, self.credential, payload)
+
+    def _save(self) -> None:
+        self._save_entries(self._entries)
+
+    def commit_entry(
+        self,
+        candidate: SecretEntry,
+        *,
+        create: bool,
+        expected_updated_at: str | None = None,
+    ) -> SecretEntry:
+        """Persist a prepared entry without exposing partial in-memory state."""
+
+        current = self._entries.get(candidate.id)
+        if create:
+            if current is not None:
+                raise EntryTransactionConflict("Entry already exists")
+        else:
+            if current is None:
+                raise KeyError(candidate.id)
+            if expected_updated_at is None or current.updated_at != expected_updated_at:
+                raise EntryTransactionConflict(
+                    "Entry changed after this editor was opened; reload before saving"
+                )
+
+        staged = copy.deepcopy(self._entries)
+        staged[candidate.id] = copy.deepcopy(candidate)
+        self._save_entries(staged)
+        self._entries = staged
+        return self._entries[candidate.id]
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> LocalVault:

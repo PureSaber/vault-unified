@@ -43,6 +43,8 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   await expect(titleField).toHaveValue(accountTitle);
   await titleField.fill(`${accountTitle} cancelled draft`);
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("alertdialog", { name: "Discard unsaved changes?" })).toBeVisible();
+  await page.getByRole("button", { name: "Discard changes", exact: true }).click();
 
   await expect(page.getByText(accountTitle, { exact: true })).toBeVisible();
   await expect(page.getByText(`${accountTitle} cancelled draft`, { exact: true })).toHaveCount(0);

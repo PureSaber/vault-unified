@@ -1,17 +1,97 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, Attachment, Entry } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
 
 interface Props {
   entry?: Entry | null;
-  onDone: () => void;
+  onDone: (saved?: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSavingChange?: (saving: boolean) => void;
 }
 
-type CustomField = { label: string; value: string; concealed: boolean };
+type EntryType = "login" | "secure_note" | "card" | "identity" | "ssh_key" | "recovery_code";
+type CustomField = { clientId: string; label: string; value: string; concealed: boolean };
+type PendingAttachment = { clientId: string; file: File };
+type Draft = {
+  title: string;
+  username: string;
+  password: string;
+  url: string;
+  notes: string;
+  tags: string[];
+  entryType: EntryType;
+  customFields: CustomField[];
+  totpSecret: string;
+  attachments: Attachment[];
+  pendingAttachments: PendingAttachment[];
+  restoreHistoryId: string | null;
+};
 
-const ENTRY_TYPES = ["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] as const;
+const ENTRY_TYPES: EntryType[] = ["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"];
+
+function clientId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `draft-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function emptyDraft(): Draft {
+  return {
+    title: "",
+    username: "",
+    password: "",
+    url: "",
+    notes: "",
+    tags: [],
+    entryType: "login",
+    customFields: [],
+    totpSecret: "",
+    attachments: [],
+    pendingAttachments: [],
+    restoreHistoryId: null,
+  };
+}
+
+function draftFromEntry(entry: Entry): Draft {
+  return {
+    title: entry.title || "",
+    username: entry.username || "",
+    password: entry.password || "",
+    url: entry.url || "",
+    notes: entry.notes || "",
+    tags: [...(entry.tags || [])],
+    entryType: entry.entry_type || "login",
+    customFields: (entry.custom_fields || []).map((field) => ({ ...field, clientId: clientId() })),
+    totpSecret: entry.totp_secret || "",
+    attachments: [...(entry.attachments || [])],
+    pendingAttachments: [],
+    restoreHistoryId: null,
+  };
+}
+
+function fingerprint(draft: Draft): string {
+  return JSON.stringify({
+    title: draft.title,
+    username: draft.username,
+    password: draft.password,
+    url: draft.url,
+    notes: draft.notes,
+    tags: draft.tags,
+    entryType: draft.entryType,
+    customFields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })),
+    totpSecret: draft.totpSecret,
+    attachmentIds: draft.attachments.map((item) => item.id),
+    pendingAttachments: draft.pendingAttachments.map(({ clientId: id, file }) => ({
+      id,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      lastModified: file.lastModified,
+    })),
+    restoreHistoryId: draft.restoreHistoryId,
+  });
+}
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -39,71 +119,65 @@ function downloadAttachment(filename: string, mimeType: string, dataB64: string)
   URL.revokeObjectURL(url);
 }
 
-export default function EntryForm({ entry, onDone }: Props) {
+export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange }: Props) {
   const { t, locale } = useI18n();
   const { showToast } = useToast();
   const zh = locale === "zh";
-  const isEdit = !!entry;
+  const isEdit = Boolean(entry);
+  const initial = useMemo(emptyDraft, []);
+  const [original, setOriginal] = useState<Draft>(initial);
+  const [draft, setDraft] = useState<Draft>(initial);
   const [loading, setLoading] = useState(isEdit);
-  const [title, setTitle] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [url, setUrl] = useState("");
-  const [notes, setNotes] = useState("");
-  const [entryType, setEntryType] = useState<(typeof ENTRY_TYPES)[number]>("login");
-  const [customFields, setCustomFields] = useState<CustomField[]>([]);
-  const [totpSecret, setTotpSecret] = useState("");
-  const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [newAttachments, setNewAttachments] = useState<File[]>([]);
   const [history, setHistory] = useState<Array<{ id: string; saved_at: string }>>([]);
+  const [historyToRestore, setHistoryToRestore] = useState<string | null>(null);
+  const [historyPreviewing, setHistoryPreviewing] = useState(false);
   const [genLength, setGenLength] = useState(20);
   const [genSymbols, setGenSymbols] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const transactionId = useRef(clientId());
+
+  const dirty = fingerprint(draft) !== fingerprint(original);
 
   useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
+
+  useEffect(() => {
+    onSavingChange?.(saving);
+  }, [saving, onSavingChange]);
+
+  useEffect(() => () => {
+    onDirtyChange?.(false);
+    onSavingChange?.(false);
+  }, [onDirtyChange, onSavingChange]);
+
+  useEffect(() => {
+    transactionId.current = clientId();
     if (!entry) {
-      setLoading(false);
-      setTitle("");
-      setUsername("");
-      setPassword("");
-      setUrl("");
-      setNotes("");
-      setEntryType("login");
-      setCustomFields([]);
-      setTotpSecret("");
-      setAttachments([]);
-      setNewAttachments([]);
+      const blank = emptyDraft();
+      setOriginal(blank);
+      setDraft(blank);
       setHistory([]);
+      setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
     setError("");
-    api
-      .getEntry(entry.id, true)
-      .then((full) => {
+    Promise.all([api.getEntry(entry.id, true), api.entryHistory(entry.id, false)])
+      .then(([full, historyResult]) => {
         if (cancelled) return;
-        setTitle(full.title || "");
-        setUsername(full.username || "");
-        setPassword(full.password || "");
-        setUrl(full.url || "");
-        setNotes(full.notes || "");
-        setEntryType(full.entry_type || "login");
-        setCustomFields(full.custom_fields || []);
-        setTotpSecret(full.totp_secret || "");
-        setAttachments(full.attachments || []);
-        return api.entryHistory(entry.id, false);
-      })
-      .then((historyResult) => {
-        if (cancelled || !historyResult) return;
+        const loaded = draftFromEntry(full);
+        setOriginal(loaded);
+        setDraft(loaded);
         setHistory(historyResult.history.map((item) => ({ id: item.id, saved_at: item.saved_at })));
       })
       .catch((err) => {
         if (cancelled) return;
-        const msg = String(err).replace(/^Error:\s*/, "");
-        setError(msg);
-        showToast(msg, "error");
+        const message = String(err).replace(/^Error:\s*/, "");
+        setError(message);
+        showToast(message, "error");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -113,78 +187,67 @@ export default function EntryForm({ entry, onDone }: Props) {
     };
   }, [entry, showToast]);
 
+  function patchDraft(patch: Partial<Draft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
   async function handleGenerate() {
     try {
-      const res = await api.generate(genLength, genSymbols);
-      setPassword(res.password);
+      const result = await api.generate(genLength, genSymbols);
+      patchDraft({ password: result.password });
       showToast(t("form.generated"));
     } catch (err) {
       showToast(String(err).replace(/^Error:\s*/, ""), "error");
     }
   }
 
-  async function handleSave(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSave(event: React.FormEvent) {
+    event.preventDefault();
+    if (saving) return;
     setError("");
     setSaving(true);
     try {
-      let saved: Entry;
-      if (entry) {
-        saved = await api.updateEntry(entry.id, {
-          title,
-          username,
-          password,
-          url,
-          notes,
-          entry_type: entryType,
-          custom_fields: customFields,
-          totp_secret: totpSecret,
-        });
-        showToast(t("form.updated"));
-      } else {
-        saved = await api.createEntry({
-          title,
-          username,
-          password,
-          url,
-          notes,
-          entry_type: entryType,
-          custom_fields: customFields,
-          totp_secret: totpSecret,
-        });
-        showToast(t("form.added"));
-      }
-      for (const file of newAttachments) {
-        await api.addAttachment(
-          saved.id,
-          file.name,
-          file.type || "application/octet-stream",
-          await fileToBase64(file)
-        );
-      }
-      onDone();
+      const addAttachments = await Promise.all(
+        draft.pendingAttachments.map(async ({ file }) => ({
+          filename: file.name,
+          mime_type: file.type || "application/octet-stream",
+          data_b64: await fileToBase64(file),
+        })),
+      );
+      const keptIds = new Set(draft.attachments.map((attachment) => attachment.id));
+      await api.commitEntry({
+        transaction_id: transactionId.current,
+        entry_id: entry?.id ?? null,
+        expected_updated_at: entry?.updated_at ?? null,
+        title: draft.title,
+        username: draft.username,
+        password: draft.password,
+        url: draft.url,
+        notes: draft.notes,
+        tags: draft.tags,
+        entry_type: draft.entryType,
+        custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })),
+        totp_secret: draft.totpSecret,
+        add_attachments: addAttachments,
+        remove_attachment_ids: original.attachments.filter((attachment) => !keptIds.has(attachment.id)).map((attachment) => attachment.id),
+        restore_history_id: draft.restoreHistoryId,
+      });
+      setDraft(emptyDraft());
+      setOriginal(emptyDraft());
+      onDirtyChange?.(false);
+      showToast(entry ? t("form.updated") : t("form.added"));
+      onDone(true);
     } catch (err) {
-      const msg = String(err).replace(/^Error:\s*/, "");
-      setError(msg);
-      showToast(msg || t("form.saveError"), "error");
+      const message = String(err).replace(/^Error:\s*/, "");
+      setError(message);
+      showToast(message || t("form.saveError"), "error");
     } finally {
       setSaving(false);
     }
   }
 
-  function updateCustomField(index: number, patch: Partial<CustomField>) {
-    setCustomFields((current) => current.map((field, itemIndex) => itemIndex === index ? { ...field, ...patch } : field));
-  }
-
-  async function removeExistingAttachment(attachment: Attachment) {
-    if (!entry) return;
-    try {
-      const result = await api.removeAttachment(entry.id, attachment.id);
-      setAttachments(result.entry.attachments);
-      showToast(zh ? "附件已删除" : "Attachment removed");
-    } catch (error) {
-      showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    }
+  function updateCustomField(id: string, patch: Partial<CustomField>) {
+    patchDraft({ customFields: draft.customFields.map((field) => field.clientId === id ? { ...field, ...patch } : field) });
   }
 
   async function saveExistingAttachment(attachment: Attachment) {
@@ -192,109 +255,99 @@ export default function EntryForm({ entry, onDone }: Props) {
     try {
       const result = await api.downloadAttachment(entry.id, attachment.id);
       downloadAttachment(result.filename, result.mime_type, result.data_b64);
-    } catch (error) {
-      showToast(String(error).replace(/^Error:\s*/, ""), "error");
+    } catch (err) {
+      showToast(String(err).replace(/^Error:\s*/, ""), "error");
     }
   }
 
-  async function restoreVersion(historyId: string) {
-    if (!entry) return;
-    if (!window.confirm(zh ? "恢复此版本将覆盖当前字段，并保留一个当前版本历史。继续？" : "Restore this version? Current fields will be preserved in history.")) return;
+  async function previewHistoryRestore() {
+    if (!entry || !historyToRestore || historyPreviewing) return;
+    setHistoryPreviewing(true);
     try {
-      const restored = await api.restoreEntryHistory(entry.id, historyId);
-      setTitle(restored.title);
-      setUsername(restored.username);
-      setPassword(restored.password);
-      setUrl(restored.url);
-      setNotes(restored.notes);
-      setEntryType(restored.entry_type);
-      setCustomFields(restored.custom_fields);
-      setTotpSecret(restored.totp_secret);
-      setAttachments(restored.attachments);
-      const refreshed = await api.entryHistory(entry.id, false);
-      setHistory(refreshed.history.map((item) => ({ id: item.id, saved_at: item.saved_at })));
-      showToast(zh ? "已恢复条目版本" : "Entry version restored");
-    } catch (error) {
-      showToast(String(error).replace(/^Error:\s*/, ""), "error");
+      const preview = await api.previewEntryHistory(entry.id, historyToRestore);
+      const restored = draftFromEntry(preview.entry);
+      setDraft((current) => ({
+        ...current,
+        title: restored.title,
+        username: restored.username,
+        password: restored.password,
+        url: restored.url,
+        notes: restored.notes,
+        tags: restored.tags,
+        entryType: restored.entryType,
+        customFields: restored.customFields,
+        totpSecret: restored.totpSecret,
+        restoreHistoryId: historyToRestore,
+      }));
+      showToast(zh ? "历史版本已载入草稿；保存前不会修改保险库" : "Version loaded into the draft; the vault is unchanged until you save");
+    } catch (err) {
+      showToast(String(err).replace(/^Error:\s*/, ""), "error");
+    } finally {
+      setHistoryPreviewing(false);
+      setHistoryToRestore(null);
     }
   }
 
-  if (loading) {
-    return <div className="loading-state">{t("form.loading")}</div>;
-  }
+  if (loading) return <div className="loading-state">{t("form.loading")}</div>;
 
   return (
     <div className="card">
       <h2>{isEdit ? t("form.edit") : t("form.add")}</h2>
-      <form onSubmit={handleSave}>
+      <form onSubmit={handleSave} aria-busy={saving}>
         <div className="field">
-          <label className="field-label" htmlFor="entry-title">
-            {t("form.title")}
-          </label>
-          <input
-            id="entry-title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            required
-            placeholder={t("form.titlePlaceholder")}
-          />
+          <label className="field-label" htmlFor="entry-title">{t("form.title")}</label>
+          <input id="entry-title" value={draft.title} onChange={(event) => patchDraft({ title: event.target.value })} required placeholder={t("form.titlePlaceholder")} />
         </div>
         <div className="field">
-          <label className="field-label" htmlFor="entry-type">
-            {zh ? "条目类型" : "Entry type"}
-          </label>
-          <select id="entry-type" value={entryType} onChange={(e) => setEntryType(e.target.value as (typeof ENTRY_TYPES)[number])}>
+          <label className="field-label" htmlFor="entry-type">{zh ? "条目类型" : "Entry type"}</label>
+          <select id="entry-type" value={draft.entryType} onChange={(event) => patchDraft({ entryType: event.target.value as EntryType })}>
             {ENTRY_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
           </select>
         </div>
         <div className="field">
-          <label className="field-label" htmlFor="entry-username">
-            {t("form.username")}
-          </label>
-          <input
-            id="entry-username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder={t("form.usernamePlaceholder")}
-            autoComplete="off"
-          />
+          <label className="field-label" htmlFor="entry-username">{t("form.username")}</label>
+          <input id="entry-username" value={draft.username} onChange={(event) => patchDraft({ username: event.target.value })} placeholder={t("form.usernamePlaceholder")} autoComplete="off" />
         </div>
-        <PasswordField
-          id="entry-totp"
-          label={zh ? "TOTP 密钥（可选）" : "TOTP secret (optional)"}
-          value={totpSecret}
-          onChange={setTotpSecret}
-          hint={zh ? "仅保存在本地加密库；目前不会写回外部服务。" : "Stored only in the local encrypted vault; it is not written to external services."}
-        />
+        <PasswordField id="entry-totp" label={zh ? "TOTP 密钥（可选）" : "TOTP secret (optional)"} value={draft.totpSecret} onChange={(totpSecret) => patchDraft({ totpSecret })} hint={zh ? "仅保存在本地加密库；目前不会写回外部服务。" : "Stored only in the local encrypted vault; it is not written to external services."} />
         <section className="settings-section" aria-labelledby="custom-fields-heading">
           <h3 id="custom-fields-heading" className="section-title">{zh ? "自定义字段" : "Custom fields"}</h3>
-          {customFields.map((field, index) => (
-            <div className="generate-row" key={`${field.label}-${index}`}>
-              <input value={field.label} onChange={(e) => updateCustomField(index, { label: e.target.value })} placeholder={zh ? "标签" : "Label"} />
-              <input value={field.value} onChange={(e) => updateCustomField(index, { value: e.target.value })} placeholder={zh ? "值" : "Value"} />
+          {draft.customFields.map((field) => (
+            <div className="generate-row" key={field.clientId}>
+              <label className="sr-only" htmlFor={`custom-label-${field.clientId}`}>{zh ? "字段标签" : "Field label"}</label>
+              <input id={`custom-label-${field.clientId}`} value={field.label} onChange={(event) => updateCustomField(field.clientId, { label: event.target.value })} placeholder={zh ? "标签" : "Label"} />
+              <label className="sr-only" htmlFor={`custom-value-${field.clientId}`}>{zh ? "字段值" : "Field value"}</label>
+              <input id={`custom-value-${field.clientId}`} value={field.value} onChange={(event) => updateCustomField(field.clientId, { value: event.target.value })} placeholder={zh ? "值" : "Value"} />
               <label className="checkbox-field">
-                <input type="checkbox" checked={field.concealed} onChange={(e) => updateCustomField(index, { concealed: e.target.checked })} />
+                <input type="checkbox" checked={field.concealed} onChange={(event) => updateCustomField(field.clientId, { concealed: event.target.checked })} />
                 <span>{zh ? "隐藏" : "Hide"}</span>
               </label>
-              <button type="button" className="secondary" onClick={() => setCustomFields((current) => current.filter((_, itemIndex) => itemIndex !== index))}>{zh ? "移除" : "Remove"}</button>
+              <button type="button" className="secondary" onClick={() => patchDraft({ customFields: draft.customFields.filter((item) => item.clientId !== field.clientId) })}>{zh ? "移除" : "Remove"}</button>
             </div>
           ))}
-          <button type="button" className="secondary" onClick={() => setCustomFields((current) => [...current, { label: "", value: "", concealed: false }])} disabled={customFields.length >= 32}>
-            {zh ? "添加字段" : "Add field"}
-          </button>
+          <button type="button" className="secondary" onClick={() => patchDraft({ customFields: [...draft.customFields, { clientId: clientId(), label: "", value: "", concealed: false }] })} disabled={draft.customFields.length >= 32}>{zh ? "添加字段" : "Add field"}</button>
         </section>
         <section className="settings-section" aria-labelledby="attachments-heading">
           <h3 id="attachments-heading" className="section-title">{zh ? "加密附件" : "Encrypted attachments"}</h3>
-          <p className="field-hint">{zh ? "每个附件最多 1 MiB，每个条目最多 10 个；附件只保存在本地加密保险库。" : "Up to 1 MiB each and 10 per entry. Attachments stay only in the local encrypted vault."}</p>
-          {attachments.map((attachment) => (
+          <p className="field-hint">{zh ? "附件更改会和条目一起保存；取消不会修改保险库。" : "Attachment changes are saved with the entry; cancel leaves the vault unchanged."}</p>
+          {draft.attachments.map((attachment) => (
             <div className="button-row" key={attachment.id}>
               <span>{attachment.filename} ({Math.ceil(attachment.size / 1024)} KiB)</span>
               <button type="button" className="secondary" onClick={() => saveExistingAttachment(attachment)}>{zh ? "下载" : "Download"}</button>
-              <button type="button" className="secondary" onClick={() => removeExistingAttachment(attachment)}>{zh ? "删除" : "Remove"}</button>
+              <button type="button" className="secondary" onClick={() => patchDraft({ attachments: draft.attachments.filter((item) => item.id !== attachment.id) })}>{zh ? "保存时删除" : "Remove on save"}</button>
             </div>
           ))}
-          <input type="file" multiple onChange={(e) => setNewAttachments(Array.from(e.target.files || []))} />
-          {newAttachments.length > 0 && <p className="field-hint">{zh ? `待上传 ${newAttachments.length} 个附件，保存时写入加密库。` : `${newAttachments.length} attachment(s) will be encrypted when you save.`}</p>}
+          {draft.pendingAttachments.map(({ clientId: id, file }) => (
+            <div className="button-row" key={id}>
+              <span>{file.name} ({Math.ceil(file.size / 1024)} KiB)</span>
+              <button type="button" className="secondary" onClick={() => patchDraft({ pendingAttachments: draft.pendingAttachments.filter((item) => item.clientId !== id) })}>{zh ? "移除待添加项" : "Remove pending file"}</button>
+            </div>
+          ))}
+          <label className="field-label" htmlFor="entry-attachments">{zh ? "选择附件" : "Choose attachments"}</label>
+          <input id="entry-attachments" type="file" multiple onChange={(event) => {
+            const additions = Array.from(event.target.files || []).map((file) => ({ clientId: clientId(), file }));
+            patchDraft({ pendingAttachments: [...draft.pendingAttachments, ...additions] });
+            event.target.value = "";
+          }} />
         </section>
         {entry && (
           <section className="settings-section" aria-labelledby="history-heading">
@@ -302,84 +355,38 @@ export default function EntryForm({ entry, onDone }: Props) {
             {history.length === 0 ? <p className="field-hint">{zh ? "尚无历史版本。" : "No saved versions yet."}</p> : history.map((item) => (
               <div className="button-row" key={item.id}>
                 <span>{new Date(item.saved_at).toLocaleString()}</span>
-                <button type="button" className="secondary" onClick={() => restoreVersion(item.id)}>{zh ? "恢复此版本" : "Restore version"}</button>
+                <button type="button" className="secondary" onClick={() => setHistoryToRestore(item.id)}>{zh ? "载入草稿预览" : "Preview in draft"}</button>
               </div>
             ))}
           </section>
         )}
-        <PasswordField
-          id="entry-password"
-          label={t("form.password")}
-          value={password}
-          onChange={setPassword}
-          hint={t("form.passwordHint")}
-        />
+        <PasswordField id="entry-password" label={t("form.password")} value={draft.password} onChange={(password) => patchDraft({ password })} hint={t("form.passwordHint")} />
         <div className="generate-row">
           <div className="field generate-length">
-            <label className="field-label" htmlFor="gen-length">
-              {t("form.genLength")}
-            </label>
-            <input
-              id="gen-length"
-              type="number"
-              min={12}
-              max={64}
-              value={genLength}
-              onChange={(e) =>
-                setGenLength(Math.min(64, Math.max(12, Number(e.target.value) || 12)))
-              }
-            />
+            <label className="field-label" htmlFor="gen-length">{t("form.genLength")}</label>
+            <input id="gen-length" type="number" min={12} max={64} value={genLength} onChange={(event) => setGenLength(Math.min(64, Math.max(12, Number(event.target.value) || 12)))} />
           </div>
-          <label className="checkbox-field generate-symbols">
-            <input
-              type="checkbox"
-              checked={genSymbols}
-              onChange={(e) => setGenSymbols(e.target.checked)}
-            />
-            <span>{t("form.genSymbols")}</span>
-          </label>
-          <button type="button" className="secondary" onClick={handleGenerate}>
-            {t("form.generate")}
-          </button>
+          <label className="checkbox-field"><input type="checkbox" checked={genSymbols} onChange={(event) => setGenSymbols(event.target.checked)} /><span>{t("form.genSymbols")}</span></label>
+          <button type="button" className="secondary" onClick={handleGenerate}>{t("form.generate")}</button>
         </div>
-        <div className="field">
-          <label className="field-label" htmlFor="entry-url">
-            {t("form.url")}
-          </label>
-          <input
-            id="entry-url"
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://"
-          />
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="entry-notes">
-            {t("form.notes")}
-          </label>
-          <textarea
-            id="entry-notes"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-            rows={3}
-            placeholder={t("form.notesPlaceholder")}
-          />
-        </div>
-        {error && (
-          <div className="error" role="alert" id="entry-form-error">
-            {error}
-          </div>
-        )}
+        <div className="field"><label className="field-label" htmlFor="entry-url">{t("form.url")}</label><input id="entry-url" type="url" value={draft.url} onChange={(event) => patchDraft({ url: event.target.value })} placeholder="https://" /></div>
+        <div className="field"><label className="field-label" htmlFor="entry-notes">{t("form.notes")}</label><textarea id="entry-notes" value={draft.notes} onChange={(event) => patchDraft({ notes: event.target.value })} rows={3} placeholder={t("form.notesPlaceholder")} /></div>
+        {error && <div className="error" role="alert" id="entry-form-error">{error}</div>}
         <div className="button-row">
-          <button className="primary" type="submit" disabled={saving}>
-            {saving ? t("form.saving") : t("form.save")}
-          </button>
-          <button className="secondary" type="button" onClick={onDone}>
-            {t("form.cancel")}
-          </button>
+          <button className="primary" type="submit" disabled={saving}>{saving ? t("form.saving") : t("form.save")}</button>
+          <button className="secondary" type="button" onClick={() => onDone()} disabled={saving}>{t("form.cancel")}</button>
         </div>
       </form>
+      <ConfirmDialog
+        open={historyToRestore !== null}
+        idPrefix="history-draft-confirm"
+        title={zh ? "将历史版本载入草稿？" : "Load this version into the draft?"}
+        message={zh ? "这只会更新当前表单。只有点击保存后才会修改保险库。" : "This updates only the current form. The vault changes only after you save."}
+        confirmLabel={historyPreviewing ? (zh ? "正在载入…" : "Loading…") : (zh ? "载入草稿" : "Load draft")}
+        cancelLabel={t("form.cancel")}
+        onConfirm={() => void previewHistoryRestore()}
+        onCancel={() => setHistoryToRestore(null)}
+      />
     </div>
   );
 }
