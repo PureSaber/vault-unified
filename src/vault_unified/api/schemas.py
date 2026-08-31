@@ -105,6 +105,31 @@ class AttachmentIn(BaseModel):
     data_b64: str = Field(min_length=1, max_length=1_400_000)
 
 
+class EntryTransactionIn(BaseModel):
+    transaction_id: str = Field(min_length=16, max_length=128)
+    entry_id: str | None = Field(default=None, min_length=1, max_length=128)
+    expected_updated_at: str | None = Field(default=None, max_length=128)
+    title: str = Field(min_length=1, max_length=500)
+    username: str = ""
+    password: str = ""
+    url: str = ""
+    notes: str = ""
+    tags: list[str] = Field(default_factory=list)
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] = "login"
+    custom_fields: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
+    totp_secret: str = Field(default="", max_length=1024)
+    add_attachments: list[AttachmentIn] = Field(default_factory=list, max_length=10)
+    remove_attachment_ids: list[str] = Field(default_factory=list, max_length=10)
+    restore_history_id: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @field_validator("remove_attachment_ids")
+    @classmethod
+    def attachment_removals_are_unique(cls, value: list[str]) -> list[str]:
+        if len(set(value)) != len(value):
+            raise ValueError("attachment removals must be unique")
+        return value
+
+
 class IntegrationFieldOut(BaseModel):
     key: str
     label: str

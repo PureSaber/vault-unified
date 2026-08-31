@@ -3,6 +3,7 @@ import { useI18n } from "../i18n";
 
 interface Props {
   open: boolean;
+  idPrefix?: string;
   title: string;
   message: string;
   confirmLabel?: string;
@@ -14,6 +15,7 @@ interface Props {
 
 export default function ConfirmDialog({
   open,
+  idPrefix = "confirm",
   title,
   message,
   confirmLabel,
@@ -74,14 +76,14 @@ export default function ConfirmDialog({
         className="confirm-dialog card"
         role="alertdialog"
         aria-modal="true"
-        aria-labelledby="confirm-title"
-        aria-describedby="confirm-message"
+        aria-labelledby={`${idPrefix}-title`}
+        aria-describedby={`${idPrefix}-message`}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="confirm-title" className="confirm-title">
+        <h2 id={`${idPrefix}-title`} className="confirm-title">
           {title}
         </h2>
-        <p id="confirm-message" className="confirm-message">
+        <p id={`${idPrefix}-message`} className="confirm-message">
           {message}
         </p>
         <div className="button-row confirm-actions">

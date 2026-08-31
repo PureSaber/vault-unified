@@ -10,9 +10,17 @@ from vault_unified.adapters.gopass import GopassAdapter
 from vault_unified.adapters.keepassxc import KeePassXCAdapter
 from vault_unified.adapters.proton_pass import ProtonPassAdapter
 from vault_unified.adapters.registry import all_remote_adapters, get_adapter
-from vault_unified.local_store import LocalVault
+from vault_unified.local_store import EntryTransactionConflict, LocalVault
 from vault_unified.models import SecretEntry, Source, SyncPreferences, SyncStatus
-from vault_unified.personal_data import merge_personal_metadata
+from vault_unified.personal_data import (
+    add_attachment,
+    delete_attachment,
+    get_attachment,
+    merge_personal_metadata,
+    record_history,
+    restore_history,
+    update_data,
+)
 from vault_unified.sync.engine import SyncEngine, SyncResult
 from vault_unified.sync.ledger import (
     Tombstone,
@@ -367,6 +375,7 @@ class UnifiedVault:
         self.keepassxc = KeePassXCAdapter()
         self.gopass = GopassAdapter()
         self.sync = MetadataPreservingSyncEngine(self)
+        self._entry_transactions: dict[str, tuple[str, str]] = {}
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> UnifiedVault:
@@ -463,6 +472,96 @@ class UnifiedVault:
         if auto_push:
             self.sync.after_local_edit(result.id)
         return result
+
+    def commit_entry_transaction(
+        self,
+        *,
+        transaction_id: str,
+        entry_id: str | None,
+        expected_updated_at: str | None,
+        title: str,
+        username: str,
+        password: str,
+        url: str,
+        notes: str,
+        tags: list[str],
+        entry_type: str,
+        custom_fields: list[dict[str, Any]],
+        totp_secret: str,
+        add_attachments: list[dict[str, str]],
+        remove_attachment_ids: list[str],
+        restore_history_id: str | None,
+    ) -> SecretEntry:
+        """Commit the complete editor draft with one encrypted vault write."""
+
+        receipt = self._entry_transactions.get(transaction_id)
+        if receipt is not None:
+            receipt_entry_id, receipt_updated_at = receipt
+            current = self.local.get(receipt_entry_id)
+            if current is not None and current.updated_at == receipt_updated_at:
+                return current
+            raise EntryTransactionConflict(
+                "This save request was already used and the entry has since changed"
+            )
+
+        create = entry_id is None
+        if create:
+            candidate = SecretEntry(title=title, source=Source.LOCAL)
+        else:
+            current = self.resolve(entry_id)
+            if expected_updated_at is None or current.updated_at != expected_updated_at:
+                raise EntryTransactionConflict(
+                    "Entry changed after this editor was opened; reload before saving"
+                )
+            candidate = copy.deepcopy(current)
+            if restore_history_id:
+                restore_history(candidate, restore_history_id)
+            else:
+                record_history(candidate)
+
+        candidate.title = title
+        candidate.username = username
+        candidate.password = password
+        candidate.url = url
+        candidate.notes = notes
+        candidate.tags = list(tags)
+        update_data(
+            candidate,
+            entry_type=entry_type,
+            custom_fields=custom_fields,
+            totp_secret=totp_secret,
+        )
+
+        for attachment_id in remove_attachment_ids:
+            get_attachment(candidate, attachment_id)
+            if not delete_attachment(candidate, attachment_id):
+                raise KeyError(attachment_id)
+        for attachment in add_attachments:
+            add_attachment(
+                candidate,
+                filename=attachment["filename"],
+                mime_type=attachment["mime_type"],
+                data_b64=attachment["data_b64"],
+            )
+
+        candidate.mark_dirty()
+        committed = self.local.commit_entry(
+            candidate,
+            create=create,
+            expected_updated_at=expected_updated_at,
+        )
+        self._entry_transactions[transaction_id] = (
+            committed.id,
+            committed.updated_at,
+        )
+
+        # The encrypted local write is the save boundary. Optional background
+        # sync must not turn a successful commit into a misleading failure.
+        try:
+            self.sync.after_local_edit(committed.id)
+        except Exception:
+            pass
+        return self.local.get(committed.id) or committed
 
     def delete(self, entry_id: str, *, soft: bool = True) -> bool:
         prefs = self.get_prefs()

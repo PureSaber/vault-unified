@@ -1066,3 +1066,19 @@ button.conflict-chip-btn:hover:not(:disabled) {
   padding: var(--space-xl);
   text-align: center;
 }
+
+.idle-lock-warning {
+  position: fixed;
+  left: 50%;
+  bottom: var(--space-xl);
+  z-index: 9998;
+  width: min(680px, calc(100vw - 2 * var(--space-xl)));
+  transform: translateX(-50%);
+  padding: var(--space-md) var(--space-lg);
+  border: 2px solid var(--color-warning);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
+}

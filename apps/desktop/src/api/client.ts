@@ -156,6 +156,8 @@ export interface Entry {
   has_totp_secret: boolean;
   attachments: Attachment[];
   history_count: number;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Attachment {
@@ -164,6 +166,24 @@ export interface Attachment {
   mime_type: string;
   size: number;
   sha256: string;
+}
+
+export interface EntryTransactionPayload {
+  transaction_id: string;
+  entry_id: string | null;
+  expected_updated_at: string | null;
+  title: string;
+  username: string;
+  password: string;
+  url: string;
+  notes: string;
+  tags: string[];
+  entry_type: Entry["entry_type"];
+  custom_fields: Array<{ label: string; value: string; concealed: boolean }>;
+  totp_secret: string;
+  add_attachments: Array<{ filename: string; mime_type: string; data_b64: string }>;
+  remove_attachment_ids: string[];
+  restore_history_id: string | null;
 }
 
 export interface PersonalSettings {
@@ -340,28 +360,17 @@ export const api = {
     request<Entry[]>(q ? `/entries?q=${encodeURIComponent(q)}` : "/entries"),
   getEntry: (id: string, reveal = true) =>
     request<Entry>(`/entries/${id}?reveal=${reveal}`),
-  createEntry: (data: Partial<Entry>) =>
-    request<Entry>("/entries", { method: "POST", body: JSON.stringify(data) }),
-  updateEntry: (id: string, data: Partial<Entry>) =>
-    request<Entry>(`/entries/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  commitEntry: (data: EntryTransactionPayload) =>
+    request<Entry>("/entries/commit", { method: "POST", body: JSON.stringify(data) }),
   deleteEntry: (id: string) => request(`/entries/${id}`, { method: "DELETE" }),
-  addAttachment: (id: string, filename: string, mimeType: string, dataB64: string) =>
-    request<{ attachment: Attachment; entry: Entry }>(`/entries/${id}/attachments`, {
-      method: "POST",
-      body: JSON.stringify({ filename, mime_type: mimeType, data_b64: dataB64 }),
-    }),
-  removeAttachment: (id: string, attachmentId: string) =>
-    request<{ deleted: string; entry: Entry }>(`/entries/${id}/attachments/${attachmentId}`, {
-      method: "DELETE",
-    }),
   downloadAttachment: (id: string, attachmentId: string) =>
     request<Attachment & { data_b64: string }>(`/entries/${id}/attachments/${attachmentId}`),
   entryHistory: (id: string, reveal = false) =>
     request<{ history: Array<{ id: string; saved_at: string; snapshot: Record<string, unknown> }> }>(
       `/entries/${id}/history?reveal=${reveal}`
     ),
-  restoreEntryHistory: (id: string, historyId: string) =>
-    request<Entry>(`/entries/${id}/history/${historyId}/restore`, { method: "POST" }),
+  previewEntryHistory: (id: string, historyId: string) =>
+    request<{ history_id: string; entry: Entry }>(`/entries/${id}/history/${historyId}`),
   copy: (id: string, field = "password") =>
     request(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
   generate: (length = 20, symbols = true) =>
