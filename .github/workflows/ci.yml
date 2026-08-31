@@ -170,6 +170,7 @@ jobs:
           files: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            Vault-Unified-Browser-Extension-v*.zip
             release-manifest-v*.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -189,6 +190,8 @@ jobs:
           if ($manifest.source_commit -ne $source -or $manifest.tag -ne $env:GITHUB_REF_NAME) {
             throw "Downloaded release manifest provenance mismatch"
           }
+          $extensionRecords = @($manifest.assets | Where-Object { $_.kind -eq "browser_extension" })
+          if ($extensionRecords.Count -ne 1) { throw "Expected exactly one extension ZIP in the release manifest" }
           foreach ($record in $manifest.assets) {
             $path = Join-Path $download ([string]$record.name)
             if (-not (Test-Path -LiteralPath $path)) {
@@ -202,6 +205,9 @@ jobs:
               throw "Downloaded asset verification failed: $($record.name)"
             }
           }
+          $extensionPath = Join-Path $download ([string]$extensionRecords[0].name)
+          python scripts/build_browser_extension.py --repo-root . --verify $extensionPath --expect-version ([string]$manifest.version)
+          if ($LASTEXITCODE -ne 0) { throw "Downloaded extension ZIP structure validation failed" }
           $tagRef = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:GITHUB_REF_NAME" | ConvertFrom-Json
           $tagType = [string]$tagRef.object.type
           $tagSha = [string]$tagRef.object.sha

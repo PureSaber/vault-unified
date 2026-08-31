@@ -4,10 +4,15 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location -LiteralPath $RepoRoot
 
-Write-Host "=== 1/2 API sidecar ==="
+Write-Host "=== 1/3 API sidecar ==="
 & (Join-Path $PSScriptRoot "build-api-sidecar.ps1")
 
-Write-Host "=== 2/2 Tauri build ==="
+Write-Host "=== 2/3 Browser extension release ZIP ==="
+$VenvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+& $VenvPython (Join-Path $PSScriptRoot "build_browser_extension.py") --repo-root $RepoRoot --output-dir $RepoRoot
+if ($LASTEXITCODE -ne 0) { throw "browser extension build failed" }
+
+Write-Host "=== 3/3 Tauri build ==="
 Set-Location -LiteralPath (Join-Path $RepoRoot "apps\desktop")
 npm ci
 if ($LASTEXITCODE -ne 0) { throw "npm ci failed" }
@@ -35,3 +40,6 @@ if (Test-Path -LiteralPath $Msi) {
     Write-Host "  MSI dir (if enabled): $Msi"
 }
 Write-Host "  Bundle root: $Bundle"
+$Version = [string](Get-Content -LiteralPath (Join-Path $RepoRoot "apps\desktop\package.json") -Raw | ConvertFrom-Json).version
+$Extension = Join-Path $RepoRoot "Vault-Unified-Browser-Extension-v$Version.zip"
+Write-Host "  Browser extension: $Extension"

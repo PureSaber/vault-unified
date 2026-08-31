@@ -29,6 +29,9 @@ if (-not $SourceSha) {
 if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$Version") {
     throw "Tag $env:GITHUB_REF_NAME does not match package version $Version"
 }
+$VenvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+& $VenvPython (Join-Path $RepoRoot "scripts\version_contract.py") --repo-root $RepoRoot --expect $Version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Release component version contract failed" }
 $actualSha = (& git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or $actualSha -ne $SourceSha) {
     throw "Release validation source mismatch: expected $SourceSha, got $actualSha"
@@ -317,6 +320,9 @@ $msi = $msiFiles[0]
 if ($nsis.Length -le 0 -or $msi.Length -le 0) { throw "Installer asset is empty" }
 $sidecar = Get-Item -LiteralPath (Join-Path $RepoRoot "apps\desktop\src-tauri\binaries\vault-api-sidecar-x86_64-pc-windows-msvc.exe")
 if ($sidecar.Length -le 0) { throw "Packaged API sidecar is empty" }
+$extension = Get-Item -LiteralPath (Join-Path $RepoRoot "Vault-Unified-Browser-Extension-v$Version.zip")
+& $VenvPython (Join-Path $RepoRoot "scripts\build_browser_extension.py") --repo-root $RepoRoot --verify $extension.FullName --expect-version $Version | Out-Host
+if ($LASTEXITCODE -ne 0) { throw "Browser extension release ZIP validation failed" }
 
 Write-Host "=== Packaged sidecar generated-data smoke ==="
 Smoke-PackagedSidecar -Sidecar $sidecar
@@ -349,6 +355,12 @@ foreach ($asset in @($nsis, $msi)) {
         authenticode_status = [string](Get-AuthenticodeSignature -LiteralPath $asset.FullName).Status
     }
 }
+$assetRecords += [ordered]@{
+    name = $extension.Name
+    bytes = [int64]$extension.Length
+    sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $extension.FullName).Hash.ToLowerInvariant()
+    kind = "browser_extension"
+}
 $manifest = [ordered]@{
     schema = 1
     version = $Version
@@ -364,6 +376,7 @@ $manifest = [ordered]@{
         backup_cleanup_preview_confirmed = "passed"
         nsis_install_launch_uninstall = "passed"
         msi_install_launch_uninstall = "passed"
+        browser_extension_structure_permissions_and_version = "passed"
     }
     assets = $assetRecords
 }

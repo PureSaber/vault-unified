@@ -348,9 +348,11 @@ def unlock(body: UnlockRequest, request: Request) -> UnlockResponse:
 
 @router.post("/lock")
 def lock(token: str = Depends(get_token)) -> dict:
+    from vault_unified.browser_pairing import browser_pairings
     from vault_unified.import_flow import import_flow_store
     from vault_unified.restore_preview import restore_preview_store
 
+    browser_pairings.cancel_session(token)
     import_flow_store.clear_session(token)
     restore_preview_store.clear_scope(token)
     sessions.lock(token)

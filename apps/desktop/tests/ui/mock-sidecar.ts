@@ -138,6 +138,7 @@ export class MockAuthenticatedSidecar {
   readonly importWrites = { apply: 0, undo: 0 };
   readonly syncWrites = { execute: 0 };
   readonly backupWrites = { create: 0, restore: 0 };
+  readonly pairingWrites = { create: 0, cancel: 0 };
 
   constructor(
     private readonly lockAfterSeconds = 900,
@@ -429,6 +430,22 @@ export class MockAuthenticatedSidecar {
           bitwarden: "ready (enabled)",
         },
       });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/browser/pairing-code") {
+      this.pairingWrites.create += 1;
+      await this.respond(route, 200, {
+        pairing_code: testData.bootstrapSecret,
+        expires_in_seconds: 300,
+        message: "Generated pairing code",
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/browser/pairing/cancel") {
+      this.pairingWrites.cancel += 1;
+      await this.respond(route, 200, { cancelled: true });
       return;
     }
 

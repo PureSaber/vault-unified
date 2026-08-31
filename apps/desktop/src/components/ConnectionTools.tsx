@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { open as openExternal } from "@tauri-apps/plugin-shell";
+import { useEffect, useState } from "react";
 import { api, type BrowserPairing } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
@@ -8,6 +9,7 @@ export default function ConnectionTools() {
   const { showToast } = useToast();
   const zh = locale === "zh";
   const [pairing, setPairing] = useState<BrowserPairing | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [showMobileDetails, setShowMobileDetails] = useState(false);
 
@@ -16,6 +18,7 @@ export default function ConnectionTools() {
     try {
       const result = await api.createBrowserPairing();
       setPairing(result);
+      setRemainingSeconds(result.expires_in_seconds);
       showToast(zh ? "一次性配对码已生成" : "One-time pairing code created");
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
@@ -23,6 +26,50 @@ export default function ConnectionTools() {
       setBusy(false);
     }
   }
+
+  useEffect(() => {
+    if (!pairing) return;
+    const expiresAt = Date.now() + pairing.expires_in_seconds * 1000;
+    const timer = window.setInterval(() => {
+      const next = Math.max(0, Math.ceil((expiresAt - Date.now()) / 1000));
+      setRemainingSeconds(next);
+      if (next === 0) setPairing(null);
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [pairing]);
+
+  async function copyText(value: string, label: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      showToast(zh ? `${label}已复制` : `${label} copied`);
+    } catch {
+      showToast(zh ? "无法复制，请手动选择文本。" : "Could not copy. Select the text manually.", "error");
+    }
+  }
+
+  async function cancelPairing() {
+    setBusy(true);
+    try {
+      await api.cancelBrowserPairing();
+      setPairing(null);
+      setRemainingSeconds(0);
+      showToast(zh ? "配对已取消" : "Pairing cancelled");
+    } catch (error) {
+      showToast(String(error).replace(/^Error:\s*/, ""), "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openInstallGuide() {
+    try {
+      await openExternal("https://github.com/PureSaber/vault-unified/blob/main/docs/browser-extension-install.md");
+    } catch {
+      showToast(zh ? "无法打开安装说明，请前往项目的最新发布页面。" : "Could not open the guide. Open the latest project release instead.", "error");
+    }
+  }
+
+  const countdown = `${Math.floor(remainingSeconds / 60)}:${String(remainingSeconds % 60).padStart(2, "0")}`;
 
   return (
     <section className="settings-section" aria-labelledby="device-connections-heading">
@@ -33,14 +80,39 @@ export default function ConnectionTools() {
         <article className="connection-card">
           <h4>{zh ? "浏览器扩展" : "Browser extension"}</h4>
           <p>{zh ? "在支持的网站上选择账号并填充登录表单。" : "Choose an account to fill a sign-in form on supported sites."}</p>
-          <button className="secondary" type="button" onClick={createPairing} disabled={busy}>
-            {busy ? (zh ? "正在生成…" : "Creating…") : (zh ? "生成一次性配对码" : "Create one-time pairing code")}
-          </button>
+          <p className="field-hint">
+            {zh
+              ? "下载扩展 ZIP，解压后在 Chrome/Edge 的开发者模式中加载该目录。"
+              : "Download the extension ZIP, extract it, then load that folder in Chrome/Edge Developer mode."}
+          </p>
+          <div className="button-row">
+            <button className="secondary" type="button" onClick={() => void openInstallGuide()}>
+              {zh ? "打开扩展安装说明" : "Open extension install guide"}
+            </button>
+            <button className="secondary" type="button" onClick={() => void createPairing()} disabled={busy}>
+              {busy
+                ? (zh ? "正在生成…" : "Creating…")
+                : pairing
+                  ? (zh ? "重新生成" : "Generate again")
+                  : (zh ? "生成一次性配对码" : "Create one-time pairing code")}
+            </button>
+          </div>
           {pairing && (
             <div className="result-panel" aria-live="polite">
-              <div>{zh ? "本机地址：" : "Local address: "}{pairing.sidecar_url}</div>
-              <div>{zh ? "一次性配对码：" : "One-time pairing code: "}{pairing.pairing_code}</div>
-              <div>{zh ? "此代码会自动到期。" : "This code expires automatically."}</div>
+              <div className="path-break">{zh ? "本机地址：" : "Local address: "}{pairing.sidecar_url}</div>
+              <div className="path-break">{zh ? "一次性配对码：" : "One-time pairing code: "}{pairing.pairing_code}</div>
+              <div>{zh ? `到期倒计时：${countdown}` : `Expires in: ${countdown}`}</div>
+              <div className="button-row">
+                <button className="secondary" type="button" onClick={() => void copyText(pairing.sidecar_url, zh ? "本机地址" : "Local address")}>
+                  {zh ? "复制本机地址" : "Copy local address"}
+                </button>
+                <button className="secondary" type="button" onClick={() => void copyText(pairing.pairing_code, zh ? "配对码" : "Pairing code")}>
+                  {zh ? "复制一次性配对码" : "Copy one-time pairing code"}
+                </button>
+                <button className="danger" type="button" onClick={() => void cancelPairing()} disabled={busy}>
+                  {zh ? "取消配对" : "Cancel pairing"}
+                </button>
+              </div>
             </div>
           )}
         </article>

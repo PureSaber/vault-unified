@@ -9,7 +9,9 @@ from fastapi.testclient import TestClient
 pytest.importorskip("fastapi")
 
 from vault_unified.api.app import create_app
+from vault_unified.browser_pairing import browser_pairings
 from vault_unified.manager import UnifiedVault
+from vault_unified.session import sessions
 
 
 BOOTSTRAP_SECRET = "browser-bootstrap-secret-0123456789abcdef"
@@ -23,9 +25,13 @@ def client(monkeypatch):
         monkeypatch.setenv("VAULT_FILE", str(vault_file))
         monkeypatch.setattr("vault_unified.config.get_vault_path", lambda: vault_file)
         UnifiedVault.create(vault_file, "test123")
+        sessions._sessions.clear()
+        browser_pairings.clear()
         app = create_app(bootstrap_secret=BOOTSTRAP_SECRET, instance_id="browser-api-test")
         with TestClient(app) as test_client:
             yield test_client
+        sessions._sessions.clear()
+        browser_pairings.clear()
 
 
 def _desktop_headers(client: TestClient) -> dict[str, str]:
@@ -111,3 +117,63 @@ def test_pairing_endpoint_does_not_accept_missing_or_reused_code(client: TestCli
     assert client.post("/api/browser/pair", headers=request_headers, json={}).status_code == 200
     assert client.post("/api/browser/pair", headers=request_headers, json={}).status_code == 401
     assert client.post("/api/browser/pair", headers={"Origin": ORIGIN}, json={}).status_code == 403
+
+
+def test_cancel_and_regenerate_invalidate_previous_browser_tokens(client: TestClient) -> None:
+    headers = _desktop_headers(client)
+    first_code = client.post("/api/browser/pairing-code", headers=headers).json()["pairing_code"]
+    first_pair = client.post(
+        "/api/browser/pair",
+        headers={"Origin": ORIGIN, "X-Vault-Browser-Pairing": first_code},
+        json={},
+    ).json()
+    first_headers = {"Origin": ORIGIN, "X-Vault-Browser-Token": first_pair["browser_token"]}
+
+    regenerated = client.post("/api/browser/pairing-code", headers=headers)
+    assert regenerated.status_code == 200
+    assert client.get(
+        "/api/browser/matches?url=https%3A%2F%2Fexample.test",
+        headers=first_headers,
+    ).status_code == 401
+
+    second_pair = client.post(
+        "/api/browser/pair",
+        headers={
+            "Origin": ORIGIN,
+            "X-Vault-Browser-Pairing": regenerated.json()["pairing_code"],
+        },
+        json={},
+    ).json()
+    cancelled = client.post("/api/browser/pairing/cancel", headers=headers)
+    assert cancelled.status_code == 200
+    assert client.get(
+        "/api/browser/matches?url=https%3A%2F%2Fexample.test",
+        headers={"Origin": ORIGIN, "X-Vault-Browser-Token": second_pair["browser_token"]},
+    ).status_code == 401
+
+
+def test_pairing_code_and_browser_token_expire(client: TestClient, monkeypatch) -> None:
+    from vault_unified import browser_pairing
+
+    now = [1_000.0]
+    monkeypatch.setattr(browser_pairing.time, "monotonic", lambda: now[0])
+    headers = _desktop_headers(client)
+    expired_code = client.post("/api/browser/pairing-code", headers=headers).json()["pairing_code"]
+    now[0] += 301
+    assert client.post(
+        "/api/browser/pair",
+        headers={"Origin": ORIGIN, "X-Vault-Browser-Pairing": expired_code},
+        json={},
+    ).status_code == 401
+
+    fresh_code = client.post("/api/browser/pairing-code", headers=headers).json()["pairing_code"]
+    paired = client.post(
+        "/api/browser/pair",
+        headers={"Origin": ORIGIN, "X-Vault-Browser-Pairing": fresh_code},
+        json={},
+    ).json()
+    now[0] += 43_201
+    assert client.get(
+        "/api/browser/matches?url=https%3A%2F%2Fexample.test",
+        headers={"Origin": ORIGIN, "X-Vault-Browser-Token": paired["browser_token"]},
+    ).status_code == 401

@@ -78,6 +78,29 @@ class BrowserPairingStore:
             )
             return code
 
+    def cancel_session(self, session_token: str) -> None:
+        """Invalidate pending codes and issued tokens for one desktop session."""
+
+        with self._lock:
+            self._clean()
+            self._pending = {
+                code: pair
+                for code, pair in self._pending.items()
+                if pair.session_token != session_token
+            }
+            self._tokens = {
+                token: pair
+                for token, pair in self._tokens.items()
+                if pair.session_token != session_token
+            }
+
+    def clear(self) -> None:
+        """Clear process-local pairing state during controlled shutdown/tests."""
+
+        with self._lock:
+            self._pending.clear()
+            self._tokens.clear()
+
     @staticmethod
     def _validate_origin(origin: str) -> None:
         if not _EXTENSION_ORIGIN.fullmatch(origin):

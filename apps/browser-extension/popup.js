@@ -36,20 +36,23 @@ function normalizeAddress(value) {
   return url.href.replace(/\/$/, "");
 }
 
-function fillInputs(values) {
-  const setValue = (input, value) => {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-    setter.call(input, value);
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-  };
-  const visible = (input) => input && input.offsetParent !== null && !input.disabled && !input.readOnly;
-  const password = [...document.querySelectorAll('input[type="password"]')].find(visible);
-  const username = [...document.querySelectorAll('input:not([type]), input[type="text"], input[type="email"], input[type="tel"]')]
-    .find((input) => visible(input) && input.autocomplete !== "current-password");
-  if (username && values.username) setValue(username, values.username);
-  if (password && values.password) setValue(password, values.password);
-  return { username: Boolean(username && values.username), password: Boolean(password && values.password) };
+function outcomeMessage(outcome) {
+  switch (outcome.reason) {
+    case "filled":
+      return "Filled the visible login form.";
+    case "ambiguous-password-fields":
+      return "Multiple password fields or login forms were found. Nothing was filled.";
+    case "new-password-flow":
+      return "This looks like a password creation or change form. Nothing was filled.";
+    case "iframe":
+      return "The login form may be inside an iframe, which this version does not fill.";
+    case "shadow-dom":
+      return "The login form may use Shadow DOM, which this version does not fill.";
+    case "empty-password":
+      return "The selected entry has no password to fill.";
+    default:
+      return "No supported visible password field was found. Nothing was filled.";
+  }
 }
 
 async function fillMatch(state, tab, entry) {
@@ -61,11 +64,11 @@ async function fillMatch(state, tab, entry) {
     });
     const injected = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: fillInputs,
+      func: vaultUnifiedFillInputs,
       args: [values],
     });
-    const outcome = injected[0]?.result || {};
-    setStatus(outcome.password ? "Filled the visible login fields." : "No visible password field was found.");
+    const outcome = injected[0]?.result || { reason: "no-password-field" };
+    setStatus(outcomeMessage(outcome), outcome.reason !== "filled");
   } catch (error) {
     setStatus(error.message || String(error), true);
   }
