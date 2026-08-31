@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -114,6 +115,7 @@ class SessionManager:
         *,
         vault_path: Path | None = None,
         remember: bool = False,
+        expected_source_sha256: str | None = None,
     ) -> tuple[str, UnifiedVault]:
         source = Path(backup_path).expanduser().resolve()
         target = (vault_path or get_vault_path()).expanduser().resolve()
@@ -126,6 +128,11 @@ class SessionManager:
             raise FileNotFoundError(f"Backup file not found: {source}")
 
         source_bytes = source.read_bytes()
+        if (
+            expected_source_sha256 is not None
+            and hashlib.sha256(source_bytes).hexdigest() != expected_source_sha256
+        ):
+            raise ValueError("Backup changed after the restore preview")
         decrypt_payload(password, source_bytes)
         atomic_write_bytes(
             target,

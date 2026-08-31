@@ -141,6 +141,18 @@ function AppShell() {
 
   useEffect(() => {
     if (!unlocked) return;
+    const onSettingsChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ lock_after_seconds?: number }>).detail;
+      if (detail && Number.isFinite(detail.lock_after_seconds)) {
+        setLockAfterSeconds(Number(detail.lock_after_seconds));
+      }
+    };
+    window.addEventListener("vault-personal-settings-changed", onSettingsChanged);
+    return () => window.removeEventListener("vault-personal-settings-changed", onSettingsChanged);
+  }, [unlocked]);
+
+  useEffect(() => {
+    if (!unlocked) return;
     let cancelled = false;
     const runMaintenance = async () => {
       try {

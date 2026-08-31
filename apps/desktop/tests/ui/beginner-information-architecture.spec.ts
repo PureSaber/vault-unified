@@ -62,7 +62,8 @@ test("keeps the beginner path compact and progressively reveals connection detai
 
   await navigation.getByRole("button", { name: "Security & recovery", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Security & recovery", exact: true })).toBeVisible();
-  await expect(page.getByText("Vault: encrypted", { exact: true })).toBeVisible();
+  const vaultStatus = page.locator(".status-row").filter({ hasText: "Vault" });
+  await expect(vaultStatus).toContainText("Encrypted");
   await expectTermsHidden(page);
   await expectUniqueIds(page);
 

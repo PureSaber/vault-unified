@@ -10,7 +10,9 @@ pytest.importorskip("fastapi")
 
 from vault_unified.api.app import create_app
 from vault_unified.manager import UnifiedVault
+from vault_unified.recovery_kit import create_recovery_kit
 from vault_unified.session import sessions
+from vault_unified.restore_preview import restore_preview_store
 from vault_unified.vault_format import V3Container, inspect_vault_format_file
 
 BOOTSTRAP_SECRET = "test-bootstrap-secret-0123456789abcdef"
@@ -22,7 +24,9 @@ def lifecycle(monkeypatch):
         root = Path(tmp)
         vault_file = root / "active" / "secrets.vault"
         monkeypatch.setenv("VAULT_FILE", str(vault_file))
+        monkeypatch.setenv("VAULT_CONFIG_DIR", str(root / "config"))
         sessions._sessions.clear()
+        restore_preview_store._intents.clear()
         app = create_app(
             bootstrap_secret=BOOTSTRAP_SECRET,
             instance_id="test-vault-lifecycle",
@@ -30,6 +34,7 @@ def lifecycle(monkeypatch):
         with TestClient(app) as client:
             yield client, root, vault_file
         sessions._sessions.clear()
+        restore_preview_store._intents.clear()
 
 
 def headers() -> dict[str, str]:
@@ -117,7 +122,7 @@ def test_restore_validates_then_copies_legacy_backup_byte_for_byte(lifecycle) ->
     )
     expected = backup.read_bytes()
 
-    restored = client.post(
+    direct = client.post(
         "/api/auth/restore",
         json={
             "backup_path": str(backup),
@@ -126,16 +131,47 @@ def test_restore_validates_then_copies_legacy_backup_byte_for_byte(lifecycle) ->
         },
         headers=headers(),
     )
+    assert direct.status_code == 409
+    assert not vault_file.exists()
+
+    preview = client.post(
+        "/api/auth/restore/preview",
+        json={
+            "backup_path": str(backup),
+            "password": "legacy-password",
+            "remember": False,
+        },
+        headers=headers(),
+    )
+    assert preview.status_code == 200
+    assert not vault_file.exists()
+    restored = client.post(
+        "/api/auth/restore/apply",
+        json={
+            "preview_token": preview.json()["preview_token"],
+            "password": "legacy-password",
+            "remember": False,
+            "confirm_restore": True,
+        },
+        headers=headers(),
+    )
     assert restored.status_code == 200
-    assert restored.json()["message"] == "restored"
+    assert restored.json()["locked"] is True
     assert vault_file.read_bytes() == expected
     assert not isinstance(inspect_vault_format_file(vault_file), V3Container)
+
+    unlocked = client.post(
+        "/api/auth/unlock",
+        json={"password": "legacy-password", "remember": False},
+        headers=headers(),
+    )
+    assert unlocked.status_code == 200
 
     listing = client.get(
         "/api/entries",
         headers={
             **headers(),
-            "Authorization": f"Bearer {restored.json()['token']}",
+            "Authorization": f"Bearer {unlocked.json()['token']}",
         },
     )
     assert listing.status_code == 200
@@ -148,7 +184,7 @@ def test_restore_wrong_password_leaves_target_absent(lifecycle) -> None:
     UnifiedVault.create(backup, "right-password")
 
     restored = client.post(
-        "/api/auth/restore",
+        "/api/auth/restore/preview",
         json={
             "backup_path": str(backup),
             "password": "wrong-password",
@@ -157,6 +193,39 @@ def test_restore_wrong_password_leaves_target_absent(lifecycle) -> None:
         headers=headers(),
     )
     assert restored.status_code == 401
+    assert not vault_file.exists()
+
+
+def test_cancelled_startup_restore_preview_cannot_be_applied(lifecycle) -> None:
+    client, root, vault_file = lifecycle
+    backup = root / "cancelled-backup.vault"
+    UnifiedVault.create(backup, "generated-password")
+    preview = client.post(
+        "/api/auth/restore/preview",
+        json={
+            "backup_path": str(backup),
+            "password": "generated-password",
+            "remember": False,
+        },
+        headers=headers(),
+    ).json()
+    cancelled = client.post(
+        "/api/auth/restore/cancel",
+        json={"preview_token": preview["preview_token"]},
+        headers=headers(),
+    )
+    assert cancelled.status_code == 200
+    replay = client.post(
+        "/api/auth/restore/apply",
+        json={
+            "preview_token": preview["preview_token"],
+            "password": "generated-password",
+            "remember": False,
+            "confirm_restore": True,
+        },
+        headers=headers(),
+    )
+    assert replay.status_code == 409
     assert not vault_file.exists()
 
 
@@ -170,7 +239,7 @@ def test_restore_never_overwrites_an_active_vault(lifecycle) -> None:
     UnifiedVault.create(backup, "backup-password")
 
     restored = client.post(
-        "/api/auth/restore",
+        "/api/auth/restore/preview",
         json={
             "backup_path": str(backup),
             "password": "backup-password",
@@ -180,3 +249,67 @@ def test_restore_never_overwrites_an_active_vault(lifecycle) -> None:
     )
     assert restored.status_code == 409
     assert vault_file.read_bytes() == active_bytes
+
+
+def test_recovery_kit_preview_is_read_only_and_stale_apply_is_rejected(lifecycle) -> None:
+    client, root, vault_file = lifecycle
+    active = UnifiedVault.create(vault_file, "old-password")
+    active.add("Before kit", password="generated-secret", auto_push=False)
+    code = "VU-RK-" + "r" * 48
+    kit = create_recovery_kit(active, code, root / "offline")
+    active.add("After kit", password="generated-later", auto_push=False)
+
+    before_preview = vault_file.read_bytes()
+    wrong = client.post(
+        "/api/auth/recover/preview",
+        json={"kit_path": str(kit), "recovery_code": "VU-RK-" + "x" * 48},
+        headers=headers(),
+    )
+    assert wrong.status_code == 400
+    assert vault_file.read_bytes() == before_preview
+
+    preview = client.post(
+        "/api/auth/recover/preview",
+        json={"kit_path": str(kit), "recovery_code": code},
+        headers=headers(),
+    )
+    assert preview.status_code == 200
+    assert preview.json()["kit"]["entry_count"] == 1
+    assert vault_file.read_bytes() == before_preview
+
+    active.add("Changed after preview", password="generated-change", auto_push=False)
+    stale = client.post(
+        "/api/auth/recover/apply",
+        json={
+            "preview_token": preview.json()["preview_token"],
+            "recovery_code": code,
+            "new_password": "new-password",
+            "confirm_new_password": "new-password",
+            "confirm_recovery": True,
+        },
+        headers=headers(),
+    )
+    assert stale.status_code == 409
+    assert UnifiedVault(vault_file, "old-password").get_by_title("Changed after preview")
+
+    preview = client.post(
+        "/api/auth/recover/preview",
+        json={"kit_path": str(kit), "recovery_code": code},
+        headers=headers(),
+    ).json()
+    restored = client.post(
+        "/api/auth/recover/apply",
+        json={
+            "preview_token": preview["preview_token"],
+            "recovery_code": code,
+            "new_password": "new-password",
+            "confirm_new_password": "new-password",
+            "confirm_recovery": True,
+        },
+        headers=headers(),
+    )
+    assert restored.status_code == 200
+    assert restored.json()["locked"] is True
+    recovered = UnifiedVault(vault_file, "new-password")
+    assert [entry.title for entry in recovered.list_all()] == ["Before kit"]
+    assert any(vault_file.parent.glob(f"{vault_file.name}.bak.*"))

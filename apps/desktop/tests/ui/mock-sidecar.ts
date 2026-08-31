@@ -116,10 +116,28 @@ export class MockAuthenticatedSidecar {
   };
   private conflicts: StoredConflict[] = [];
   private revision = 0;
+  private personalSettings = {
+    lock_after_seconds: 900,
+    auto_backup_enabled: false,
+    auto_backup_interval_hours: 24,
+    auto_backup_destination: "",
+    last_auto_backup_at: "",
+    backup_status: {
+      last_success_at: "",
+      last_error_at: "",
+      last_error_summary: "",
+      last_verification_at: "",
+      last_verification_status: "unverified",
+      recovery_kit_created_at: "",
+    },
+  };
+  private backups: Array<Record<string, unknown>> = [];
+  private restorePreviews = new Set<string>();
 
   readonly writes = { create: 0, update: 0, delete: 0 };
   readonly importWrites = { apply: 0, undo: 0 };
   readonly syncWrites = { execute: 0 };
+  readonly backupWrites = { create: 0, restore: 0 };
 
   constructor(
     private readonly lockAfterSeconds = 900,
@@ -128,6 +146,7 @@ export class MockAuthenticatedSidecar {
     conflictCount = 0,
     entryCount = 0,
   ) {
+    this.personalSettings.lock_after_seconds = lockAfterSeconds;
     this.conflicts = Array.from({ length: conflictCount }, (_, index) => ({
       id: `generated-conflict-${index + 1}`,
       title: `Generated conflict ${index + 1}`,
@@ -312,24 +331,13 @@ export class MockAuthenticatedSidecar {
     }
 
     if (method === "GET" && url.pathname === "/personal/settings") {
-      await this.respond(route, 200, {
-        lock_after_seconds: this.lockAfterSeconds,
-        auto_backup_enabled: false,
-        auto_backup_interval_hours: 24,
-        auto_backup_destination: "",
-        last_auto_backup_at: "",
-      });
+      await this.respond(route, 200, clone(this.personalSettings));
       return;
     }
 
     if (method === "PUT" && url.pathname === "/personal/settings") {
-      await this.respond(route, 200, {
-        lock_after_seconds: this.lockAfterSeconds,
-        auto_backup_enabled: false,
-        auto_backup_interval_hours: 24,
-        auto_backup_destination: "",
-        last_auto_backup_at: "",
-      });
+      this.personalSettings = { ...this.personalSettings, ...body(route), backup_status: this.personalSettings.backup_status } as typeof this.personalSettings;
+      await this.respond(route, 200, clone(this.personalSettings));
       return;
     }
 
@@ -371,13 +379,7 @@ export class MockAuthenticatedSidecar {
 
     if (method === "POST" && url.pathname === "/personal/maintenance") {
       await this.respond(route, 200, {
-        settings: {
-          lock_after_seconds: this.lockAfterSeconds,
-          auto_backup_enabled: false,
-          auto_backup_interval_hours: 24,
-          auto_backup_destination: "",
-          last_auto_backup_at: "",
-        },
+        settings: clone(this.personalSettings),
         components: { conflicts: String(this.conflicts.length) },
         notices: [],
       });
@@ -539,12 +541,135 @@ export class MockAuthenticatedSidecar {
 
     if (method === "GET" && url.pathname === "/backups") {
       await this.respond(route, 200, {
-        backups: [],
-        count: 0,
-        total_bytes: 0,
-        verified_count: 0,
+        backups: clone(this.backups),
+        count: this.backups.length,
+        total_bytes: this.backups.reduce((total, item) => total + Number(item.size || 0), 0),
+        verified_count: this.backups.filter((item) => item.verified).length,
         pinned_count: 0,
         default_destination: `C:\\isolated-vault-tests\\${testData.runId}\\backups`,
+        health: {
+          ...clone(this.personalSettings.backup_status),
+          backup_location: this.personalSettings.auto_backup_destination,
+          next_eligible_at: this.personalSettings.auto_backup_enabled ? "2026-09-01T12:00:00Z" : "",
+          auto_backup_enabled: this.personalSettings.auto_backup_enabled,
+        },
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/backups/create") {
+      this.backupWrites.create += 1;
+      const created = {
+        path: `C:\\isolated-vault-tests\\${testData.runId}\\backups\\VaultUnified-generated.vault`,
+        kind: "manual",
+        size: 4096,
+        modified_at: "2026-09-01T10:00:00Z",
+        sha256: "b".repeat(64),
+        format: "v3",
+        verified: true,
+        pinned: false,
+        transaction_id: "",
+      };
+      this.backups = [created];
+      this.personalSettings.backup_status.last_success_at = created.modified_at;
+      this.personalSettings.backup_status.last_error_at = "";
+      this.personalSettings.backup_status.last_error_summary = "";
+      await this.respond(route, 200, {
+        created,
+        warning: "",
+        backups: clone(this.backups),
+        count: 1,
+        total_bytes: 4096,
+        verified_count: 1,
+        pinned_count: 0,
+        default_destination: `C:\\isolated-vault-tests\\${testData.runId}\\backups`,
+        health: {
+          ...clone(this.personalSettings.backup_status),
+          backup_location: this.personalSettings.auto_backup_destination,
+          next_eligible_at: "",
+          auto_backup_enabled: this.personalSettings.auto_backup_enabled,
+        },
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/backups/test-destination") {
+      await this.respond(route, 200, {
+        path: String(body(route).destination_dir || ""),
+        exists: true,
+        writable: true,
+        free_bytes: 64 * 1024 * 1024 * 1024,
+        message: "Backup folder is writable",
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/backups/verify") {
+      if (!this.backups.length) {
+        await this.respond(route, 404, { detail: "No backup is available to verify" });
+        return;
+      }
+      this.personalSettings.backup_status.last_verification_at = "2026-09-01T10:01:00Z";
+      this.personalSettings.backup_status.last_verification_status = "passed";
+      await this.respond(route, 200, {
+        verified: true,
+        verified_at: this.personalSettings.backup_status.last_verification_at,
+        backup: clone(this.backups[0]),
+        message: "Generated backup verified without changing the active vault",
+        warning: "",
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/backups/restore/preview") {
+      const value = body(route);
+      const backup = this.backups.find((item) => item.path === value.path);
+      if (!backup) {
+        await this.respond(route, 404, { detail: "Generated backup not found" });
+        return;
+      }
+      const token = `generated-restore-preview-${"r".repeat(32)}`;
+      this.restorePreviews.add(token);
+      await this.respond(route, 200, {
+        preview_token: token,
+        expires_at: "2026-09-01T10:05:00Z",
+        backup: clone(backup),
+        impact: "The active vault will be replaced and locked",
+        warning: "Preview only: no data changed",
+      });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/backups/restore/apply") {
+      const value = body(route);
+      const token = String(value.preview_token || "");
+      if (!this.restorePreviews.delete(token)) {
+        await this.respond(route, 409, { detail: "Restore preview expired or was already used" });
+        return;
+      }
+      this.backupWrites.restore += 1;
+      this.unlocked = false;
+      await this.respond(route, 200, { restored: String(this.backups[0]?.path || ""), locked: true, message: "restored" });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/backups/restore/cancel") {
+      const token = String(body(route).preview_token || "");
+      await this.respond(route, this.restorePreviews.delete(token) ? 200 : 409, { cancelled: true });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/auth/recovery-code") {
+      await this.respond(route, 200, { recovery_code: `VU-RK-${"g".repeat(48)}` });
+      return;
+    }
+
+    if (method === "POST" && url.pathname === "/auth/recovery-kit") {
+      this.personalSettings.backup_status.recovery_kit_created_at = "2026-09-01T10:02:00Z";
+      await this.respond(route, 200, {
+        path: `C:\\isolated-vault-tests\\${testData.runId}\\recovery\\kit.vault`,
+        message: "Generated recovery kit created",
+        warning: "",
       });
       return;
     }

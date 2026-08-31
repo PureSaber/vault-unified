@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { api, PersonalSettings } from "../api/client";
+import { api, clearToken, PersonalSettings } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 import ImportWizard from "./ImportWizard";
 import PathPicker from "./PathPicker";
+import ConfirmDialog from "./ConfirmDialog";
 
 const defaults: PersonalSettings = {
   lock_after_seconds: 15 * 60,
@@ -11,7 +12,19 @@ const defaults: PersonalSettings = {
   auto_backup_interval_hours: 24,
   auto_backup_destination: "",
   last_auto_backup_at: "",
+  backup_status: {
+    last_success_at: "",
+    last_error_at: "",
+    last_error_summary: "",
+    last_verification_at: "",
+    last_verification_status: "unverified",
+    recovery_kit_created_at: "",
+  },
 };
+
+function notifyStatusChanged() {
+  window.dispatchEvent(new Event("vault-security-status-changed"));
+}
 
 function downloadText(filename: string, mimeType: string, content: string) {
   const blob = new Blob([content], { type: `${mimeType};charset=utf-8` });
@@ -33,6 +46,9 @@ export default function PersonalCenter() {
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [recoveryDestination, setRecoveryDestination] = useState("");
+  const [pendingExport, setPendingExport] = useState<"json" | "csv" | null>(null);
+  const [destinationResult, setDestinationResult] = useState("");
+  const [backupBusy, setBackupBusy] = useState(false);
 
   useEffect(() => {
     api.getPersonalSettings()
@@ -45,8 +61,15 @@ export default function PersonalCenter() {
     e.preventDefault();
     setSaving(true);
     try {
-      const saved = await api.savePersonalSettings(settings);
+      const saved = await api.savePersonalSettings({
+        lock_after_seconds: settings.lock_after_seconds,
+        auto_backup_enabled: settings.auto_backup_enabled,
+        auto_backup_interval_hours: settings.auto_backup_interval_hours,
+        auto_backup_destination: settings.auto_backup_destination,
+      });
       setSettings(saved);
+      window.dispatchEvent(new CustomEvent("vault-personal-settings-changed", { detail: saved }));
+      notifyStatusChanged();
       showToast(zh ? "个人安全设置已保存" : "Personal security settings saved");
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
@@ -56,12 +79,7 @@ export default function PersonalCenter() {
   }
 
   async function exportVault(format: "json" | "csv") {
-    const confirmed = window.confirm(
-      zh
-        ? "导出将创建包含明文密码的文件。请仅短暂保存，并在导入后删除。是否继续？"
-        : "Export creates a plaintext file containing passwords. Store it briefly and delete it after import. Continue?"
-    );
-    if (!confirmed) return;
+    setPendingExport(null);
     try {
       const result = await api.exportTransfer(format);
       downloadText(result.filename, result.mime_type, result.content);
@@ -89,12 +107,57 @@ export default function PersonalCenter() {
     }
     try {
       const result = await api.createRecoveryKit(recoveryCode, recoveryDestination);
-      showToast(zh ? `恢复包已创建：${result.path}` : `Recovery kit created: ${result.path}`);
+      showToast(result.warning || (zh ? `恢复包已创建：${result.path}` : `Recovery kit created: ${result.path}`), result.warning ? "error" : "info");
       setRecoveryCode("");
       setRecoveryConfirm("");
+      notifyStatusChanged();
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
     }
+  }
+
+  async function testDestination() {
+    if (!settings.auto_backup_destination.trim()) {
+      setDestinationResult(zh ? "请先选择备份位置。" : "Choose a backup folder first.");
+      return;
+    }
+    setBackupBusy(true);
+    try {
+      const result = await api.testBackupDestination(settings.auto_backup_destination);
+      setDestinationResult(
+        result.exists && result.writable
+          ? `${zh ? "可写，剩余空间" : "Writable, free space"}: ${(result.free_bytes / (1024 ** 3)).toFixed(2)} GiB`
+          : (zh ? "该位置不存在或不可写。" : "This location is missing or not writable."),
+      );
+    } catch {
+      setDestinationResult(zh ? "无法测试该备份位置。" : "The backup folder could not be tested.");
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function retryBackup() {
+    setBackupBusy(true);
+    try {
+      const result = await api.createBackup(settings.auto_backup_destination.trim() || undefined);
+      showToast(result.warning || (zh ? "加密备份已创建" : "Encrypted backup created"), result.warning ? "error" : "info");
+      notifyStatusChanged();
+    } catch (error) {
+      showToast(String(error).replace(/^Error:\s*/, ""), "error");
+      notifyStatusChanged();
+    } finally {
+      setBackupBusy(false);
+    }
+  }
+
+  async function openRecoveryKitRestore() {
+    try {
+      await api.lock();
+    } catch {
+      // Clearing the renderer credential is still the safe fallback.
+    }
+    clearToken();
+    window.location.reload();
   }
 
   if (loading) return <div className="loading-state">{zh ? "加载个人设置…" : "Loading personal settings…"}</div>;
@@ -103,7 +166,7 @@ export default function PersonalCenter() {
     <>
       <section className="settings-section" aria-labelledby="personal-security-heading">
         <h3 id="personal-security-heading" className="section-title">
-          {zh ? "个人安全与自动备份" : "Personal security and scheduled backups"}
+          {zh ? "自动锁定与自动备份" : "Auto-lock and automatic backup"}
         </h3>
         <form onSubmit={saveSettings}>
           <div className="field">
@@ -160,6 +223,15 @@ export default function PersonalCenter() {
                 onChange={(auto_backup_destination) => setSettings({ ...settings, auto_backup_destination })}
                 placeholder={zh ? "例如 D:\\OneDrive\\VaultBackups" : "For example D:\\OneDrive\\VaultBackups"}
               />
+              <div className="button-row">
+                <button className="secondary" type="button" onClick={() => void testDestination()} disabled={backupBusy}>
+                  {zh ? "测试备份位置" : "Test backup location"}
+                </button>
+                <button className="secondary" type="button" onClick={() => void retryBackup()} disabled={backupBusy}>
+                  {settings.backup_status?.last_error_summary ? (zh ? "立即重试" : "Retry now") : (zh ? "立即备份" : "Back up now")}
+                </button>
+              </div>
+              {destinationResult && <p className="field-hint" role="status">{destinationResult}</p>}
             </>
           )}
           <button className="secondary" type="submit" disabled={saving}>
@@ -171,11 +243,11 @@ export default function PersonalCenter() {
       <section className="settings-section" aria-labelledby="transfer-heading">
         <h3 id="transfer-heading" className="section-title">{zh ? "导入与导出" : "Import and export"}</h3>
         <p className="field-hint">
-          {zh ? "JSON 保留本地扩展与附件；CSV 适合迁移账号字段，但不包含附件。" : "JSON preserves local extensions and attachments. CSV is for account-field migration and excludes attachments."}
+          {zh ? "明文导出仅用于短期迁移，不是备份。JSON 保留本地扩展与附件；CSV 不包含附件。" : "Plaintext export is a short-lived migration file, not a backup. JSON preserves local extensions and attachments; CSV excludes attachments."}
         </p>
         <div className="button-row">
-          <button className="secondary" type="button" onClick={() => exportVault("json")}>JSON</button>
-          <button className="secondary" type="button" onClick={() => exportVault("csv")}>CSV</button>
+          <button className="secondary" type="button" onClick={() => setPendingExport("json")}>JSON</button>
+          <button className="secondary" type="button" onClick={() => setPendingExport("csv")}>CSV</button>
         </div>
         <ImportWizard />
       </section>
@@ -184,12 +256,17 @@ export default function PersonalCenter() {
         <h3 id="recovery-heading" className="section-title">{zh ? "紧急恢复包" : "Emergency recovery kit"}</h3>
         <p className="field-hint">
           {zh
-            ? "恢复包使用独立的高熵恢复码加密。请将恢复码离线保存，并与恢复包文件放在不同位置。"
-            : "A kit is encrypted with a separate high-entropy recovery code. Save the code offline and keep it separate from the kit file."}
+            ? "紧急恢复包用于主密码丢失或迁移恢复；它不同于日常加密备份。请将恢复码离线保存，并与恢复包文件分开。"
+            : "An emergency kit is for a lost master password or migration; it is different from an everyday encrypted backup. Keep its offline code separate from the kit file."}
         </p>
         <div className="button-row">
           <button className="secondary" type="button" onClick={generateRecoveryCode}>
-            {zh ? "生成恢复码" : "Generate recovery code"}
+            {recoveryCode
+              ? (zh ? "重新生成恢复码" : "Generate a new recovery code")
+              : (zh ? "创建恢复包" : "Create recovery kit")}
+          </button>
+          <button className="secondary" type="button" onClick={() => void openRecoveryKitRestore()}>
+            {zh ? "从恢复包恢复" : "Restore from recovery kit"}
           </button>
         </div>
         {recoveryCode && (
@@ -215,6 +292,18 @@ export default function PersonalCenter() {
           </>
         )}
       </section>
+
+      <ConfirmDialog
+        open={pendingExport !== null}
+        idPrefix="plaintext-export-confirm"
+        title={zh ? "导出明文迁移文件？" : "Export a plaintext migration file?"}
+        message={zh ? "文件将包含明文密码。请仅短暂保存，导入后立即删除；它不能替代加密备份。" : "The file will contain plaintext passwords. Keep it only briefly and delete it after import; it does not replace an encrypted backup."}
+        confirmLabel={zh ? "继续导出" : "Continue export"}
+        cancelLabel={zh ? "取消" : "Cancel"}
+        variant="danger"
+        onConfirm={() => pendingExport && void exportVault(pendingExport)}
+        onCancel={() => setPendingExport(null)}
+      />
 
     </>
   );

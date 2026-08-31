@@ -52,7 +52,7 @@ export default function PathPicker({
     <div className="field path-picker">
       <span className="field-label" id={`${id}-label`}>{label}</span>
       <div className="path-picker-row">
-        <span className={value ? "path-picker-value" : "path-picker-value is-empty"} aria-labelledby={`${id}-label`}>
+        <span className={value ? "path-picker-value" : "path-picker-value is-empty"}>
           {value || placeholder || (zh ? "尚未选择" : "Nothing selected")}
         </span>
         <button type="button" className="secondary" onClick={() => void choosePath()}>
@@ -63,15 +63,17 @@ export default function PathPicker({
         {showManual ? (zh ? "隐藏手工输入" : "Hide manual entry") : (zh ? "手工输入路径（高级）" : "Enter path manually (advanced)")}
       </button>
       {showManual && (
-        <input
-          id={id}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={placeholder}
-          required={required}
-          autoComplete="off"
-          aria-labelledby={`${id}-label`}
-        />
+        <div id={`${id}-manual`}>
+          <input
+            id={id}
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder={placeholder}
+            required={required}
+            autoComplete="off"
+            aria-labelledby={`${id}-label`}
+          />
+        </div>
       )}
       {hint && <p className="field-hint">{hint}</p>}
       {error && <p className="error" role="status">{error}</p>}
