@@ -4,6 +4,7 @@ import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from vault_unified.adapters.bitwarden import BitwardenAdapter
 from vault_unified.adapters.gopass import GopassAdapter
@@ -23,6 +24,7 @@ from vault_unified.personal_data import (
 )
 from vault_unified.sync.engine import SyncEngine, SyncResult
 from vault_unified.sync.ledger import (
+    REMOTE_SYNC_FIELDS,
     Tombstone,
     capabilities_for,
     entry_snapshot,
@@ -81,28 +83,165 @@ class MetadataPreservingSyncEngine(SyncEngine):
             return "converged"
         return "conflict"
 
-    def _preview_push_counts(self, source: Source) -> dict[str, int]:
-        counts = {
-            "create": 0,
-            "update": 0,
-            "delete": 0,
-            "pending": 0,
-            "total": 0,
+    @staticmethod
+    def _safe_username(value: str) -> str:
+        """Return a useful account hint without exposing the full identifier."""
+        value = value.strip()
+        if not value:
+            return ""
+        if "@" in value:
+            local, domain = value.rsplit("@", 1)
+            prefix = local[:1] if local else ""
+            return f"{prefix}***@{domain}"
+        if len(value) <= 2:
+            return "*" * len(value)
+        return f"{value[0]}***{value[-1]}"
+
+    @staticmethod
+    def _website_host(value: str) -> str:
+        candidate = value.strip()
+        if not candidate:
+            return ""
+        try:
+            parsed = urlsplit(
+                candidate if "://" in candidate else f"//{candidate}"
+            )
+            return (parsed.hostname or "").rstrip(".").lower()
+        except ValueError:
+            return ""
+
+    @staticmethod
+    def _display_value(value: SecretEntry | dict[str, Any], name: str) -> Any:
+        if isinstance(value, dict):
+            return value.get(name, "")
+        return getattr(value, name, "")
+
+    @classmethod
+    def _changed_fields(
+        cls,
+        before: SecretEntry | dict[str, Any] | None,
+        after: SecretEntry | dict[str, Any] | None,
+    ) -> list[str]:
+        if before is None or after is None:
+            return []
+        return [
+            name
+            for name in REMOTE_SYNC_FIELDS
+            if cls._display_value(before, name)
+            != cls._display_value(after, name)
+        ]
+
+    @classmethod
+    def _preview_operation(
+        cls,
+        *,
+        source: Source,
+        source_label: str,
+        direction: str,
+        action: str,
+        local_id: str = "",
+        remote_id: str = "",
+        display: SecretEntry | dict[str, Any],
+        changed_fields: list[str] | None = None,
+        deletion_side: str = "",
+        reason: str,
+        destructive: bool = False,
+        local_revision: str = "",
+        remote_revision: str = "",
+        next_step: str = "",
+    ) -> dict[str, Any]:
+        identity = {
+            "namespace": "vault_unified.sync_preview.v1",
+            "source": source.value,
+            "direction": direction,
+            "action": action,
+            "local_id": local_id,
+            "remote_id": remote_id,
+            "reason": reason,
+            "deletion_side": deletion_side,
+            "local_revision": local_revision,
+            "remote_revision": remote_revision,
         }
-        for entry in self.vault.local.list_dirty():
+        username = str(cls._display_value(display, "username"))
+        url = str(cls._display_value(display, "url"))
+        return {
+            "operation_id": canonical_digest(identity),
+            "source": source.value,
+            "source_label": source_label,
+            "direction": direction,
+            "action": action,
+            "local_id": local_id or None,
+            "remote_id": remote_id or None,
+            "title": str(cls._display_value(display, "title")),
+            "username_display": cls._safe_username(username),
+            "website_host": cls._website_host(url),
+            "changed_fields": list(changed_fields or []),
+            "deletion_side": deletion_side or None,
+            "reason": reason,
+            "destructive": destructive,
+            "next_step": next_step or None,
+        }
+
+    def _preview_push_operations(
+        self,
+        source: Source,
+        source_label: str,
+    ) -> list[dict[str, Any]]:
+        operations: list[dict[str, Any]] = []
+        conflicts = {
+            record.entry_id
+            for record in self._conflicts.values()
+            if record.remote_source == source
+        }
+        for entry in sorted(self.vault.local.list_dirty(), key=lambda item: item.id):
             replica = entry.sync_ledger.replicas.get(source.value)
+            external_id = (
+                (replica.external_id if replica is not None else "")
+                or entry.get_linked_id(source)
+            )
             if replica is not None and replica.pending is not None:
-                counts["pending"] += 1
-                counts["total"] += 1
+                pending = replica.pending
+                is_delete = pending.kind == "delete"
+                operations.append(
+                    self._preview_operation(
+                        source=source,
+                        source_label=source_label,
+                        direction="push",
+                        action="pending_verification",
+                        local_id=entry.id,
+                        remote_id=pending.external_id or external_id,
+                        display=entry,
+                        deletion_side="connected_service" if is_delete else "",
+                        reason="prior_remote_outcome_unknown",
+                        destructive=is_delete,
+                        local_revision=entry.sync_ledger.content_revision,
+                        remote_revision=replica.remote_revision,
+                        next_step="verify_connected_service",
+                    )
+                )
+                continue
+
+            if entry.id in conflicts:
+                operations.append(
+                    self._preview_operation(
+                        source=source,
+                        source_label=source_label,
+                        direction="push",
+                        action="conflict",
+                        local_id=entry.id,
+                        remote_id=external_id,
+                        display=entry,
+                        reason="resolve_conflict_before_sync",
+                        local_revision=entry.sync_ledger.content_revision,
+                        remote_revision=replica.remote_revision if replica else "",
+                        next_step="resolve_conflict",
+                    )
+                )
                 continue
 
             if entry.sync_ledger.tombstone is not None or (
                 entry.sync_status == SyncStatus.DELETED_PENDING
             ):
-                external_id = (
-                    (replica.external_id if replica is not None else "")
-                    or entry.get_linked_id(source)
-                )
                 tombstone = entry.sync_ledger.tombstone
                 if not external_id:
                     continue
@@ -111,15 +250,73 @@ class MetadataPreservingSyncEngine(SyncEngine):
                     or source.value in tombstone.abandoned
                 ):
                     continue
-                counts["delete"] += 1
-                counts["total"] += 1
+                operations.append(
+                    self._preview_operation(
+                        source=source,
+                        source_label=source_label,
+                        direction="push",
+                        action="delete",
+                        local_id=entry.id,
+                        remote_id=external_id,
+                        display=entry,
+                        deletion_side="connected_service",
+                        reason="deleted_on_this_device",
+                        destructive=True,
+                        local_revision=entry.sync_ledger.content_revision,
+                        remote_revision=replica.remote_revision if replica else "",
+                    )
+                )
                 continue
 
-            external_id = (
-                (replica.external_id if replica is not None else "")
-                or entry.get_linked_id(source)
+            action = "update" if external_id else "add"
+            operations.append(
+                self._preview_operation(
+                    source=source,
+                    source_label=source_label,
+                    direction="push",
+                    action=action,
+                    local_id=entry.id,
+                    remote_id=external_id,
+                    display=entry,
+                    changed_fields=self._changed_fields(
+                        replica.base_snapshot if replica else None,
+                        entry,
+                    ),
+                    reason=(
+                        "device_changes_waiting_to_sync"
+                        if action == "update"
+                        else "not_yet_on_connected_service"
+                    ),
+                    local_revision=entry.sync_ledger.content_revision,
+                    remote_revision=replica.remote_revision if replica else "",
+                )
             )
-            counts["update" if external_id else "create"] += 1
+        return operations
+
+    @staticmethod
+    def _preview_push_counts(
+        operations: list[dict[str, Any]],
+    ) -> dict[str, int]:
+        counts = {
+            "create": 0,
+            "update": 0,
+            "delete": 0,
+            "pending": 0,
+            "conflict": 0,
+            "total": 0,
+        }
+        for operation in operations:
+            action = operation["action"]
+            if action == "pending_verification":
+                counts["pending"] += 1
+            elif action == "delete":
+                counts["delete"] += 1
+            elif action == "update":
+                counts["update"] += 1
+            elif action == "add":
+                counts["create"] += 1
+            elif action == "conflict":
+                counts["conflict"] += 1
             counts["total"] += 1
         return counts
 
@@ -138,6 +335,7 @@ class MetadataPreservingSyncEngine(SyncEngine):
 
         per_source: dict[str, dict[str, Any]] = {}
         digest_sources: dict[str, Any] = {}
+        all_operations: list[dict[str, Any]] = []
         totals = {
             "pull_add": 0,
             "pull_update": 0,
@@ -146,6 +344,7 @@ class MetadataPreservingSyncEngine(SyncEngine):
             "push_create": 0,
             "push_update": 0,
             "push_delete": 0,
+            "push_conflict": 0,
             "pending": 0,
             "unavailable_sources": 0,
         }
@@ -173,8 +372,10 @@ class MetadataPreservingSyncEngine(SyncEngine):
                 "unchanged": 0,
                 "local_only": 0,
                 "delete_observed": 0,
+                "pending_verification": 0,
             }
             remote_digest_entries: list[dict[str, Any]] = []
+            pull_operations: list[dict[str, Any]] = []
 
             if include_pull and configured and available:
                 try:
@@ -210,18 +411,63 @@ class MetadataPreservingSyncEngine(SyncEngine):
                         )
                         if local is None:
                             pull_counts["add"] += 1
+                            pull_operations.append(
+                                self._preview_operation(
+                                    source=source,
+                                    source_label=adapter.name,
+                                    direction="pull",
+                                    action="add",
+                                    remote_id=external_id,
+                                    display=remote,
+                                    reason="not_yet_on_this_device",
+                                    remote_revision=remote.remote_updated_at,
+                                )
+                            )
                             continue
                         outcome = self._preview_pull_outcome(
                             local, remote, source
                         )
                         if outcome in {"updated", "converged"}:
                             pull_counts["update"] += 1
+                            action = "update"
+                            reason = (
+                                "connected_service_changed"
+                                if outcome == "updated"
+                                else "matching_changes_need_reconciliation"
+                            )
                         elif outcome == "conflict":
                             pull_counts["conflict"] += 1
+                            action = "conflict"
+                            reason = "both_locations_changed"
                         elif outcome == "local_only":
                             pull_counts["local_only"] += 1
+                            action = "unchanged"
+                            reason = "changes_only_on_this_device"
                         else:
                             pull_counts["unchanged"] += 1
+                            action = "unchanged"
+                            reason = "already_matches"
+                        replica = local.sync_ledger.replicas.get(source.value)
+                        pull_operations.append(
+                            self._preview_operation(
+                                source=source,
+                                source_label=adapter.name,
+                                direction="pull",
+                                action=action,
+                                local_id=local.id,
+                                remote_id=external_id,
+                                display=(remote if action == "update" else local),
+                                changed_fields=self._changed_fields(local, remote),
+                                reason=reason,
+                                local_revision=local.sync_ledger.content_revision,
+                                remote_revision=remote.remote_updated_at,
+                                next_step=(
+                                    "resolve_conflict"
+                                    if action == "conflict"
+                                    else ""
+                                ),
+                            )
+                        )
 
                     capabilities = capabilities_for(adapter)
                     if (
@@ -247,24 +493,110 @@ class MetadataPreservingSyncEngine(SyncEngine):
                                 != remote_sync_fingerprint(replica.base_snapshot)
                             ):
                                 pull_counts["conflict"] += 1
+                                pull_operations.append(
+                                    self._preview_operation(
+                                        source=source,
+                                        source_label=adapter.name,
+                                        direction="pull",
+                                        action="conflict",
+                                        local_id=local.id,
+                                        remote_id=replica.external_id,
+                                        display=local,
+                                        reason="service_deleted_device_changed",
+                                        local_revision=(
+                                            local.sync_ledger.content_revision
+                                        ),
+                                        remote_revision=replica.remote_revision,
+                                        next_step="resolve_conflict",
+                                    )
+                                )
                             else:
                                 pull_counts["delete_observed"] += 1
+                                pull_operations.append(
+                                    self._preview_operation(
+                                        source=source,
+                                        source_label=adapter.name,
+                                        direction="pull",
+                                        action="delete",
+                                        local_id=local.id,
+                                        remote_id=replica.external_id,
+                                        display=replica.base_snapshot,
+                                        deletion_side="this_device",
+                                        reason="deleted_on_connected_service",
+                                        destructive=True,
+                                        local_revision=(
+                                            local.sync_ledger.content_revision
+                                        ),
+                                        remote_revision=replica.remote_revision,
+                                    )
+                                )
+                    else:
+                        for local in self.vault.local.list_entries(
+                            include_deleted=True
+                        ):
+                            replica = local.sync_ledger.replicas.get(
+                                source.value
+                            )
+                            if (
+                                replica is None
+                                or not replica.external_id
+                                or replica.external_id in seen_external_ids
+                                or local.sync_ledger.tombstone is not None
+                            ):
+                                continue
+                            pull_counts["pending_verification"] += 1
+                            pull_operations.append(
+                                self._preview_operation(
+                                    source=source,
+                                    source_label=adapter.name,
+                                    direction="pull",
+                                    action="pending_verification",
+                                    local_id=local.id,
+                                    remote_id=replica.external_id,
+                                    display=local,
+                                    reason="service_item_absence_not_authoritative",
+                                    local_revision=(
+                                        local.sync_ledger.content_revision
+                                    ),
+                                    remote_revision=replica.remote_revision,
+                                    next_step="verify_connected_service",
+                                )
+                            )
                 except Exception as exc:
                     status = "error"
                     error = type(exc).__name__
                     remote_digest_entries = []
+                    pull_operations = []
+                    pull_counts = {
+                        "remote_total": 0,
+                        "add": 0,
+                        "update": 0,
+                        "conflict": 0,
+                        "unchanged": 0,
+                        "local_only": 0,
+                        "delete_observed": 0,
+                        "pending_verification": 0,
+                    }
 
+            push_operations = (
+                self._preview_push_operations(source, adapter.name)
+                if include_push
+                else []
+            )
             push_counts = (
-                self._preview_push_counts(source)
+                self._preview_push_counts(push_operations)
                 if include_push
                 else {
                     "create": 0,
                     "update": 0,
                     "delete": 0,
                     "pending": 0,
+                    "conflict": 0,
                     "total": 0,
                 }
             )
+            source_operations = pull_operations + push_operations
+            all_operations.extend(source_operations)
 
             if not configured or not available or status == "error":
                 totals["unavailable_sources"] += 1
@@ -277,7 +609,9 @@ class MetadataPreservingSyncEngine(SyncEngine):
             totals["push_create"] += push_counts["create"]
             totals["push_update"] += push_counts["update"]
             totals["push_delete"] += push_counts["delete"]
+            totals["push_conflict"] += push_counts["conflict"]
             totals["pending"] += push_counts["pending"]
+            totals["pending"] += pull_counts["pending_verification"]
 
             source_plan = {
                 "label": adapter.name,
@@ -287,6 +621,7 @@ class MetadataPreservingSyncEngine(SyncEngine):
                 "error": error,
                 "pull": pull_counts,
                 "push": push_counts,
+                "operations": source_operations,
             }
             per_source[source.value] = source_plan
             digest_sources[source.value] = {
@@ -321,6 +656,7 @@ class MetadataPreservingSyncEngine(SyncEngine):
             "totals": totals,
             "destructive_count": destructive,
             "warnings": warnings,
+            "operations": all_operations,
         }
         plan["_state_digest"] = canonical_digest(
             {
@@ -332,34 +668,317 @@ class MetadataPreservingSyncEngine(SyncEngine):
         )
         return plan
 
+    @staticmethod
+    def _operation_result(
+        operation: dict[str, Any],
+        *,
+        status: str,
+        outcome_reason: str,
+        next_step: str = "",
+    ) -> dict[str, Any]:
+        return {
+            **operation,
+            "status": status,
+            "outcome_reason": outcome_reason,
+            "next_step": next_step or operation.get("next_step"),
+        }
+
+    def _pull_operation_result(
+        self,
+        operation: dict[str, Any],
+    ) -> dict[str, Any]:
+        source = Source(operation["source"])
+        local_id = operation.get("local_id") or ""
+        remote_id = operation.get("remote_id") or ""
+        entry = (
+            self.vault.local.get(local_id)
+            if local_id
+            else self.vault.local.find_by_linked_id(source, remote_id)
+        )
+        conflict = next(
+            (
+                record
+                for record in self._conflicts.values()
+                if record.entry_id == local_id
+                and record.remote_source == source
+            ),
+            None,
+        )
+        action = operation["action"]
+        if action == "conflict":
+            if conflict is not None:
+                return self._operation_result(
+                    operation,
+                    status="conflict",
+                    outcome_reason="conflict_recorded",
+                    next_step="resolve_conflict",
+                )
+            return self._operation_result(
+                operation,
+                status="failed",
+                outcome_reason="expected_conflict_not_recorded",
+                next_step="create_new_preview",
+            )
+        if action == "pending_verification":
+            return self._operation_result(
+                operation,
+                status="pending_verification",
+                outcome_reason="connected_service_could_not_confirm_deletion",
+                next_step="verify_connected_service",
+            )
+        if action == "delete":
+            if entry is not None and entry.sync_ledger.tombstone is not None:
+                return self._operation_result(
+                    operation,
+                    status="completed",
+                    outcome_reason="device_deletion_recorded",
+                )
+            if conflict is not None:
+                return self._operation_result(
+                    operation,
+                    status="conflict",
+                    outcome_reason="device_changed_before_service_deletion",
+                    next_step="resolve_conflict",
+                )
+            return self._operation_result(
+                operation,
+                status="failed",
+                outcome_reason="device_deletion_not_verified",
+                next_step="create_new_preview",
+            )
+        if action == "unchanged":
+            return self._operation_result(
+                operation,
+                status="unchanged",
+                outcome_reason="no_content_write_required",
+            )
+        if entry is not None and conflict is None:
+            return self._operation_result(
+                operation,
+                status="completed",
+                outcome_reason="device_state_verified",
+            )
+        if conflict is not None:
+            return self._operation_result(
+                operation,
+                status="conflict",
+                outcome_reason="conflict_recorded",
+                next_step="resolve_conflict",
+            )
+        return self._operation_result(
+            operation,
+            status="failed",
+            outcome_reason="device_state_not_verified",
+            next_step="create_new_preview",
+        )
+
+    def _execute_push_operation(
+        self,
+        operation: dict[str, Any],
+    ) -> tuple[dict[str, Any], int, int]:
+        source = Source(operation["source"])
+        action = operation["action"]
+        if action == "conflict":
+            return (
+                self._operation_result(
+                    operation,
+                    status="conflict",
+                    outcome_reason="blocked_until_conflict_is_resolved",
+                    next_step="resolve_conflict",
+                ),
+                0,
+                0,
+            )
+        if action == "unchanged":
+            return (
+                self._operation_result(
+                    operation,
+                    status="unchanged",
+                    outcome_reason="no_content_write_required",
+                ),
+                0,
+                0,
+            )
+
+        entry_id = operation.get("local_id") or ""
+        entry = self.vault.local.get(entry_id)
+        if entry is None:
+            return (
+                self._operation_result(
+                    operation,
+                    status="failed",
+                    outcome_reason="approved_device_entry_is_missing",
+                    next_step="create_new_preview",
+                ),
+                0,
+                1,
+            )
+        has_conflict = any(
+            record.entry_id == entry_id and record.remote_source == source
+            for record in self._conflicts.values()
+        )
+        if has_conflict:
+            return (
+                self._operation_result(
+                    operation,
+                    status="conflict",
+                    outcome_reason="pull_created_conflict_before_push",
+                    next_step="resolve_conflict",
+                ),
+                0,
+                0,
+            )
+
+        if action == "delete":
+            tombstone = entry.sync_ledger.tombstone
+            if tombstone is not None and source.value in tombstone.acknowledged:
+                return (
+                    self._operation_result(
+                        operation,
+                        status="completed",
+                        outcome_reason="service_deletion_already_verified",
+                    ),
+                    0,
+                    0,
+                )
+
+        try:
+            stats = self.push_entry(entry_id, [source])
+        except Exception as exc:
+            self._record_error("push", source, exc)
+            return (
+                self._operation_result(
+                    operation,
+                    status="failed",
+                    outcome_reason=type(exc).__name__,
+                    next_step="create_new_preview",
+                ),
+                0,
+                1,
+            )
+
+        stored = self.vault.local.get(entry_id)
+        replica = (
+            stored.sync_ledger.replicas.get(source.value)
+            if stored is not None
+            else None
+        )
+        if stats["pushed"] > 0:
+            return (
+                self._operation_result(
+                    operation,
+                    status="completed",
+                    outcome_reason="connected_service_state_verified",
+                ),
+                stats["pushed"],
+                stats["errors"],
+            )
+        if replica is not None and replica.pending is not None:
+            return (
+                self._operation_result(
+                    operation,
+                    status="pending_verification",
+                    outcome_reason="remote_outcome_remains_unknown",
+                    next_step="verify_connected_service",
+                ),
+                0,
+                max(1, stats["errors"]),
+            )
+        return (
+            self._operation_result(
+                operation,
+                status="failed",
+                outcome_reason="connected_service_write_not_verified",
+                next_step="create_new_preview",
+            ),
+            0,
+            max(1, stats["errors"]),
+        )
+
     def execute_explicit(
         self,
         sources: list[Source],
         *,
         include_pull: bool,
         include_push: bool,
+        approved_operations: list[dict[str, Any]],
     ) -> SyncResult:
         """Execute exactly the operation that an approved preview described."""
         result = SyncResult()
+        source_values = {source.value for source in sources}
+        operation_ids = [
+            str(operation.get("operation_id", ""))
+            for operation in approved_operations
+        ]
+        if (
+            any(not operation_id for operation_id in operation_ids)
+            or len(operation_ids) != len(set(operation_ids))
+            or any(
+                operation.get("source") not in source_values
+                or operation.get("direction") not in {"pull", "push"}
+                for operation in approved_operations
+            )
+        ):
+            raise ValueError("Approved sync operation set is invalid")
+
+        outcome_by_id: dict[str, dict[str, Any]] = {}
         if include_pull:
             for source in sources:
+                source_operations = [
+                    operation
+                    for operation in approved_operations
+                    if operation["source"] == source.value
+                    and operation["direction"] == "pull"
+                ]
+                if not source_operations:
+                    continue
                 try:
                     result.pulled[source.value] = self.pull_source(source)
+                    for operation in source_operations:
+                        outcome_by_id[operation["operation_id"]] = (
+                            self._pull_operation_result(operation)
+                        )
                 except Exception as exc:
                     self._record_error("pull", source, exc)
                     result.errors.append(
                         f"pull {source.value}: {type(exc).__name__}"
                     )
+                    for operation in source_operations:
+                        outcome_by_id[operation["operation_id"]] = (
+                            self._operation_result(
+                                operation,
+                                status="failed",
+                                outcome_reason=type(exc).__name__,
+                                next_step="create_new_preview",
+                            )
+                        )
 
         if include_push:
             pushed = 0
             errors = 0
-            for entry in list(self.vault.local.list_dirty()):
-                stats = self.push_entry(entry.id, sources)
-                pushed += stats["pushed"]
-                errors += stats["errors"]
+            for operation in approved_operations:
+                if operation["direction"] != "push":
+                    continue
+                operation_result, operation_pushed, operation_errors = (
+                    self._execute_push_operation(operation)
+                )
+                outcome_by_id[operation["operation_id"]] = operation_result
+                pushed += operation_pushed
+                errors += operation_errors
             result.pushed = {"pushed": pushed, "errors": errors}
 
+        result.operations = [
+            outcome_by_id.get(
+                operation["operation_id"],
+                self._operation_result(
+                    operation,
+                    status="failed",
+                    outcome_reason="operation_direction_was_not_approved",
+                    next_step="create_new_preview",
+                ),
+            )
+            for operation in approved_operations
+        ]
         result.conflicts = self.list_conflicts()
         return result
 
@@ -619,11 +1238,13 @@ class UnifiedVault:
         *,
         include_pull: bool,
         include_push: bool,
+        approved_operations: list[dict[str, Any]],
     ) -> SyncResult:
         return self.sync.execute_explicit(
             sources,
             include_pull=include_pull,
             include_push=include_push,
+            approved_operations=approved_operations,
         )
 
     def push_entry(

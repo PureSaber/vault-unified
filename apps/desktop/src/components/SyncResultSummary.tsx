@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { SyncOperationResult } from "../api/client";
 import { useI18n } from "../i18n";
 
 export interface SyncResultData {
@@ -6,6 +7,7 @@ export interface SyncResultData {
   pushed?: Record<string, number>;
   conflicts?: unknown[];
   errors?: string[];
+  operations?: SyncOperationResult[];
 }
 
 function formatPulled(
@@ -27,13 +29,32 @@ function formatPushed(pushed: Record<string, number>, noPush: string) {
 }
 
 export default function SyncResultSummary({ result }: { result: SyncResultData }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [showRaw, setShowRaw] = useState(false);
   const pulled = result.pulled
     ? formatPulled(result.pulled, t("syncSummary.noChanges"))
     : [];
   const conflictCount = result.conflicts?.length ?? 0;
   const errorCount = result.errors?.length ?? 0;
+  const operationCopy = locale === "zh" ? {
+    completed: "已完成",
+    unchanged: "无需更改",
+    conflict: "需要处理冲突",
+    pending_verification: "结果待核对",
+    failed: "未完成",
+    verify_connected_service: "检查已连接服务中的实际状态",
+    resolve_conflict: "先处理两处修改冲突",
+    create_new_preview: "重新生成同步预览",
+  } : {
+    completed: "Completed",
+    unchanged: "No change needed",
+    conflict: "Conflict needs review",
+    pending_verification: "Pending verification",
+    failed: "Not completed",
+    verify_connected_service: "Check the actual state in the connected service",
+    resolve_conflict: "Resolve the changes made in both locations",
+    create_new_preview: "Create a new sync preview",
+  };
 
   return (
     <div className="sync-summary">
@@ -81,6 +102,25 @@ export default function SyncResultSummary({ result }: { result: SyncResultData }
           </div>
         )}
       </dl>
+
+      {(result.operations?.length ?? 0) > 0 && (
+        <div className="sync-result-operations" aria-live="polite">
+          <strong>{t("syncSummary.operationResults")}</strong>
+          <ul className="sync-summary-list">
+            {result.operations!.map((operation) => (
+              <li key={operation.operation_id}>
+                <span>{operation.title || operation.source_label}</span>: {" "}
+                <span className={operation.status === "failed" ? "sync-error" : operation.status === "pending_verification" || operation.status === "conflict" ? "sync-warning" : "sync-muted"}>
+                  {operationCopy[operation.status]}
+                </span>
+                {operation.next_step && (
+                  <span> · {operationCopy[operation.next_step as keyof typeof operationCopy] || operation.next_step}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <button
         type="button"

@@ -170,6 +170,7 @@ const zh: Dict = {
   "syncSummary.showRaw": "显示技术细节",
   "syncSummary.hideRaw": "隐藏技术细节",
   "syncSummary.rawAria": "原始同步响应",
+  "syncSummary.operationResults": "逐条执行结果",
 };
 
 const en: Dict = {
@@ -334,6 +335,7 @@ const en: Dict = {
   "syncSummary.showRaw": "Show technical details",
   "syncSummary.hideRaw": "Hide technical details",
   "syncSummary.rawAria": "Raw sync response",
+  "syncSummary.operationResults": "Item-level results",
 };
 
 const LOCALES: Record<Locale, Dict> = { zh, en };

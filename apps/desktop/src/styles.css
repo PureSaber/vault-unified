@@ -493,7 +493,7 @@ textarea:focus-visible {
 }
 
 .sync-muted {
-  color: var(--color-text-faint);
+  color: var(--color-text-muted);
 }
 
 .sync-warning {
@@ -503,6 +503,122 @@ textarea:focus-visible {
 
 .sync-error {
   color: var(--color-error);
+}
+
+.sync-preview-sources {
+  display: grid;
+  gap: var(--space-lg);
+}
+
+.sync-source-preview {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-lg);
+}
+
+.sync-source-preview h4,
+.sync-operation-group h5 {
+  margin: 0;
+}
+
+.sync-source-counts {
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+  margin-top: var(--space-sm);
+}
+
+.sync-operation-groups {
+  display: grid;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+}
+
+.sync-operation-group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: var(--space-md);
+}
+
+.sync-operation-danger {
+  border-color: var(--color-error);
+  background: var(--color-error-bg);
+}
+
+.sync-operation-group ul {
+  display: grid;
+  gap: var(--space-sm);
+  list-style: none;
+  margin: var(--space-sm) 0 0;
+  padding: 0;
+}
+
+.sync-operation {
+  border-top: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+  padding-top: var(--space-sm);
+}
+
+.sync-operation-heading,
+.sync-operation-meta {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+}
+
+.sync-operation-meta {
+  color: var(--color-text-secondary);
+  font-size: 0.9rem;
+  margin-top: var(--space-xs);
+}
+
+.sync-operation p {
+  margin: var(--space-xs) 0;
+}
+
+.sync-deletion-target {
+  color: var(--color-error);
+  font-weight: 700;
+}
+
+.sync-operation details {
+  margin-top: var(--space-sm);
+}
+
+.sync-operation-technical {
+  display: grid;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  gap: var(--space-xs);
+  margin: var(--space-sm) 0 0;
+}
+
+.sync-operation-technical div {
+  display: grid;
+  gap: var(--space-xs);
+  grid-template-columns: minmax(7rem, auto) 1fr;
+}
+
+.sync-operation-technical dt {
+  font-weight: 700;
+}
+
+.sync-operation-technical dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.sync-deletion-review {
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-md);
+  margin-top: var(--space-lg);
+  padding: var(--space-md);
+}
+
+.sync-result-operations {
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
 }
 
 .sync-raw-toggle {
