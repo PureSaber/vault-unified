@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./journey-test";
 import { MockAuthenticatedSidecar } from "./mock-sidecar";
 import { testData } from "./test-data";
 
@@ -15,7 +15,7 @@ const hiddenTechnicalTerms = [
 ];
 
 async function expectTermsHidden(page: import("@playwright/test").Page) {
-  const visibleText = await page.locator("body").innerText();
+  const visibleText = await page.locator("body").textContent() || "";
   for (const term of hiddenTechnicalTerms) {
     expect(visibleText, `default content exposed ${term}`).not.toContain(term);
   }

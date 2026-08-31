@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./journey-test";
 import { MockAuthenticatedSidecar } from "./mock-sidecar";
 import { testData } from "./test-data";
 
@@ -61,6 +61,7 @@ test("keeps custom-field focus stable and guards navigation, cancel, and manual 
 });
 
 test("a failed attachment batch leaves the persisted entry unchanged", async ({ page }) => {
+  test.info().annotations.push({ type: "expected-request-failures", description: "1" });
   const sidecar = new MockAuthenticatedSidecar();
   await sidecar.install(page);
   await createVault(page);

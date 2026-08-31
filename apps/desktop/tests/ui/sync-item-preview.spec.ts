@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./journey-test";
 import { MockAuthenticatedSidecar } from "./mock-sidecar";
 import { testData } from "./test-data";
 
