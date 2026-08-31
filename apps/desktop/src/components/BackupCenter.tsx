@@ -239,12 +239,12 @@ export default function BackupCenter() {
         <div className="loading-state">{text.loading}</div>
       ) : summary ? (
         <>
-          <div className="status-grid">
+          <dl className="status-grid">
             <div className="status-row"><dt>{text.total}</dt><dd>{summary.count}</dd></div>
             <div className="status-row"><dt>{text.storage}</dt><dd>{formatBytes(summary.total_bytes)}</dd></div>
             <div className="status-row"><dt>{text.verified}</dt><dd>{summary.verified_count}</dd></div>
             <div className="status-row"><dt>{text.pinned}</dt><dd>{summary.pinned_count}</dd></div>
-          </div>
+          </dl>
           <p className="field-hint">
             {text.defaultDestination}: <span className="mono">{summary.default_destination}</span>
           </p>
@@ -396,10 +396,10 @@ export default function BackupCenter() {
               </button>
             </div>
             {plan && (
-              <div className="status-grid">
+              <dl className="status-grid">
                 <div className="status-row"><dt>{text.candidates}</dt><dd>{plan.delete_count}</dd></div>
                 <div className="status-row"><dt>{text.reclaim}</dt><dd>{formatBytes(plan.reclaim_bytes)}</dd></div>
-              </div>
+              </dl>
             )}
           </div>
         </>

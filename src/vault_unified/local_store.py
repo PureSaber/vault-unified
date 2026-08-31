@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import copy
+import threading
 from pathlib import Path
+from typing import Any
 
 from vault_unified.crypto import read_encrypted_file, write_encrypted_file
 from vault_unified.models import SecretEntry, Source, SyncStatus
 from vault_unified.storage import require_clean_storage
 from vault_unified.v3_crypto import V3Credential
 from vault_unified.sync.ledger import Tombstone
+from vault_unified.sync.preview import canonical_digest
 
 VAULT_VERSION = 2
 
@@ -25,6 +28,8 @@ class LocalVault:
         # Compatibility alias for sync sidecar encryption; it may now be a device credential.
         self.password = credential
         self._entries: dict[str, SecretEntry] = {}
+        self._generation = 0
+        self._lock = threading.RLock()
         require_clean_storage(vault_path)
         if vault_path.exists():
             self._load()
@@ -63,9 +68,27 @@ class LocalVault:
             "entries": {item_id: entry.to_dict() for item_id, entry in entries.items()},
         }
         write_encrypted_file(self.vault_path, self.credential, payload)
+        self._generation += 1
 
     def _save(self) -> None:
         self._save_entries(self._entries)
+
+    @property
+    def generation(self) -> int:
+        with self._lock:
+            return self._generation
+
+    def _state_digest_locked(self) -> str:
+        return canonical_digest(
+            sorted(
+                (entry.to_dict() for entry in self._entries.values()),
+                key=lambda item: item["id"],
+            )
+        )
+
+    def state_digest(self) -> str:
+        with self._lock:
+            return self._state_digest_locked()
 
     def commit_entry(
         self,
@@ -76,23 +99,98 @@ class LocalVault:
     ) -> SecretEntry:
         """Persist a prepared entry without exposing partial in-memory state."""
 
-        current = self._entries.get(candidate.id)
-        if create:
-            if current is not None:
-                raise EntryTransactionConflict("Entry already exists")
-        else:
-            if current is None:
-                raise KeyError(candidate.id)
-            if expected_updated_at is None or current.updated_at != expected_updated_at:
-                raise EntryTransactionConflict(
-                    "Entry changed after this editor was opened; reload before saving"
-                )
+        with self._lock:
+            current = self._entries.get(candidate.id)
+            if create:
+                if current is not None:
+                    raise EntryTransactionConflict("Entry already exists")
+            else:
+                if current is None:
+                    raise KeyError(candidate.id)
+                if expected_updated_at is None or current.updated_at != expected_updated_at:
+                    raise EntryTransactionConflict(
+                        "Entry changed after this editor was opened; reload before saving"
+                    )
 
-        staged = copy.deepcopy(self._entries)
-        staged[candidate.id] = copy.deepcopy(candidate)
-        self._save_entries(staged)
-        self._entries = staged
-        return self._entries[candidate.id]
+            staged = copy.deepcopy(self._entries)
+            staged[candidate.id] = copy.deepcopy(candidate)
+            self._save_entries(staged)
+            self._entries = staged
+            return self._entries[candidate.id]
+
+    def commit_import_batch(
+        self,
+        candidates: list[SecretEntry],
+        *,
+        updated_entry_ids: set[str],
+        expected_generation: int,
+        expected_digest: str,
+    ) -> None:
+        """Apply a previewed import with one encrypted write and no partial memory state."""
+
+        with self._lock:
+            if (
+                self._generation != expected_generation
+                or self._state_digest_locked() != expected_digest
+            ):
+                raise EntryTransactionConflict(
+                    "Vault changed after the import preview; create a new preview"
+                )
+            candidate_ids = [entry.id for entry in candidates]
+            if len(candidate_ids) != len(set(candidate_ids)):
+                raise ValueError("Import contains duplicate target entries")
+            for entry_id in candidate_ids:
+                exists = entry_id in self._entries
+                if entry_id in updated_entry_ids and not exists:
+                    raise EntryTransactionConflict(
+                        "An import update target no longer exists; create a new preview"
+                    )
+                if entry_id not in updated_entry_ids and exists:
+                    raise EntryTransactionConflict(
+                        "An imported entry ID already exists; create a new preview"
+                    )
+            staged = copy.deepcopy(self._entries)
+            for candidate in candidates:
+                staged[candidate.id] = copy.deepcopy(candidate)
+            if candidates:
+                self._save_entries(staged)
+                self._entries = staged
+
+    def restore_import_payload(
+        self,
+        payload: dict[str, Any],
+        *,
+        expected_generation: int,
+        expected_digest: str,
+        restored_digest: str,
+    ) -> None:
+        """Restore the encrypted pre-import payload as a new atomic vault generation."""
+
+        if not isinstance(payload, dict) or not isinstance(payload.get("entries"), dict):
+            raise ValueError("Import backup payload is invalid")
+        entries_raw = payload["entries"]
+        restored = {
+            item_id: SecretEntry.from_dict(copy.deepcopy(entry))
+            for item_id, entry in entries_raw.items()
+        }
+        candidate_digest = canonical_digest(
+            sorted(
+                (entry.to_dict() for entry in restored.values()),
+                key=lambda item: item["id"],
+            )
+        )
+        if candidate_digest != restored_digest:
+            raise ValueError("Import backup does not match the recorded pre-import state")
+        with self._lock:
+            if (
+                self._generation != expected_generation
+                or self._state_digest_locked() != expected_digest
+            ):
+                raise EntryTransactionConflict(
+                    "Vault changed after the import; undo was refused"
+                )
+            self._save_entries(restored)
+            self._entries = restored
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> LocalVault:
@@ -169,14 +267,15 @@ class LocalVault:
         return sorted(results, key=lambda e: e.title.lower())
 
     def add(self, entry: SecretEntry, *, mark_dirty: bool = True) -> SecretEntry:
-        entry.source = Source.LOCAL
-        if mark_dirty:
-            entry.mark_dirty()
-        else:
-            entry.touch()
-        self._entries[entry.id] = entry
-        self._save()
-        return entry
+        with self._lock:
+            entry.source = Source.LOCAL
+            if mark_dirty:
+                entry.mark_dirty()
+            else:
+                entry.touch()
+            self._entries[entry.id] = entry
+            self._save()
+            return entry
 
     def upsert(
         self, entry: SecretEntry, *, save: bool = True, from_remote: bool = False
@@ -245,9 +344,10 @@ class LocalVault:
         return entry
 
     def replace_entry(self, entry: SecretEntry) -> SecretEntry:
-        self._entries[entry.id] = entry
-        self._save()
-        return entry
+        with self._lock:
+            self._entries[entry.id] = entry
+            self._save()
+            return entry
 
     def mark_synced(self, entry_id: str, remote_updated_at: str = "") -> None:
         entry = self._entries.get(entry_id)

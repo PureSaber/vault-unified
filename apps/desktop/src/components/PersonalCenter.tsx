@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, BrowserPairing, Integration, PersonalSettings } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
+import ImportWizard from "./ImportWizard";
 
 const defaults: PersonalSettings = {
   lock_after_seconds: 15 * 60,
@@ -33,7 +34,6 @@ export default function PersonalCenter() {
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [recoveryDestination, setRecoveryDestination] = useState("");
   const [browserPairing, setBrowserPairing] = useState<BrowserPairing | null>(null);
-  const fileInput = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     Promise.all([api.getPersonalSettings(), api.integrations()])
@@ -72,24 +72,6 @@ export default function PersonalCenter() {
       showToast(zh ? "明文导出已下载；请在使用后删除该文件" : "Plaintext export downloaded; delete it after use");
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    }
-  }
-
-  async function importVault(file: File) {
-    const confirmed = window.confirm(
-      zh
-        ? "导入文件可能包含明文密码。确认其来源可信后继续。"
-        : "The import may contain plaintext passwords. Continue only if you trust its source."
-    );
-    if (!confirmed) return;
-    const format = file.name.toLowerCase().endsWith(".csv") ? "csv" : "json";
-    try {
-      const result = await api.importTransfer(format, await file.text());
-      showToast(zh ? `已导入 ${result.imported} 个条目；请先检查再同步` : `Imported ${result.imported} entries; review before syncing`);
-    } catch (error) {
-      showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    } finally {
-      if (fileInput.current) fileInput.current.value = "";
     }
   }
 
@@ -211,17 +193,8 @@ export default function PersonalCenter() {
         <div className="button-row">
           <button className="secondary" type="button" onClick={() => exportVault("json")}>JSON</button>
           <button className="secondary" type="button" onClick={() => exportVault("csv")}>CSV</button>
-          <label className="secondary file-button">
-            {zh ? "导入 JSON / CSV" : "Import JSON / CSV"}
-            <input
-              ref={fileInput}
-              type="file"
-              accept=".json,.csv,application/json,text/csv"
-              onChange={(e) => e.target.files?.[0] && importVault(e.target.files[0])}
-              hidden
-            />
-          </label>
         </div>
+        <ImportWizard />
       </section>
 
       <section className="settings-section" aria-labelledby="browser-heading">

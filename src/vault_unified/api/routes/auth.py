@@ -159,6 +159,9 @@ def unlock(body: UnlockRequest, request: Request) -> UnlockResponse:
 
 @router.post("/lock")
 def lock(token: str = Depends(get_token)) -> dict:
+    from vault_unified.import_flow import import_flow_store
+
+    import_flow_store.clear_session(token)
     sessions.lock(token)
     return {"message": "locked"}
 
