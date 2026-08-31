@@ -95,6 +95,7 @@ test("removing an attachment and then cancelling performs zero writes", async ({
     buffer: Buffer.from("generated retained content"),
   });
   await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText(title, { exact: true })).toBeVisible();
   expect(sidecar.persistedEntries[0].attachments).toHaveLength(1);
 
   await page.getByRole("button", { name: "Edit", exact: true }).click();
