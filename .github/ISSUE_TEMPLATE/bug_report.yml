@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a reproducible problem using generated data only
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Vault Unified. **Do not attach a real vault, password, token, recovery code, TOTP key, attachment, plaintext export, full log, or unredacted trace.** Report security vulnerabilities privately through a GitHub Security Advisory instead.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Passwords and entry editing
+        - Import or undo
+        - Sync, connection, or conflict handling
+        - Backup, restore, or auto-lock
+        - Browser extension
+        - Installer or startup
+        - Accessibility or layout
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Use the version shown in Settings → About or the installer filename.
+      placeholder: v1.2.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows environment
+      placeholder: Windows 11 24H2, MSI install, 150% display scaling
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction with generated data
+      description: Give the smallest numbered reproduction. Use a disposable vault and obvious fake values.
+      placeholder: |
+        1. Create a disposable vault.
+        2. Add an account for example.invalid.
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Observed behavior
+      description: Describe the result without pasting secret values or a full log.
+    validations:
+      required: true
+  - type: textarea
+    id: integrity
+    attributes:
+      label: Data-integrity impact
+      description: Did cancellation write anything, did a partial operation remain, or was encrypted data changed unexpectedly?
+      placeholder: No persistent change observed / generated entry was changed / unknown
+    validations:
+      required: true
+  - type: textarea
+    id: sanitized_evidence
+    attributes:
+      label: Sanitized evidence
+      description: Optional. Include only a minimal redacted excerpt or generated-data screenshot.
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I reproduced this with a disposable vault and generated fake data only.
+          required: true
+        - label: I checked that this report and every attachment contain no passwords, tokens, recovery codes, TOTP keys, vault contents, or other secrets.
+          required: true
+        - label: This is not a privately reportable security vulnerability.
+          required: true
