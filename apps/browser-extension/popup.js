@@ -90,7 +90,10 @@ async function showMatches(state) {
     return;
   }
   try {
-    const result = await request(state, `/matches?url=${encodeURIComponent(tab.url)}`);
+    const result = await request(state, `/matches?url=${encodeURIComponent(tab.url)}`, {
+      method: "POST",
+      body: "{}",
+    });
     matchesElement.replaceChildren();
     matchesElement.hidden = false;
     if (!result.matches.length) {
