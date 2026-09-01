@@ -207,8 +207,8 @@ export default function PersonalCenter() {
           <h4>{zh ? "自动备份" : "Automatic backups"}</h4>
           <p className="field-hint">
             {zh
-              ? "这里的文件夹和间隔会在保存后记住，并按计划继续备份。页面下方的一次性备份不会启用此计划。"
-              : "This folder and interval are remembered after you save, then used for scheduled backups. The one-time backup below does not enable this schedule."}
+              ? "这里的文件夹和间隔会在保存后记住，并按计划继续备份。页面下方的手动备份只在你点击时创建，不会启用此计划；备份文件可重复用于恢复。"
+              : "This folder and interval are remembered after you save, then used for scheduled backups. The manual backup below runs only when you choose it and does not enable this schedule; its file can be reused for restores."}
           </p>
           <label className="checkbox-field">
             <input

@@ -27,9 +27,10 @@ test("shows conclusions first and completes backup verification with a cancellab
   await expect(status).toContainText("Automatic-backup locationNot set");
   await expect(status).toContainText("Next automatic backupNot enabled");
   await expect(page.getByText("Settings are saved; automatic backups are currently off.")).toBeVisible();
-  const oneTimeBackup = page.getByLabel("One-time backup and restore");
-  await expect(oneTimeBackup).toBeVisible();
-  await expect(oneTimeBackup).toContainText("without remembering this temporary folder or enabling the automatic schedule above");
+  const manualBackup = page.getByLabel("Manual backup and restore");
+  await expect(manualBackup).toBeVisible();
+  await expect(manualBackup).toContainText("without remembering this temporary folder or enabling the automatic schedule above");
+  await expect(manualBackup).toContainText("not consumed by a restore and can be reused");
 
   await page.getByLabel("Create encrypted backups while the app is unlocked").check();
   await page.getByRole("button", { name: "Enter path manually (advanced)" }).first().click();
@@ -67,6 +68,23 @@ test("shows conclusions first and completes backup verification with a cancellab
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations.filter((item) => ["critical", "serious"].includes(item.impact || ""))).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("security-recovery-center.png"), fullPage: true });
+});
+
+test("Chinese manual-backup wording does not imply a single-use backup file", async ({ page }) => {
+  const sidecar = new MockAuthenticatedSidecar();
+  await sidecar.install(page);
+  await page.addInitScript(() => localStorage.setItem("vault_locale", "zh"));
+  await page.goto("/");
+  await page.getByLabel("主密码", { exact: true }).fill(testData.masterPassword);
+  await page.getByLabel("再次输入主密码").fill(testData.masterPassword);
+  await page.getByRole("button", { name: "创建并解锁" }).click();
+  await page.getByRole("button", { name: "安全与恢复", exact: true }).click();
+
+  const manualBackup = page.getByLabel("手动备份与恢复");
+  await expect(manualBackup).toBeVisible();
+  await expect(manualBackup).toContainText("备份文件不会因恢复一次而失效，可按需重复使用");
+  await expect(manualBackup.getByRole("button", { name: "立即创建加密备份", exact: true })).toBeVisible();
+  await expect(manualBackup).not.toContainText("一次性");
 });
 
 test("offers emergency recovery before authentication and preserves the in-app handoff", async ({ page }) => {
