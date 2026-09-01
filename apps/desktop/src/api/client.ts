@@ -68,6 +68,14 @@ function runtimeConfig(): Promise<ApiRuntimeConfig> {
   return runtimeConfigPromise;
 }
 
+export function browserPairingOrigin(baseUrl: string): string {
+  const parsed = new URL(baseUrl);
+  if (parsed.protocol !== "http:" || parsed.hostname !== "127.0.0.1") {
+    throw new Error("Browser pairing requires the authenticated loopback sidecar");
+  }
+  return parsed.origin;
+}
+
 export function setToken(value: string) {
   token = value;
 }
@@ -699,7 +707,7 @@ export const api = {
       ),
       runtimeConfig(),
     ]);
-    return { ...result, sidecar_url: config.base_url };
+    return { ...result, sidecar_url: browserPairingOrigin(config.base_url) };
   },
   cancelBrowserPairing: () =>
     request<{ cancelled: boolean }>("/browser/pairing/cancel", { method: "POST" }),

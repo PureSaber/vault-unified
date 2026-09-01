@@ -2,13 +2,21 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "./journey-test";
 import { MockAuthenticatedSidecar } from "./mock-sidecar";
 import { testData } from "./test-data";
+import { browserPairingOrigin } from "../../src/api/client";
+
+test("canonicalizes the packaged runtime API base for browser pairing", () => {
+  expect(browserPairingOrigin("http://127.0.0.1:54907/api")).toBe("http://127.0.0.1:54907");
+});
 
 test("guides installation and makes desktop pairing copyable, expiring, renewable, and cancellable", async ({ page, context }) => {
   const sidecar = new MockAuthenticatedSidecar();
   await sidecar.install(page);
-  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: "http://127.0.0.1:1420" });
   await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
   await page.goto("/");
+  await context.grantPermissions(
+    ["clipboard-read", "clipboard-write"],
+    { origin: new URL(page.url()).origin },
+  );
   await page.getByLabel("Master password", { exact: true }).fill(testData.masterPassword);
   await page.getByLabel("Confirm master password").fill(testData.masterPassword);
   await page.getByRole("button", { name: "Create and unlock" }).click();
