@@ -20,6 +20,7 @@ type ExtensionMockState = {
     local: number;
     sync: number;
     requests: string[];
+    methods: string[];
   };
 };
 
@@ -43,6 +44,7 @@ async function loadPopup(
       local: 0,
       sync: 0,
       requests: [] as string[],
+      methods: [] as string[],
     };
     const area = {
       get: async (key: string) => {
@@ -87,6 +89,7 @@ async function loadPopup(
       value: async (input: string | URL, init?: RequestInit) => {
         const url = String(input);
         calls.requests.push(url);
+        calls.methods.push(init?.method || "GET");
         if (url === "http://127.0.0.1:43129/api/browser/pair") {
           return new Response(JSON.stringify({ browser_token: config.browserToken }), {
             status: 200,
@@ -140,6 +143,9 @@ test("pairs only into session storage and reports no matching login", async ({ p
   expect(state.calls.local).toBe(0);
   expect(state.calls.sync).toBe(0);
   expect(state.calls.requests[0]).toBe("http://127.0.0.1:43129/api/browser/pair");
+  expect(state.calls.requests[1]).toContain("/api/browser/matches?");
+  expect(state.calls.methods[0]).toBe("POST");
+  expect(state.calls.methods[1]).toBe("POST");
   expect(state.calls.requests.some((url) => url.includes("/api/api/"))).toBe(false);
 });
 

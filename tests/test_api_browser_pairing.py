@@ -74,9 +74,10 @@ def test_extension_pairing_is_one_time_origin_bound_and_lost_on_lock(client: Tes
     assert pairing.status_code == 200
     browser_headers = {"Origin": ORIGIN, "X-Vault-Browser-Token": pairing.json()["browser_token"]}
 
-    matches = client.get(
+    matches = client.post(
         "/api/browser/matches?url=https%3A%2F%2Fexample.test%2Fsignin",
         headers=browser_headers,
+        json={},
     )
     assert matches.status_code == 200
     assert matches.json()["matches"] == [{
@@ -85,6 +86,19 @@ def test_extension_pairing_is_one_time_origin_bound_and_lost_on_lock(client: Tes
         "username": "person@example.test",
     }]
     assert "secret-value" not in matches.text
+
+    missing_origin = client.post(
+        "/api/browser/matches?url=https%3A%2F%2Fexample.test%2Fsignin",
+        headers={"X-Vault-Browser-Token": pairing.json()["browser_token"]},
+        json={},
+    )
+    assert missing_origin.status_code == 401
+
+    legacy_get = client.get(
+        "/api/browser/matches?url=https%3A%2F%2Fexample.test%2Fsignin",
+        headers=browser_headers,
+    )
+    assert legacy_get.status_code == 200
 
     fill = client.post(
         "/api/browser/fill",

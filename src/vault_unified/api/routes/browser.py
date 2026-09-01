@@ -65,6 +65,7 @@ def pair_browser(
 
 
 @router.get("/matches")
+@router.post("/matches")
 def browser_matches(
     url: str,
     vault=Depends(_vault_for_browser),
