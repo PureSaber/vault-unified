@@ -64,9 +64,9 @@ export default function SecurityRecovery() {
           <div className="status-row"><dt>{zh ? "保险库" : "Vault"}</dt><dd>{zh ? "已加密" : "Encrypted"}</dd></div>
           <div className="status-row"><dt>{zh ? "自动锁定" : "Auto-lock"}</dt><dd>{settings ? `${Math.round(settings.lock_after_seconds / 60)} ${zh ? "分钟" : "minutes"}` : "…"}</dd></div>
           <div className="status-row"><dt>{zh ? "最近一次成功备份" : "Last successful backup"}</dt><dd>{displayTime(health?.last_success_at || "", locale, never)}</dd></div>
-          <div className="status-row"><dt>{zh ? "备份位置" : "Backup location"}</dt><dd className="path-break">{health?.backup_location || noValue}</dd></div>
+          <div className="status-row"><dt>{zh ? "自动备份位置" : "Automatic-backup location"}</dt><dd className="path-break">{health?.backup_location || noValue}</dd></div>
           <div className={`status-row${health?.last_error_summary ? " status-row-danger" : ""}`}><dt>{zh ? "最近一次备份错误" : "Latest backup error"}</dt><dd>{health?.last_error_summary || (zh ? "没有" : "None")}</dd></div>
-          <div className="status-row"><dt>{zh ? "下次预计备份" : "Next eligible backup"}</dt><dd>{health?.auto_backup_enabled ? `${displayTime(health.next_eligible_at, locale, zh ? "应用解锁后尽快执行" : "As soon as the app is unlocked")} · ${zh ? "仅在应用解锁时执行" : "runs only while unlocked"}` : (zh ? "未启用" : "Not enabled")}</dd></div>
+          <div className="status-row"><dt>{zh ? "下次自动备份" : "Next automatic backup"}</dt><dd>{health?.auto_backup_enabled ? `${displayTime(health.next_eligible_at, locale, zh ? "应用解锁后尽快执行" : "As soon as the app is unlocked")} · ${zh ? "仅在应用解锁时执行" : "runs only while unlocked"}` : (zh ? "未启用" : "Not enabled")}</dd></div>
           <div className="status-row"><dt>{zh ? "最新备份验证" : "Latest backup verification"}</dt><dd>{verification}{health?.last_verification_at ? ` · ${displayTime(health.last_verification_at, locale, "")}` : ""}</dd></div>
           <div className="status-row"><dt>{zh ? "恢复包" : "Recovery kit"}</dt><dd>{health?.recovery_kit_created_at ? `${zh ? "已创建" : "Created"} · ${displayTime(health.recovery_kit_created_at, locale, "")}` : (zh ? "尚未创建" : "Not created")}</dd></div>
         </dl>

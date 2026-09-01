@@ -163,12 +163,12 @@ test("restore failure keeps the active vault unchanged and unlocked", async ({ p
   const before = sidecar.persistedEntries;
 
   await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
-  const backupCenter = page.getByLabel("Backup and restore");
+  const backupCenter = page.getByLabel("One-time backup and restore");
   await backupCenter.getByRole("button", { name: "Enter path manually (advanced)", exact: true }).click();
-  await backupCenter.getByLabel("Manual backup directory (leave blank for the default)").fill(
+  await backupCenter.getByLabel("Folder for this backup (does not enable automatic backups)").fill(
     `C:\\isolated-vault-tests\\${testData.runId}\\${"generated-long-folder\\".repeat(10)}`,
   );
-  await page.getByRole("button", { name: "Create encrypted backup now", exact: true }).click();
+  await backupCenter.getByRole("button", { name: "Create one-time encrypted backup", exact: true }).click();
   await page.getByRole("button", { name: "Manage backup history", exact: true }).click();
   await page.getByRole("button", { name: "Preview restore impact", exact: true }).click();
   const dialog = page.getByRole("alertdialog", { name: "Restore this backup" });
