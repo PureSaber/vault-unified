@@ -10,6 +10,8 @@ interface Props {
 
 type SetupMode = "create" | "restore";
 
+const RECOVERY_ROUTE_HASH = "#recovery-kit";
+
 const firstRunCopy = {
   zh: {
     loading: "检查本地保险库…",
@@ -92,7 +94,9 @@ export default function Unlock({ onUnlock }: Props) {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [backupPath, setBackupPath] = useState("");
-  const [showRecovery, setShowRecovery] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(
+    () => window.location.hash === RECOVERY_ROUTE_HASH,
+  );
   const [recoveryKitPath, setRecoveryKitPath] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [newRecoveryPassword, setNewRecoveryPassword] = useState("");
@@ -105,6 +109,15 @@ export default function Unlock({ onUnlock }: Props) {
   const [loading, setLoading] = useState(false);
   const [hasKeyring, setHasKeyring] = useState(false);
   const [keyringChecked, setKeyringChecked] = useState(false);
+
+  useEffect(() => {
+    if (window.location.hash !== RECOVERY_ROUTE_HASH) return;
+    window.history.replaceState(
+      null,
+      "",
+      `${window.location.pathname}${window.location.search}`,
+    );
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

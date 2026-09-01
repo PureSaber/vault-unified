@@ -151,6 +151,7 @@ export default function PersonalCenter() {
   }
 
   async function openRecoveryKitRestore() {
+    window.location.hash = "recovery-kit";
     try {
       await api.lock();
     } catch {

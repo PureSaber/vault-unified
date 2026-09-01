@@ -57,3 +57,30 @@ test("shows conclusions first and completes backup verification with a cancellab
   expect(accessibility.violations.filter((item) => ["critical", "serious"].includes(item.impact || ""))).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath("security-recovery-center.png"), fullPage: true });
 });
+
+test("offers emergency recovery before authentication and preserves the in-app handoff", async ({ page }) => {
+  const sidecar = new MockAuthenticatedSidecar();
+  await sidecar.install(page);
+  await createVault(page);
+
+  await page.getByRole("button", { name: "Lock now", exact: true }).click();
+  const recoveryEntry = page.getByRole("button", { name: "Use emergency recovery kit", exact: true });
+  await expect(recoveryEntry).toHaveCount(1);
+  await recoveryEntry.click();
+  await expect(page.getByRole("heading", { name: "Recover from an emergency kit", exact: true })).toBeVisible();
+  await expect(page.locator("#recovery-kit-path-label")).toHaveText("Recovery-kit file path");
+  await expect(page.getByRole("button", { name: "Choose file", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Recovery code", { exact: true })).toHaveAttribute("type", "password");
+  await expect(page.getByLabel("New master password", { exact: true })).toHaveAttribute("type", "password");
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+
+  await page.getByLabel("Master password", { exact: true }).fill(testData.masterPassword);
+  await page.getByRole("button", { name: "Unlock", exact: true }).click();
+  await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
+  await page.getByRole("button", { name: "Restore from recovery kit", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "Recover from an emergency kit", exact: true })).toBeVisible();
+  await expect(page).not.toHaveURL(/#recovery-kit$/);
+  await expect(page.locator("#recovery-kit-path-label")).toHaveText("Recovery-kit file path");
+  await expect(page.getByRole("button", { name: "Choose file", exact: true })).toBeVisible();
+});
