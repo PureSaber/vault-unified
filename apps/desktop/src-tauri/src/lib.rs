@@ -537,6 +537,7 @@ pub fn run() {
                 shutdown_api_sidecar(app);
                 app.exit(0);
             }
+            tauri::RunEvent::ExitRequested { .. } => shutdown_api_sidecar(app),
             tauri::RunEvent::Exit => shutdown_api_sidecar(app),
             _ => {}
         });
