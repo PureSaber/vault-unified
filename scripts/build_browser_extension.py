@@ -48,11 +48,21 @@ def _safe_member(name: str) -> bool:
 def _validate_content(name: str, data: bytes) -> None:
     if not data:
         raise ValueError(f"Extension release file is empty: {name}")
+    if b"\r" in data:
+        raise ValueError(f"Extension release file does not use canonical LF text: {name}")
     if name.lower().endswith((".env", ".log", ".pem", ".key", ".vault")):
         raise ValueError(f"Forbidden extension release file: {name}")
     for pattern in SECRET_PATTERNS:
         if pattern.search(data):
             raise ValueError(f"Secret-like content detected in extension release file: {name}")
+
+
+def _canonical_text(name: str, data: bytes) -> bytes:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ValueError(f"Extension release file is not valid UTF-8 text: {name}") from error
+    return text.replace("\r\n", "\n").replace("\r", "\n").encode("utf-8")
 
 
 def build_extension_archive(repo_root: Path, output_dir: Path | None = None) -> Path:
@@ -67,7 +77,7 @@ def build_extension_archive(repo_root: Path, output_dir: Path | None = None) -> 
         path = source / name
         if path.is_symlink() or not path.is_file():
             raise ValueError(f"Required extension release file is missing or unsafe: {name}")
-        data = path.read_bytes()
+        data = _canonical_text(name, path.read_bytes())
         if name == "INSTALL.md":
             data = data.replace(b"<version>", version.encode("ascii"))
         _validate_content(name, data)
