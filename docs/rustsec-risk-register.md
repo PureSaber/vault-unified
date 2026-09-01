@@ -12,7 +12,7 @@ This register records informational RustSec findings that cannot currently be re
 
 - Tool: RustSec `cargo-audit 0.22.2`; official Windows archive SHA-256 `0a7316540862c13d954f648917ceacca593747baed6eec180fafa590be2710ab`.
 - Advisory database: `RustSec/advisory-db` commit `2f08fbb85332687b721f2f22706d07448369451b` (commit time `2026-08-18T10:23:07+02:00`), 1,217 advisories.
-- Lockfile: `apps/desktop/src-tauri/Cargo.lock`, canonical LF SHA-256 `a280e61a8f608f529c9b8abd2c4bceb1d27b23ac6ce0ad4469e6d283f51e223e`,
+- Lockfile: `apps/desktop/src-tauri/Cargo.lock`, canonical LF SHA-256 `21b8bd8b05d60f233097acba17a0dbe9f894f43dd31c0767b6e2c123306fc6b7`,
   444 packages. The v1.3 usability work adds the official `tauri-plugin-dialog 2.7.3`
   path (`rfd 0.16.0` and `tauri-plugin-fs 2.5.2`) for operating-system file and
   folder selection. The app grants only `dialog:allow-open`; it does not grant the

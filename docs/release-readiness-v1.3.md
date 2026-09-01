@@ -29,6 +29,12 @@ Record an exact command, CI link, commit, and result for every item.
 
 These are real packaged-lifecycle tests; renderer-only Playwright results cannot satisfy them.
 
+When the repository owner has explicitly deferred local installation, a candidate may run the non-installing preflight below. It verifies the packaged sidecar, extension, installer presence, hashes, and manifest, but records both installer lifecycle fields as `not-run-user-deferred` and does **not** satisfy the NSIS/MSI checkboxes:
+
+```powershell
+pwsh -NoProfile -File scripts\validate-desktop-release.ps1 -SkipInstallerLifecycle
+```
+
 - [ ] Packaged sidecar generated-data smoke passes
 - [ ] NSIS install / launch / create-use-lock / stop / uninstall passes
 - [ ] MSI install / launch / create-use-lock / stop / uninstall passes
