@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,6 +39,7 @@ def test_desktop_has_no_fixed_port_or_existing_process_reuse():
 
 def test_native_window_close_preserves_draft_confirmation_before_destroy():
     renderer = read("apps/desktop/src/App.tsx")
+    capabilities = json.loads(read("apps/desktop/src-tauri/capabilities/default.json"))
 
     assert 'import { isTauri } from "@tauri-apps/api/core"' in renderer
     assert "if (!isTauri()) return" in renderer
@@ -48,6 +50,8 @@ def test_native_window_close_preserves_draft_confirmation_before_destroy():
     assert 'kind: "close"' in renderer
     assert "await getCurrentWindow().destroy()" in renderer
     assert "Discard changes and close?" in renderer
+    assert capabilities["windows"] == ["main"]
+    assert "core:window:allow-destroy" in capabilities["permissions"]
 
 
 def test_renderer_uses_authenticated_runtime_and_memory_only_session():
