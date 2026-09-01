@@ -10,7 +10,7 @@ from vault_unified.api.app import create_app
 
 
 ROOT = Path(__file__).resolve().parents[1]
-EXPECTED_VERSION = "1.2.0"
+EXPECTED_VERSION = "1.3.0"
 
 
 def test_release_version_is_consistent_across_build_surfaces() -> None:
@@ -56,3 +56,19 @@ def test_release_version_is_consistent_across_build_surfaces() -> None:
     assert tauri["version"] == EXPECTED_VERSION
     assert f"**v{EXPECTED_VERSION}** — 当前版" in readme
     assert release_notes.startswith(f"# Vault Unified v{EXPECTED_VERSION}\n")
+
+
+def test_release_validator_can_run_preflight_without_claiming_installer_lifecycle() -> None:
+    validator = (ROOT / "scripts" / "validate-desktop-release.ps1").read_text(
+        encoding="utf-8"
+    )
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "[switch]$SkipInstallerLifecycle" in validator
+    assert '"not-run-user-deferred"' in validator
+    assert "if ($SkipInstallerLifecycle)" in validator
+    assert "nsis_install_launch_uninstall = $nsisLifecycleStatus" in validator
+    assert "msi_install_launch_uninstall = $msiLifecycleStatus" in validator
+    assert "pwsh -NoProfile -File scripts/validate-desktop-release.ps1" in workflow
+    assert "validate-desktop-release.ps1 -SkipInstallerLifecycle" not in workflow

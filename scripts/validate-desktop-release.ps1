@@ -1,7 +1,8 @@
 param(
     [string]$Version = "",
     [string]$SourceSha = "",
-    [string]$RepoRoot = $PSScriptRoot
+    [string]$RepoRoot = $PSScriptRoot,
+    [switch]$SkipInstallerLifecycle
 )
 
 $ErrorActionPreference = "Stop"
@@ -327,24 +328,32 @@ if ($LASTEXITCODE -ne 0) { throw "Browser extension release ZIP validation faile
 Write-Host "=== Packaged sidecar generated-data smoke ==="
 Smoke-PackagedSidecar -Sidecar $sidecar
 
-Write-Host "=== NSIS install / launch / uninstall smoke ==="
-$nsisInstall = Start-Process -FilePath $nsis.FullName -ArgumentList "/S" -PassThru -Wait
-if ($nsisInstall.ExitCode -ne 0) { throw "NSIS silent install failed with $($nsisInstall.ExitCode)" }
-$nsisApp = Wait-ForVaultExecutable
-Launch-And-StopInstalledApp -App $nsisApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-nsis-app-data")
-$uninstaller = Get-ChildItem -LiteralPath $nsisApp.DirectoryName -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-if (-not $uninstaller) { throw "NSIS uninstaller was not found beside the installed application" }
-$nsisUninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -PassThru -Wait
-if ($nsisUninstall.ExitCode -ne 0) { throw "NSIS silent uninstall failed with $($nsisUninstall.ExitCode)" }
-Start-Sleep -Seconds 3
+$nsisLifecycleStatus = "not-run-user-deferred"
+$msiLifecycleStatus = "not-run-user-deferred"
+if ($SkipInstallerLifecycle) {
+    Write-Host "=== NSIS/MSI lifecycle smoke intentionally deferred; no installer was executed ==="
+} else {
+    Write-Host "=== NSIS install / launch / uninstall smoke ==="
+    $nsisInstall = Start-Process -FilePath $nsis.FullName -ArgumentList "/S" -PassThru -Wait
+    if ($nsisInstall.ExitCode -ne 0) { throw "NSIS silent install failed with $($nsisInstall.ExitCode)" }
+    $nsisApp = Wait-ForVaultExecutable
+    Launch-And-StopInstalledApp -App $nsisApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-nsis-app-data")
+    $uninstaller = Get-ChildItem -LiteralPath $nsisApp.DirectoryName -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $uninstaller) { throw "NSIS uninstaller was not found beside the installed application" }
+    $nsisUninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -PassThru -Wait
+    if ($nsisUninstall.ExitCode -ne 0) { throw "NSIS silent uninstall failed with $($nsisUninstall.ExitCode)" }
+    Start-Sleep -Seconds 3
+    $nsisLifecycleStatus = "passed"
 
-Write-Host "=== MSI install / launch / uninstall smoke ==="
-$msiInstall = Start-Process -FilePath msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
-if (@(0, 3010) -notcontains $msiInstall.ExitCode) { throw "MSI install failed with $($msiInstall.ExitCode)" }
-$msiApp = Wait-ForVaultExecutable
-Launch-And-StopInstalledApp -App $msiApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-msi-app-data")
-$msiUninstall = Start-Process -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
-if (@(0, 3010) -notcontains $msiUninstall.ExitCode) { throw "MSI uninstall failed with $($msiUninstall.ExitCode)" }
+    Write-Host "=== MSI install / launch / uninstall smoke ==="
+    $msiInstall = Start-Process -FilePath msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
+    if (@(0, 3010) -notcontains $msiInstall.ExitCode) { throw "MSI install failed with $($msiInstall.ExitCode)" }
+    $msiApp = Wait-ForVaultExecutable
+    Launch-And-StopInstalledApp -App $msiApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-msi-app-data")
+    $msiUninstall = Start-Process -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
+    if (@(0, 3010) -notcontains $msiUninstall.ExitCode) { throw "MSI uninstall failed with $($msiUninstall.ExitCode)" }
+    $msiLifecycleStatus = "passed"
+}
 
 $assetRecords = @()
 foreach ($asset in @($nsis, $msi)) {
@@ -374,8 +383,8 @@ $manifest = [ordered]@{
         rustsec = "passed-by-required-job"
         packaged_sidecar_generated_data_smoke = "passed"
         backup_cleanup_preview_confirmed = "passed"
-        nsis_install_launch_uninstall = "passed"
-        msi_install_launch_uninstall = "passed"
+        nsis_install_launch_uninstall = $nsisLifecycleStatus
+        msi_install_launch_uninstall = $msiLifecycleStatus
         browser_extension_structure_permissions_and_version = "passed"
     }
     assets = $assetRecords
