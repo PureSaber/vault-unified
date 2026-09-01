@@ -30,10 +30,19 @@ async function request(state, path, options = {}) {
 
 function normalizeAddress(value) {
   const url = new URL(value.trim());
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname)) {
+  const path = url.pathname.replace(/\/+$/, "");
+  if (
+    url.protocol !== "http:"
+    || !["127.0.0.1", "localhost"].includes(url.hostname)
+    || url.username
+    || url.password
+    || url.search
+    || url.hash
+    || (path && path !== "/api")
+  ) {
     throw new Error("Use the local http://127.0.0.1 address shown by Vault Unified");
   }
-  return url.href.replace(/\/$/, "");
+  return url.origin;
 }
 
 function outcomeMessage(outcome) {

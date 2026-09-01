@@ -11,6 +11,18 @@ const popupHtml = readFileSync(`${extensionRoot}/popup.html`, "utf8")
 const popupScript = readFileSync(`${extensionRoot}/popup.js`, "utf8");
 const fillScript = readFileSync(`${extensionRoot}/fill.js`, "utf8");
 
+type ExtensionMockState = {
+  session: Record<string, unknown>;
+  calls: {
+    sessionGet: number;
+    sessionSet: number;
+    sessionRemove: number;
+    local: number;
+    sync: number;
+    requests: string[];
+  };
+};
+
 async function loadPopup(
   page: Page,
   options: {
@@ -24,7 +36,14 @@ async function loadPopup(
   await page.evaluate((config) => {
     const session: Record<string, unknown> = {};
     if (config.initialState) session.vaultUnifiedBrowserPairing = config.initialState;
-    const calls = { sessionGet: 0, sessionSet: 0, sessionRemove: 0, local: 0, sync: 0 };
+    const calls = {
+      sessionGet: 0,
+      sessionSet: 0,
+      sessionRemove: 0,
+      local: 0,
+      sync: 0,
+      requests: [] as string[],
+    };
     const area = {
       get: async (key: string) => {
         calls.sessionGet += 1;
@@ -67,7 +86,8 @@ async function loadPopup(
       configurable: true,
       value: async (input: string | URL, init?: RequestInit) => {
         const url = String(input);
-        if (url.endsWith("/api/browser/pair")) {
+        calls.requests.push(url);
+        if (url === "http://127.0.0.1:43129/api/browser/pair") {
           return new Response(JSON.stringify({ browser_token: config.browserToken }), {
             status: 200,
             headers: { "content-type": "application/json" },
@@ -105,12 +125,12 @@ async function loadPopup(
 
 test("pairs only into session storage and reports no matching login", async ({ page }) => {
   await loadPopup(page);
-  await page.locator("#sidecar-url").fill("http://127.0.0.1:43129");
+  await page.locator("#sidecar-url").fill("http://127.0.0.1:43129/api/");
   await page.locator("#pairing-code").fill(testData.bootstrapSecret);
   await page.getByRole("button", { name: "Pair this browser" }).click();
   await expect(page.getByText("No saved login URL matches this page.")).toBeVisible();
   const state = await page.evaluate(() => (window as unknown as {
-    __extensionMock: { session: Record<string, unknown>; calls: Record<string, number> };
+    __extensionMock: ExtensionMockState;
   }).__extensionMock);
   expect(state.session.vaultUnifiedBrowserPairing).toEqual({
     sidecarUrl: "http://127.0.0.1:43129",
@@ -119,6 +139,21 @@ test("pairs only into session storage and reports no matching login", async ({ p
   expect(state.calls.sessionSet).toBe(1);
   expect(state.calls.local).toBe(0);
   expect(state.calls.sync).toBe(0);
+  expect(state.calls.requests[0]).toBe("http://127.0.0.1:43129/api/browser/pair");
+  expect(state.calls.requests.some((url) => url.includes("/api/api/"))).toBe(false);
+});
+
+test("rejects unexpected local paths before sending a pairing code", async ({ page }) => {
+  await loadPopup(page);
+  await page.locator("#sidecar-url").fill("http://127.0.0.1:43129/unexpected");
+  await page.locator("#pairing-code").fill(testData.bootstrapSecret);
+  await page.getByRole("button", { name: "Pair this browser" }).click();
+  await expect(page.getByText("Use the local http://127.0.0.1 address shown by Vault Unified")).toBeVisible();
+  const state = await page.evaluate(() => (window as unknown as {
+    __extensionMock: ExtensionMockState;
+  }).__extensionMock);
+  expect(state.calls.requests).toEqual([]);
+  expect(state.calls.sessionSet).toBe(0);
 });
 
 test("removes session pairing immediately when the desktop reports locked", async ({ page }) => {
@@ -129,7 +164,7 @@ test("removes session pairing immediately when the desktop reports locked", asyn
   await expect(page.getByText("Desktop vault is locked")).toBeVisible();
   await expect(page.getByRole("button", { name: "Pair this browser" })).toBeVisible();
   const state = await page.evaluate(() => (window as unknown as {
-    __extensionMock: { session: Record<string, unknown>; calls: Record<string, number> };
+    __extensionMock: ExtensionMockState;
   }).__extensionMock);
   expect(state.session).toEqual({});
   expect(state.calls.sessionRemove).toBe(1);
