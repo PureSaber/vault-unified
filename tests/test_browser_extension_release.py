@@ -62,3 +62,29 @@ def test_extension_zip_is_deterministic_allowlisted_and_secret_free(tmp_path: Pa
     assert b"chrome.storage.sync" not in combined
     for forbidden in (b".env", b"BEGIN PRIVATE KEY", b"Bearer ", b"bootstrap_secret"):
         assert forbidden not in combined
+
+
+def test_extension_zip_is_identical_for_lf_and_crlf_checkouts(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    extension_source = (REPO_ROOT / "apps/browser-extension").resolve()
+    original_read_bytes = Path.read_bytes
+    checkout_newline = {"value": b"\n"}
+
+    def checkout_bytes(path: Path) -> bytes:
+        data = original_read_bytes(path)
+        if path.resolve().parent != extension_source:
+            return data
+        lf = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        return lf.replace(b"\n", checkout_newline["value"])
+
+    monkeypatch.setattr(Path, "read_bytes", checkout_bytes)
+    checkout_newline["value"] = b"\n"
+    lf_archive = build_extension_archive(REPO_ROOT, tmp_path / "lf")
+    checkout_newline["value"] = b"\r\n"
+    crlf_archive = build_extension_archive(REPO_ROOT, tmp_path / "crlf")
+
+    assert lf_archive.read_bytes() == crlf_archive.read_bytes()
+    with zipfile.ZipFile(lf_archive, "r") as bundle:
+        assert all(b"\r" not in bundle.read(name) for name in ARCHIVE_FILES)
