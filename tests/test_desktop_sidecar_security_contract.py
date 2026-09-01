@@ -31,8 +31,23 @@ def test_desktop_has_no_fixed_port_or_existing_process_reuse():
     assert "JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE" in rust
     assert "TerminateJobObject" in rust
     assert "tauri::WindowEvent::Destroyed" in rust
+    assert "tauri::RunEvent::ExitRequested" in rust
     assert 'label == "main"' in rust
     assert "app.exit(0)" in rust
+
+
+def test_native_window_close_preserves_draft_confirmation_before_destroy():
+    renderer = read("apps/desktop/src/App.tsx")
+
+    assert 'import { isTauri } from "@tauri-apps/api/core"' in renderer
+    assert "if (!isTauri()) return" in renderer
+    assert 'import { getCurrentWindow } from "@tauri-apps/api/window"' in renderer
+    assert ".onCloseRequested(async (event) =>" in renderer
+    assert "event.preventDefault()" in renderer
+    assert 'setPendingAction({ kind: "close" })' in renderer
+    assert 'kind: "close"' in renderer
+    assert "await getCurrentWindow().destroy()" in renderer
+    assert "Discard changes and close?" in renderer
 
 
 def test_renderer_uses_authenticated_runtime_and_memory_only_session():

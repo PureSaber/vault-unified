@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isTauri } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   api,
   clearToken,
@@ -21,7 +23,10 @@ import ConfirmDialog from "./components/ConfirmDialog";
 
 type TopPage = "passwords" | "security" | "connections" | "settings";
 type Page = TopPage | "editor" | "conflicts";
-type PendingAction = { kind: "navigate"; page: Page } | { kind: "lock" };
+type PendingAction =
+  | { kind: "navigate"; page: Page }
+  | { kind: "lock" }
+  | { kind: "close" };
 
 const DEFAULT_IDLE_SECONDS = 15 * 60;
 const CONFLICT_POLL_MS = 60_000;
@@ -236,6 +241,41 @@ function AppShell() {
     return () => window.removeEventListener("beforeunload", guardReload);
   }, [editorDirty, editorSaving]);
 
+  useEffect(() => {
+    if (!isTauri()) return;
+
+    let active = true;
+    let unlisten: (() => void) | undefined;
+
+    void getCurrentWindow()
+      .onCloseRequested(async (event) => {
+        if (editorSaving) {
+          event.preventDefault();
+          showToast(
+            locale === "zh" ? "正在保存，请等待完成后再关闭" : "Save in progress; wait before closing",
+            "info",
+          );
+          return;
+        }
+        if (editorDirty) {
+          event.preventDefault();
+          setPendingAction({ kind: "close" });
+        }
+      })
+      .then((stopListening) => {
+        if (active) unlisten = stopListening;
+        else stopListening();
+      })
+      .catch(() => {
+        // Renderer-only tests do not provide the Tauri window runtime.
+      });
+
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [editorDirty, editorSaving, locale, showToast]);
+
   function requestNavigation(target: Page, force = false) {
     if (editorSaving && !force) {
       showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info");
@@ -263,8 +303,19 @@ function AppShell() {
     void performLock();
   }
 
-  function confirmDiscard() {
+  async function confirmDiscard() {
     const action = pendingAction;
+    if (action?.kind === "close") {
+      try {
+        await getCurrentWindow().destroy();
+      } catch {
+        showToast(
+          locale === "zh" ? "客户端未能关闭，草稿仍保留在当前窗口中" : "The app could not close; the draft remains in this window",
+          "error",
+        );
+      }
+      return;
+    }
     setPendingAction(null);
     setEditorDirty(false);
     setEditEntry(null);
@@ -378,12 +429,16 @@ function AppShell() {
       <ConfirmDialog
         open={pendingAction !== null}
         idPrefix="unsaved-draft-confirm"
-        title={locale === "zh" ? "放弃未保存的更改？" : "Discard unsaved changes?"}
+        title={pendingAction?.kind === "close"
+          ? (locale === "zh" ? "放弃更改并关闭？" : "Discard changes and close?")
+          : (locale === "zh" ? "放弃未保存的更改？" : "Discard unsaved changes?")}
         message={locale === "zh" ? "未保存的字段、附件更改和历史恢复草稿都会被清除，保险库不会发生写入。" : "Unsaved fields, attachment changes, and history restore drafts will be cleared without writing to the vault."}
-        confirmLabel={locale === "zh" ? "放弃更改" : "Discard changes"}
+        confirmLabel={pendingAction?.kind === "close"
+          ? (locale === "zh" ? "放弃并关闭" : "Discard and close")
+          : (locale === "zh" ? "放弃更改" : "Discard changes")}
         cancelLabel={locale === "zh" ? "继续编辑" : "Keep editing"}
         variant="danger"
-        onConfirm={confirmDiscard}
+        onConfirm={() => void confirmDiscard()}
         onCancel={() => setPendingAction(null)}
       />
     </div>
