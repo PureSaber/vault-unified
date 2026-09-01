@@ -24,15 +24,26 @@ test("shows conclusions first and completes backup verification with a cancellab
   await expect(status).toContainText("Last successful backupNo backup yet");
   await expect(status).toContainText("Latest backup errorNone");
   await expect(status).toContainText("Recovery kitNot created");
+  await expect(status).toContainText("Automatic-backup locationNot set");
+  await expect(status).toContainText("Next automatic backupNot enabled");
+  await expect(page.getByText("Settings are saved; automatic backups are currently off.")).toBeVisible();
+  const oneTimeBackup = page.getByLabel("One-time backup and restore");
+  await expect(oneTimeBackup).toBeVisible();
+  await expect(oneTimeBackup).toContainText("without remembering this temporary folder or enabling the automatic schedule above");
 
   await page.getByLabel("Create encrypted backups while the app is unlocked").check();
   await page.getByRole("button", { name: "Enter path manually (advanced)" }).first().click();
-  await page.getByLabel("Backup folder").fill(`C:\\isolated-vault-tests\\${testData.runId}\\safe-backups`);
-  await page.getByRole("button", { name: "Save personal settings" }).click();
-  await page.getByRole("button", { name: "Test backup location" }).click();
+  await page.getByLabel("Automatic-backup folder").fill(`C:\\isolated-vault-tests\\${testData.runId}\\safe-backups`);
+  await expect(page.getByText("Changes not saved")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back up to this folder now" })).toBeDisabled();
+  await page.getByRole("button", { name: "Test automatic-backup location" }).click();
   await expect(page.getByText(/Writable, free space/)).toBeVisible();
+  await page.getByRole("button", { name: "Save auto-lock and automatic-backup settings" }).click();
+  await expect(page.getByText("Automatic-backup settings are saved and enabled.")).toBeVisible();
+  await expect(status).toContainText(`Automatic-backup locationC:\\isolated-vault-tests\\${testData.runId}\\safe-backups`);
+  await expect(status).not.toContainText("Next automatic backupNot enabled");
 
-  await page.getByRole("button", { name: "Back up now" }).click();
+  await page.getByRole("button", { name: "Back up to this folder now" }).click();
   await expect(status).not.toContainText("No backup yet");
   expect(sidecar.backupWrites.create).toBe(1);
 

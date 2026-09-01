@@ -22,6 +22,13 @@ const defaults: PersonalSettings = {
   },
 };
 
+function sameEditableSettings(left: PersonalSettings, right: PersonalSettings) {
+  return left.lock_after_seconds === right.lock_after_seconds
+    && left.auto_backup_enabled === right.auto_backup_enabled
+    && left.auto_backup_interval_hours === right.auto_backup_interval_hours
+    && left.auto_backup_destination === right.auto_backup_destination;
+}
+
 function notifyStatusChanged() {
   window.dispatchEvent(new Event("vault-security-status-changed"));
 }
@@ -41,6 +48,7 @@ export default function PersonalCenter() {
   const { showToast } = useToast();
   const zh = locale === "zh";
   const [settings, setSettings] = useState<PersonalSettings>(defaults);
+  const [savedSettings, setSavedSettings] = useState<PersonalSettings>(defaults);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
@@ -52,13 +60,20 @@ export default function PersonalCenter() {
 
   useEffect(() => {
     api.getPersonalSettings()
-      .then(setSettings)
+      .then((loaded) => {
+        setSettings(loaded);
+        setSavedSettings(loaded);
+      })
       .catch((error) => showToast(String(error).replace(/^Error:\s*/, ""), "error"))
       .finally(() => setLoading(false));
   }, [showToast]);
 
   async function saveSettings(e: React.FormEvent) {
     e.preventDefault();
+    if (settings.auto_backup_enabled && !settings.auto_backup_destination.trim()) {
+      setDestinationResult(zh ? "请选择自动备份文件夹，然后再保存并启用。" : "Choose an automatic-backup folder before saving and enabling it.");
+      return;
+    }
     setSaving(true);
     try {
       const saved = await api.savePersonalSettings({
@@ -68,9 +83,10 @@ export default function PersonalCenter() {
         auto_backup_destination: settings.auto_backup_destination,
       });
       setSettings(saved);
+      setSavedSettings(saved);
       window.dispatchEvent(new CustomEvent("vault-personal-settings-changed", { detail: saved }));
       notifyStatusChanged();
-      showToast(zh ? "个人安全设置已保存" : "Personal security settings saved");
+      showToast(zh ? "自动锁定与自动备份设置已保存" : "Auto-lock and automatic-backup settings saved");
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
     } finally {
@@ -163,11 +179,13 @@ export default function PersonalCenter() {
 
   if (loading) return <div className="loading-state">{zh ? "加载个人设置…" : "Loading personal settings…"}</div>;
 
+  const settingsDirty = !sameEditableSettings(settings, savedSettings);
+
   return (
     <>
       <section className="settings-section" aria-labelledby="personal-security-heading">
         <h3 id="personal-security-heading" className="section-title">
-          {zh ? "自动锁定与自动备份" : "Auto-lock and automatic backup"}
+          {zh ? "自动锁定与定时备份" : "Auto-lock and scheduled backups"}
         </h3>
         <form onSubmit={saveSettings}>
           <div className="field">
@@ -186,6 +204,12 @@ export default function PersonalCenter() {
               <option value={3600}>{zh ? "60 分钟" : "60 minutes"}</option>
             </select>
           </div>
+          <h4>{zh ? "自动备份" : "Automatic backups"}</h4>
+          <p className="field-hint">
+            {zh
+              ? "这里的文件夹和间隔会在保存后记住，并按计划继续备份。页面下方的一次性备份不会启用此计划。"
+              : "This folder and interval are remembered after you save, then used for scheduled backups. The one-time backup below does not enable this schedule."}
+          </p>
           <label className="checkbox-field">
             <input
               type="checkbox"
@@ -218,25 +242,45 @@ export default function PersonalCenter() {
               </div>
               <PathPicker
                 id="auto-backup-destination"
-                label={zh ? "备份目录" : "Backup folder"}
+                label={zh ? "自动备份文件夹" : "Automatic-backup folder"}
                 mode="directory"
                 value={settings.auto_backup_destination}
-                onChange={(auto_backup_destination) => setSettings({ ...settings, auto_backup_destination })}
+                onChange={(auto_backup_destination) => {
+                  setSettings({ ...settings, auto_backup_destination });
+                  setDestinationResult("");
+                }}
                 placeholder={zh ? "例如 D:\\OneDrive\\VaultBackups" : "For example D:\\OneDrive\\VaultBackups"}
+                required
               />
               <div className="button-row">
                 <button className="secondary" type="button" onClick={() => void testDestination()} disabled={backupBusy}>
-                  {zh ? "测试备份位置" : "Test backup location"}
+                  {zh ? "测试自动备份位置" : "Test automatic-backup location"}
                 </button>
-                <button className="secondary" type="button" onClick={() => void retryBackup()} disabled={backupBusy}>
-                  {settings.backup_status?.last_error_summary ? (zh ? "立即重试" : "Retry now") : (zh ? "立即备份" : "Back up now")}
+                <button className="secondary" type="button" onClick={() => void retryBackup()} disabled={backupBusy || settingsDirty}>
+                  {settings.backup_status?.last_error_summary ? (zh ? "立即重试" : "Retry now") : (zh ? "立即在此位置备份" : "Back up to this folder now")}
                 </button>
               </div>
               {destinationResult && <p className="field-hint" role="status">{destinationResult}</p>}
             </>
           )}
-          <button className="secondary" type="submit" disabled={saving}>
-            {saving ? (zh ? "保存中…" : "Saving…") : (zh ? "保存个人设置" : "Save personal settings")}
+          {settingsDirty ? (
+            <div className="context-notice context-notice-warning" role="status">
+              <span>
+                <strong>{zh ? "更改尚未保存" : "Changes not saved"}</strong><br />
+                {zh ? "自动备份只会在保存后启用或更新。" : "Automatic backups are enabled or updated only after you save."}
+              </span>
+            </div>
+          ) : (
+            <div className="success" role="status">
+              {settings.auto_backup_enabled
+                ? (zh ? "自动备份设置已保存并启用。" : "Automatic-backup settings are saved and enabled.")
+                : (zh ? "设置已保存；自动备份目前未启用。" : "Settings are saved; automatic backups are currently off.")}
+            </div>
+          )}
+          <button className="primary" type="submit" disabled={saving || !settingsDirty}>
+            {saving
+              ? (zh ? "保存中…" : "Saving…")
+              : (zh ? "保存自动锁定与自动备份设置" : "Save auto-lock and automatic-backup settings")}
           </button>
         </form>
       </section>
