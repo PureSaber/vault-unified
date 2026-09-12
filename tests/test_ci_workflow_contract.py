@@ -165,5 +165,17 @@ def test_release_assets_are_smoke_tested_and_reverified_after_publication():
         "NSIS install / launch / uninstall",
         "MSI install / launch / uninstall",
         "Get-AuthenticodeSignature",
+        "Wait-ForVaultUninstalled",
     ):
         assert required in validator
+
+
+def test_release_validator_rejects_incomplete_installer_cleanup():
+    validator = RELEASE_VALIDATOR.read_text(encoding="utf-8")
+
+    assert "function Get-VaultUninstallEntries" in validator
+    assert "function Wait-ForVaultUninstalled" in validator
+    assert validator.count("Wait-ForVaultUninstalled -InstallDirectory") == 2
+    assert "install_directory_exists=" in validator
+    assert "registrations=" in validator
+    assert "running_processes=" in validator
