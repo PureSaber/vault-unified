@@ -48,6 +48,24 @@ function Convert-RegistryPath {
     return $text.Trim('"')
 }
 
+function Get-VaultUninstallEntries {
+    $registryRoots = @(
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+    $entries = @()
+    foreach ($root in $registryRoots) {
+        if (-not (Test-Path $root)) { continue }
+        foreach ($key in Get-ChildItem -Path $root -ErrorAction SilentlyContinue) {
+            $item = Get-ItemProperty -Path $key.PSPath -ErrorAction SilentlyContinue
+            if (-not $item -or $item.DisplayName -notlike "Vault Unified*") { continue }
+            $entries += $item
+        }
+    }
+    return $entries
+}
+
 function Get-VaultInstallExecutable {
     param([switch]$DeepSearch)
     $registryRoots = @(
@@ -143,6 +161,44 @@ function Wait-ForVaultExecutable {
         Start-Sleep -Seconds 1
     }
     throw "Vault Unified executable was not registered after installation"
+}
+
+function Wait-ForVaultUninstalled {
+    param([string]$InstallDirectory, [int]$Seconds = 45)
+    $normalized = [IO.Path]::GetFullPath($InstallDirectory).TrimEnd(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    )
+    if (-not $normalized -or $normalized -eq [IO.Path]::GetPathRoot($normalized)) {
+        throw "Refusing to validate an unsafe installer cleanup path: $InstallDirectory"
+    }
+    $prefix = $normalized + [IO.Path]::DirectorySeparatorChar
+    $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+    do {
+        $registrations = @(Get-VaultUninstallEntries)
+        $running = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+            $path = [string]$_.ExecutablePath
+            $path -and (
+                $path.Equals($normalized, [StringComparison]::OrdinalIgnoreCase) -or
+                $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+            )
+        })
+        $directoryExists = Test-Path -LiteralPath $normalized
+        if (-not $directoryExists -and $registrations.Count -eq 0 -and $running.Count -eq 0) {
+            return
+        }
+        Start-Sleep -Milliseconds 250
+    } while ([DateTime]::UtcNow -lt $deadline)
+
+    $registrationNames = ($registrations | ForEach-Object {
+        "$($_.DisplayName) $($_.DisplayVersion)"
+    }) -join ", "
+    $processNames = ($running | ForEach-Object { "$($_.Name):$($_.ProcessId)" }) -join ", "
+    throw (
+        "Vault Unified uninstall cleanup did not complete: " +
+        "install_directory_exists=$directoryExists; " +
+        "registrations=$registrationNames; running_processes=$processNames"
+    )
 }
 
 function Stop-ProcessTree {
@@ -342,7 +398,7 @@ if ($SkipInstallerLifecycle) {
     if (-not $uninstaller) { throw "NSIS uninstaller was not found beside the installed application" }
     $nsisUninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -PassThru -Wait
     if ($nsisUninstall.ExitCode -ne 0) { throw "NSIS silent uninstall failed with $($nsisUninstall.ExitCode)" }
-    Start-Sleep -Seconds 3
+    Wait-ForVaultUninstalled -InstallDirectory $nsisApp.DirectoryName
     $nsisLifecycleStatus = "passed"
 
     Write-Host "=== MSI install / launch / uninstall smoke ==="
@@ -352,6 +408,7 @@ if ($SkipInstallerLifecycle) {
     Launch-And-StopInstalledApp -App $msiApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-msi-app-data")
     $msiUninstall = Start-Process -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
     if (@(0, 3010) -notcontains $msiUninstall.ExitCode) { throw "MSI uninstall failed with $($msiUninstall.ExitCode)" }
+    Wait-ForVaultUninstalled -InstallDirectory $msiApp.DirectoryName
     $msiLifecycleStatus = "passed"
 }
 
