@@ -2,7 +2,7 @@
 
 Vault Unified 是面向个人使用的 Windows 密码管理器。密码加密保存在这台设备上；你可以添加、搜索和复制密码，设置自动加密备份，并按需连接已有的外部密码服务。
 
-**v1.3.0** — 当前版源代码。正式安装包以 GitHub Releases 页面为准；所有发布门槛完成前不会创建正式 tag。
+**v1.3.0 已于 2026 年 9 月 12 日发布**。[该版本下载页](https://github.com/PureSaber/vault-unified/releases/tag/v1.3.0)提供 Windows EXE、MSI、浏览器扩展 ZIP 和校验清单。源码提交、CI #134、安装包验证结果及 SHA-256 见 [v1.3.0 发布记录](docs/release-record-v1.3.0.md)。
 
 ## 开始使用
 
@@ -14,6 +14,8 @@ Vault Unified 是面向个人使用的 Windows 密码管理器。密码加密保
 - `*.msi`：适合偏好 Windows Installer 的用户。
 
 Vault Unified 当前正式支持 Windows。请只从本仓库的 GitHub Releases 下载，并保留安装包直到确认新版本能正常解锁和备份。
+
+v1.3.0 的 EXE 和 MSI 未进行 Authenticode 代码签名。下载后请核对 [发布记录](docs/release-record-v1.3.0.md)中的文件名、字节数和 SHA-256；哈希核对不等于发布者签名验证。
 
 ### 2. 创建保险库
 
@@ -113,9 +115,10 @@ CLI、外部适配器、存储格式、加密实现和后台服务属于高级�
 - 贡献指南：[CONTRIBUTING.md](CONTRIBUTING.md)
 - 行为准则：[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 - 安全政策：[SECURITY.md](SECURITY.md)
-- v1.3 发布门槛：[docs/release-readiness-v1.3.md](docs/release-readiness-v1.3.md)
+- v1.3.0 发布记录：[docs/release-record-v1.3.0.md](docs/release-record-v1.3.0.md)
+- v1.3 发布验收清单与待补证据：[docs/release-readiness-v1.3.md](docs/release-readiness-v1.3.md)
 - 真实新手测试计划：[docs/usability-test-plan.md](docs/usability-test-plan.md)
 
-自动化测试不能替代真实新手研究。v1.3.0 的最终发布必须由仓库所有者审阅真实新手体验结果；在此之前，项目不会声称已经证明普通用户可用。
+v1.3.0 已发布，但已发布不等于全部验收已获批准。当前发布记录尚未提供真实新手测试结果及仓库所有者的审阅记录，部分完整安装态流程也缺少验证证据。自动化测试不能替代真实新手研究，项目不据此声称已经证明普通用户可用；后续正式版本仍须满足发布验收与人工批准要求。
 
 GitHub: https://github.com/PureSaber/vault-unified
