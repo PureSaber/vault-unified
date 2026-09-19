@@ -61,6 +61,27 @@ class BrowserFillIn(BaseModel):
     url: str = Field(min_length=1, max_length=8_192)
 
 
+class BrowserPairIn(BaseModel):
+    remember_connection: bool = False
+
+
+class BrowserSaveIn(BaseModel):
+    url: str = Field(min_length=1, max_length=8_192)
+    entry_id: str | None = Field(default=None, min_length=1, max_length=128)
+    title: str = Field(min_length=1, max_length=500)
+    username: str = Field(max_length=1_024)
+    password: str = Field(min_length=1, max_length=4_096, repr=False)
+
+
+class BrowserSaveApplyIn(BrowserSaveIn):
+    preview_token: str = Field(min_length=32, max_length=128, repr=False)
+    confirm_save: bool = False
+
+
+class BrowserSaveCancelIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=128, repr=False)
+
+
 class UnlockResponse(BaseModel):
     token: str
     message: str = "unlocked"

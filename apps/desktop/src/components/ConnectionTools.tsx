@@ -79,7 +79,12 @@ export default function ConnectionTools() {
       <div className="connection-card-grid">
         <article className="connection-card">
           <h4>{zh ? "浏览器扩展" : "Browser extension"}</h4>
-          <p>{zh ? "在支持的网站上选择账号并填充登录表单。" : "Choose an account to fill a sign-in form on supported sites."}</p>
+          <p>{zh ? "在支持的网站上填充账号，读取或手动输入密码，核对后保存或更新。" : "Fill accounts on supported sites, then review and save new or updated passwords."}</p>
+          <p className="field-hint">
+            {zh
+              ? "新建的 v3 保险库可在两端保持运行时记住连接，解锁后无需再次输入配对码（最长 12 小时）。重启任一端后需重新配对。锁定后不能读取或保存密码。"
+              : "For v3 vaults, remember the connection while both apps stay open (up to 12 hours). Unlock to reconnect; restarting either app requires pairing again. Locked vaults cannot read or save passwords."}
+          </p>
           <p className="field-hint">
             {zh
               ? "下载扩展 ZIP，解压后在 Chrome/Edge 的开发者模式中加载该目录。"
@@ -96,6 +101,9 @@ export default function ConnectionTools() {
                   ? (zh ? "重新生成" : "Generate again")
                   : (zh ? "生成一次性配对码" : "Create one-time pairing code")}
             </button>
+            {!pairing && <button className="secondary" type="button" onClick={() => void cancelPairing()} disabled={busy}>
+              {zh ? "解除浏览器连接" : "Disconnect browser"}
+            </button>}
           </div>
           {pairing && (
             <div className="result-panel" aria-live="polite">

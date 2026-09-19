@@ -9,6 +9,8 @@ import socket
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
 
 from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer
 from vault_unified.env import load_env
@@ -69,6 +71,7 @@ def create_app(
             "X-Vault-Client",
             "X-Vault-Browser-Pairing",
             "X-Vault-Browser-Token",
+            "X-Vault-Browser-Connection",
         ],
     )
     app.include_router(auth.router, prefix="/api")
@@ -79,6 +82,12 @@ def create_app(
     app.include_router(personal.router, prefix="/api")
     app.include_router(sync.router, prefix="/api")
     app.include_router(transfer.router, prefix="/api")
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/browser/"):
+            return JSONResponse({"detail": "Invalid browser request"}, status_code=422)
+        return await request_validation_exception_handler(request, exc)
 
     @app.get("/api/health", include_in_schema=False)
     def health() -> dict[str, str]:
@@ -103,10 +112,20 @@ def create_app(
         )
         browser_token = (
             request.method in {"GET", "POST"}
-            and request.url.path in {"/api/browser/matches", "/api/browser/fill"}
+            and request.url.path in {
+                "/api/browser/matches", "/api/browser/fill", "/api/browser/status",
+                "/api/browser/generate", "/api/browser/save/preview",
+                "/api/browser/save/apply", "/api/browser/save/cancel",
+                "/api/browser/disconnect",
+            }
             and bool(request.headers.get("x-vault-browser-token"))
         )
-        if browser_pair or browser_token:
+        browser_connection = (
+            request.method == "POST"
+            and request.url.path in {"/api/browser/resume", "/api/browser/disconnect"}
+            and bool(request.headers.get("x-vault-browser-connection"))
+        )
+        if browser_pair or browser_token or browser_connection:
             return await call_next(request)
         if not provided or not hmac.compare_digest(provided, secret):
             return JSONResponse(
