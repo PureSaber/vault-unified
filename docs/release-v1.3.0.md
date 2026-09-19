@@ -1,5 +1,9 @@
 # Vault Unified v1.3.0
 
+**Published:** 2026-09-12 13:01:10 UTC; not a draft or prerelease. The published source is [`76c610a88409e8845eda5c613112c2dcea09e2a0`](https://github.com/PureSaber/vault-unified/commit/76c610a88409e8845eda5c613112c2dcea09e2a0), resolved through the annotated `v1.3.0` tag. [CI #134](https://github.com/PureSaber/vault-unified/actions/runs/34694677987) completed successfully for this exact source, including installer smoke validation and post-publication asset verification.
+
+This is a post-publication documentation correction, not a new build or a change to the tag or published assets. The existing owner approval, manual acceptance, automated results and coverage limitations are recorded separately in the [release record](https://github.com/PureSaber/vault-unified/blob/main/docs/release-record-v1.3.0.md).
+
 Vault Unified v1.3.0 is a productization and reliability release for the existing Windows password manager. It freezes feature expansion and concentrates on atomic data changes, beginner-first navigation, complete import/sync/backup workflows, a deliverable browser extension, realistic generated-data journeys, and open-source governance.
 
 ## Beginner-first Windows experience
@@ -40,7 +44,22 @@ Vault Unified v1.3.0 is a productization and reliability release for the existin
 - Failure screenshots and traces are eligible for upload only after generated-secret marker scanning.
 - The repository now includes MIT licensing, security and contribution policies, a code of conduct, issue forms, privacy boundaries, and explicit release/usability gates.
 
-Automated checks do not prove that a real novice can use the product. Publication remains blocked until the repository owner reviews sanitized results from actual novice sessions.
+The [repository owner explicitly confirmed the real-novice results review passed on 2026-09-12](https://github.com/PureSaber/vault-unified/issues/30#issuecomment-5645979059), before the release tag was created. Participant count, underlying study results, percentages and SUS scores were not supplied to Codex and are not claimed. Automated checks and the separate guided owner walkthrough do not substitute for independent novice research. Future releases require their own applicable checks and owner decision.
+
+## Published assets and validation
+
+| Published filename | Bytes | Result recorded by CI #134 |
+| --- | ---: | --- |
+| `Vault.Unified_1.3.0_x64-setup.exe` | 24,899,953 | NSIS install / launch / stop / uninstall and cleanup: passed; Authenticode: `NotSigned` |
+| `Vault.Unified_1.3.0_x64_en-US.msi` | 25,604,096 | MSI install / launch / stop / uninstall and cleanup: passed; Authenticode: `NotSigned` |
+| `Vault-Unified-Browser-Extension-v1.3.0.zip` | 11,971 | Structure, permissions and version: passed |
+| `release-manifest-v1.3.0.json` | 1,337 | Published provenance and validation record; its own size and digest are reported by the Release API |
+
+The [release job](https://github.com/PureSaber/vault-unified/actions/runs/34694677987/job/103556441042) ran `pwsh -NoProfile -File scripts/validate-desktop-release.ps1` without `-SkipInstallerLifecycle`. Its installed-application smoke test checked that the process remained running, stopped it, and verified uninstall cleanup. It did **not** drive the installed renderer through create-use-lock. The generated-data API smoke used the packaged sidecar separately; it is not proof of a complete installed-UI journey.
+
+CI also downloaded the four assets into a fresh directory, checked the three payloads against the downloaded manifest, revalidated the extension ZIP, and resolved the tag back to the built source. All four SHA-256 values, evidence links and limitations are in the [release record](https://github.com/PureSaber/vault-unified/blob/main/docs/release-record-v1.3.0.md). The manifest's own digest is not self-verified by its contents.
+
+The manifest retains build filenames beginning `Vault Unified_`; GitHub publishes the two installers as `Vault.Unified_` and retains the spaced names as labels. Use the mapping above when checking filenames; byte sizes and hashes must still match exactly. Both installers are unsigned. Hash verification does not constitute publisher-signature verification.
 
 ## Install and upgrade
 
@@ -63,4 +82,5 @@ The browser extension is a separate ZIP. Download it from the same release, extr
 - Windows is the supported desktop platform.
 - External-service workflows still depend on the selected provider, its local command-line client, and any provider account requirements.
 - The unpacked browser extension requires developer mode and deliberately refuses page structures it cannot fill safely.
-- Real novice usability results and owner sign-off are release gates, not claims supplied by automation.
+- Installed NSIS product paths and browser pairing/fill/refusal/lock-revocation have separate guided manual acceptance in issue #30; the narrow installer smoke alone does not establish them. MSI-specific lifecycle checks reused the common product-path evidence at the owner's request.
+- Packaged failed-restore byte preservation is not established by the recorded installer smoke. Owner approval is recorded, while unprovided novice-study metrics remain unclaimed.

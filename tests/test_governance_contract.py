@@ -80,15 +80,32 @@ def test_feature_freeze_and_human_owner_gates_remain_explicit() -> None:
     assert owner_gate in pull_request
     assert owner_gate in _read("docs/usability-test-plan.md")
     assert owner_gate in _read("docs/usability-test-results-template.md")
-    assert owner_gate in _read("docs/release-readiness-v1.3.md")
     assert "- [x] Repository owner reviewed real novice usability results" not in "\n".join(
         (
             pull_request,
             _read("docs/usability-test-plan.md"),
             _read("docs/usability-test-results-template.md"),
-            _read("docs/release-readiness-v1.3.md"),
         )
     )
+
+    # Templates must not pre-approve a release. A historical release record may
+    # record the owner's actual decision, with a dated, inspectable source.
+    readiness = _read("docs/release-readiness-v1.3.md")
+    human_section = readiness.split("## Human novice usability gate\n", 1)[1].split(
+        "\n## ", 1
+    )[0]
+    gate = re.search(
+        r"^- \[([ x])\] Repository owner reviewed real novice usability results$",
+        human_section,
+        re.MULTILINE,
+    )
+    assert gate is not None
+    if gate.group(1) == "x":
+        assert re.search(r"Owner decision:.*\d{4}-\d{2}-\d{2}", human_section)
+        assert re.search(
+            r"https://github\.com/PureSaber/vault-unified/issues/\d+#issuecomment-\d+",
+            human_section,
+        )
 
 
 def test_readme_is_installer_first_and_defers_developer_setup() -> None:
@@ -123,6 +140,8 @@ def test_new_governance_markdown_has_no_broken_relative_links() -> None:
         "docs/usability-test-plan.md",
         "docs/usability-test-results-template.md",
         "docs/release-readiness-v1.3.md",
+        "docs/release-record-v1.3.0.md",
+        "docs/release-v1.3.0.md",
     ]
     broken: list[str] = []
     for relative in documents:
