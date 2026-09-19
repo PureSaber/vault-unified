@@ -54,7 +54,8 @@ def test_release_version_is_consistent_across_build_surfaces() -> None:
     assert cargo_toml["package"]["version"] == EXPECTED_VERSION
     assert root_package is not None and root_package.group(1) == EXPECTED_VERSION
     assert tauri["version"] == EXPECTED_VERSION
-    assert f"**v{EXPECTED_VERSION}** — 当前版" in readme
+    readme_version = re.search(r"^\*\*v(\d+\.\d+\.\d+)\*\*", readme, re.MULTILINE)
+    assert readme_version is not None and readme_version.group(1) == EXPECTED_VERSION
     assert release_notes.startswith(f"# Vault Unified v{EXPECTED_VERSION}\n")
 
 

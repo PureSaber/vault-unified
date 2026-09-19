@@ -2,7 +2,7 @@
 
 **Published:** 2026-09-12 13:01:10 UTC; not a draft or prerelease. The published source is [`76c610a88409e8845eda5c613112c2dcea09e2a0`](https://github.com/PureSaber/vault-unified/commit/76c610a88409e8845eda5c613112c2dcea09e2a0), resolved through the annotated `v1.3.0` tag. [CI #134](https://github.com/PureSaber/vault-unified/actions/runs/34694677987) completed successfully for this exact source, including installer smoke validation and post-publication asset verification.
 
-This is a post-publication documentation correction, not a new build or a change to the tag or published assets. Publication is not evidence that every release gate was satisfied; outstanding evidence is listed below and in the [release record](https://github.com/PureSaber/vault-unified/blob/main/docs/release-record-v1.3.0.md).
+This is a post-publication documentation correction, not a new build or a change to the tag or published assets. The existing owner approval, manual acceptance, automated results and coverage limitations are recorded separately in the [release record](https://github.com/PureSaber/vault-unified/blob/main/docs/release-record-v1.3.0.md).
 
 Vault Unified v1.3.0 is a productization and reliability release for the existing Windows password manager. It freezes feature expansion and concentrates on atomic data changes, beginner-first navigation, complete import/sync/backup workflows, a deliverable browser extension, realistic generated-data journeys, and open-source governance.
 
@@ -44,7 +44,7 @@ Vault Unified v1.3.0 is a productization and reliability release for the existin
 - Failure screenshots and traces are eligible for upload only after generated-secret marker scanning.
 - The repository now includes MIT licensing, security and contribution policies, a code of conduct, issue forms, privacy boundaries, and explicit release/usability gates.
 
-v1.3.0 has already been published. Sanitized real-novice results and the owner's review decision are not recorded in the release checklist; the human gate remains unconfirmed. Automated checks do not prove real-novice usability or retroactively authorize the release. Future formal releases must still meet the documented automated, packaged, artifact and human gates.
+The [repository owner explicitly confirmed the real-novice results review passed on 2026-09-12](https://github.com/PureSaber/vault-unified/issues/30#issuecomment-5645979059), before the release tag was created. Participant count, underlying study results, percentages and SUS scores were not supplied to Codex and are not claimed. Automated checks and the separate guided owner walkthrough do not substitute for independent novice research. Future releases require their own applicable checks and owner decision.
 
 ## Published assets and validation
 
@@ -82,5 +82,5 @@ The browser extension is a separate ZIP. Download it from the same release, extr
 - Windows is the supported desktop platform.
 - External-service workflows still depend on the selected provider, its local command-line client, and any provider account requirements.
 - The unpacked browser extension requires developer mode and deliberately refuses page structures it cannot fill safely.
-- Complete installed-UI create-use-lock journeys, packaged failed-restore byte preservation, and packaged browser pairing/fill/lock-revocation are not established by the narrow installer smoke result.
-- Real novice usability results and owner sign-off remain unconfirmed in the release record; automation does not supply them.
+- Installed NSIS product paths and browser pairing/fill/refusal/lock-revocation have separate guided manual acceptance in issue #30; the narrow installer smoke alone does not establish them. MSI-specific lifecycle checks reused the common product-path evidence at the owner's request.
+- Packaged failed-restore byte preservation is not established by the recorded installer smoke. Owner approval is recorded, while unprovided novice-study metrics remain unclaimed.
