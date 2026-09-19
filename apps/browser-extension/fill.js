@@ -1,4 +1,7 @@
 function vaultUnifiedFillInputs(values) {
+  if (!values.pageOrigin || location.origin !== values.pageOrigin) {
+    return { username: false, password: false, reason: "page-changed" };
+  }
   const visible = (input) => input && input.offsetParent !== null && !input.disabled && !input.readOnly;
   const visiblePasswords = [...document.querySelectorAll('input[type="password"]')].filter(visible);
   const hasIframe = document.querySelector("iframe") !== null;
@@ -11,15 +14,24 @@ function vaultUnifiedFillInputs(values) {
       reason: hasIframe ? "iframe" : hasShadowRoot ? "shadow-dom" : "no-password-field",
     };
   }
-  if (visiblePasswords.length !== 1) {
+  const newPasswords = visiblePasswords.filter((input) => input.autocomplete.toLowerCase() === "new-password");
+  const useNew = values.newPassword || (values.capture && newPasswords.length > 0);
+  const targets = useNew ? newPasswords : visiblePasswords;
+  const oneForm = visiblePasswords.every((input) => input.form === visiblePasswords[0].form);
+  if (useNew && (targets.length === 0 || targets.length > 2 || !oneForm
+      || (visiblePasswords.length > 1 && !visiblePasswords[0].form)
+      || visiblePasswords.some((input) => !targets.includes(input) && input.autocomplete.toLowerCase() !== "current-password"))) {
+    return { username: false, password: false, reason: "ambiguous-password-fields" };
+  }
+  if (!useNew && visiblePasswords.length !== 1) {
     return { username: false, password: false, reason: "ambiguous-password-fields" };
   }
 
-  const password = visiblePasswords[0];
-  if ((password.autocomplete || "").toLowerCase() === "new-password") {
+  const password = targets[0];
+  if (!useNew && !values.capture && (password.autocomplete || "").toLowerCase() === "new-password") {
     return { username: false, password: false, reason: "new-password-flow" };
   }
-  if (!values.password) {
+  if (!values.capture && !values.password) {
     return { username: false, password: false, reason: "empty-password" };
   }
 
@@ -43,11 +55,19 @@ function vaultUnifiedFillInputs(values) {
       ? usernameCandidates[0]
       : null;
 
+  if (values.capture) {
+    if (!password.value) return { reason: "empty-password" };
+    if (targets.some((input) => input.value !== password.value)) {
+      return { reason: "ambiguous-password-fields" };
+    }
+    return { reason: "captured", username: username?.value || "", password: password.value };
+  }
+
   if (username && values.username) setValue(username, values.username);
-  setValue(password, values.password);
+  targets.forEach((input) => setValue(input, values.password));
   return {
     username: Boolean(username && values.username),
     password: true,
-    reason: "filled",
+    reason: useNew ? "new-filled" : "filled",
   };
 }

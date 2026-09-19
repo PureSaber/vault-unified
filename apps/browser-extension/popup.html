@@ -1,24 +1,42 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Vault Unified Fill</title>
-    <link rel="stylesheet" href="popup.css">
-  </head>
-  <body>
-    <main>
-      <h1>Vault Unified</h1>
-      <p id="status" role="status">Loading…</p>
-      <form id="pair-form" hidden>
-        <label>Local address<input id="sidecar-url" type="url" placeholder="http://127.0.0.1:12345" required></label>
-        <label>One-time pairing code<input id="pairing-code" type="password" required></label>
-        <button type="submit">Pair this browser</button>
-      </form>
-      <section id="matches" hidden aria-live="polite"></section>
-      <button id="forget" type="button" hidden>Forget pairing</button>
-    </main>
-    <script src="fill.js"></script>
-    <script src="popup.js"></script>
-  </body>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vault Unified</title><link rel="stylesheet" href="popup.css"></head>
+<body><main>
+  <header><h1>Vault Unified</h1><label class="language"><span class="sr-only" data-i18n="language">Language</span><select id="language"><option value="zh">中文</option><option value="en">English</option></select></label></header>
+  <p id="status" role="status">Loading…</p>
+  <form id="pair-form" hidden autocomplete="off">
+    <label><span data-i18n="address">Local address</span><input id="sidecar-url" type="url" placeholder="http://127.0.0.1:12345" required></label>
+    <label><span data-i18n="code">One-time pairing code</span><input id="pairing-code" type="password" required autocomplete="off"></label>
+    <label class="check"><input id="remember" type="checkbox" checked><span data-i18n="remember">Reconnect after unlocking while both apps stay open (up to 12 hours).</span></label>
+    <button type="submit" data-i18n="pair">Pair this browser</button>
+  </form>
+  <button id="retry" type="button" hidden data-i18n="retry">I've unlocked — reconnect</button>
+  <section id="accounts" hidden aria-labelledby="site">
+    <h2 id="site"></h2><div id="matches"></div>
+    <button id="keep-open" type="button" class="secondary" data-i18n="keepOpen">Open a window for registration / password changes</button>
+    <div class="button-row"><button id="capture" type="button" data-i18n="capture">Read login from this page</button><button id="add" type="button" class="secondary" data-i18n="add">Add manually</button></div>
+  </section>
+  <form id="save-form" hidden autocomplete="off" aria-labelledby="save-heading">
+    <h2 id="save-heading" data-i18n="saveHeading">Save an account</h2>
+    <fieldset id="draft-fields">
+      <legend class="sr-only" data-i18n="details">Account details</legend>
+      <label><span data-i18n="target">Save to</span><select id="save-target"></select></label>
+      <label><span data-i18n="title">Name</span><input id="save-title" required maxlength="500"></label>
+      <label><span data-i18n="username">Username or email</span><input id="save-username" maxlength="1024" autocomplete="off"></label>
+      <label><span data-i18n="password">Password</span><input id="save-password" type="password" required maxlength="4096" autocomplete="off"></label>
+      <div class="button-row"><button id="generate" type="button" class="secondary" data-i18n="generate">Generate password</button><button id="reveal" type="button" class="secondary" aria-pressed="false" data-i18n="show">Show password</button></div>
+      <button id="fill-new" type="button" class="secondary" data-i18n="fillNew">Fill registration / new-password fields</button>
+      <p class="hint" data-i18n="draftHint">Closing this window or locking clears the draft. Only confirm an update after the website accepts the password.</p>
+      <button id="review" type="submit" data-i18n="review">Review saving</button>
+    </fieldset>
+    <section id="save-preview" hidden aria-labelledby="review-heading">
+      <h3 id="review-heading" data-i18n="reviewHeading">Check before saving</h3><p id="preview-summary"></p><p id="preview-changes"></p>
+      <label class="check"><input id="confirmed" type="checkbox"><span data-i18n="confirmWorks">I've confirmed this password works on this website.</span></label>
+      <button id="confirm-save" type="button" data-i18n="confirmSave">Confirm save</button>
+      <button id="edit-draft" type="button" class="secondary" data-i18n="edit">Back to editing</button>
+    </section>
+    <button id="cancel-save" type="button" class="secondary" data-i18n="cancel">Cancel</button>
+  </form>
+  <button id="forget" type="button" class="secondary" hidden data-i18n="forget">Forget pairing</button>
+</main><script src="fill.js"></script><script src="popup.js"></script></body>
 </html>

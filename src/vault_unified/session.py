@@ -18,7 +18,7 @@ from vault_unified.keyring_store import get_master_password, save_master_passwor
 from vault_unified.manager import UnifiedVault
 from vault_unified.storage import atomic_write_bytes, require_clean_storage
 from vault_unified.v3_crypto import create_v3_file
-from vault_unified.vault_format import is_framed_vault_file
+from vault_unified.vault_format import V3Container, inspect_vault_format_file, is_framed_vault_file
 
 SESSION_IDLE_SECONDS = 30 * 60
 EMPTY_VAULT_PAYLOAD = {"version": 2, "entries": {}}
@@ -29,6 +29,7 @@ class VaultSession:
     token: str
     vault: UnifiedVault
     last_active: float
+    browser_binding: tuple[str, str, str] | None = None
 
     def touch(self) -> None:
         self.last_active = time.time()
@@ -43,10 +44,19 @@ class SessionManager:
 
     def _register(self, vault: UnifiedVault) -> tuple[str, UnifiedVault]:
         token = str(uuid4())
+        container = inspect_vault_format_file(vault.vault_path)
+        binding = None
+        if isinstance(container, V3Container):
+            binding = (
+                str(vault.vault_path.resolve()),
+                container.header.vault_id,
+                container.header.dek_id,
+            )
         self._sessions[token] = VaultSession(
             token=token,
             vault=vault,
             last_active=time.time(),
+            browser_binding=binding,
         )
         return token, vault
 
@@ -145,14 +155,26 @@ class SessionManager:
             self._remember(target, password)
         return self._register(vault)
 
-    def get(self, token: str) -> UnifiedVault:
+    def get(self, token: str, *, touch: bool = True) -> UnifiedVault:
         session = self._sessions.get(token)
         if not session or session.expired():
             if session:
                 del self._sessions[token]
             raise PermissionError("Session expired or invalid")
-        session.touch()
+        if touch:
+            session.touch()
         return session.vault
+
+    def browser_binding(self, token: str) -> tuple[str, str, str] | None:
+        self.get(token, touch=False)
+        return self._sessions[token].browser_binding
+
+    def browser_session(self, binding: tuple[str, str, str]) -> str:
+        """Find an already-unlocked vault; never unlock or extend idle time."""
+        for token, session in list(self._sessions.items()):
+            if not session.expired() and session.browser_binding == binding:
+                return token
+        raise PermissionError("Desktop vault is locked")
 
     def lock(self, token: str) -> None:
         self._sessions.pop(token, None)

@@ -352,7 +352,7 @@ def lock(token: str = Depends(get_token)) -> dict:
     from vault_unified.import_flow import import_flow_store
     from vault_unified.restore_preview import restore_preview_store
 
-    browser_pairings.cancel_session(token)
+    browser_pairings.cancel_session(token, forget=False)
     import_flow_store.clear_session(token)
     restore_preview_store.clear_scope(token)
     sessions.lock(token)

@@ -22,3 +22,21 @@ say why. It never treats an unsupported page as a successful fill.
 The pairing token is kept only in `chrome.storage.session`. Locking or exiting
 the desktop app, cancelling or regenerating pairing, or reaching the expiry
 time makes the old token unusable.
+
+## Account saving in development builds
+
+The development source includes account saving and optional same-run reconnection;
+the published v1.3.0 desktop does not provide these endpoints. Use a matching
+desktop build. For v3 vaults, a remembered connection can obtain fresh access after
+you unlock. Restarting either app, cancelling pairing, or 12 hours requires pairing
+again. No access or reconnection credential is stored persistently.
+
+Choose **Read login from this page** or **Add manually**, review the account and
+website, then confirm saving. Updates retain the previous password in history and
+preserve other fields. No external service is updated automatically.
+
+For registration/change-password tasks, first open the separate extension window.
+It keeps a draft in memory while you finish the website action. Generate and fill
+explicitly marked new-password fields, then confirm the website accepted the
+password before saving. Closing the window, locking, or leaving the original
+website clears the draft. No background form monitoring is used.
