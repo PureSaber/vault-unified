@@ -23,6 +23,11 @@ written to browser storage, logs, receipts, screenshots, or metadata. The
 backend retains validated entries only in an in-memory, five-minute preview
 bound to the current unlocked session. Locking clears that session state.
 
+Post-v1.3 source also recognizes Chrome/Edge CSV exports and offers a browser
+import entry point on Passwords. See [browser password import](browser-password-import.md)
+for accepted columns and the partial-update rules that preserve existing
+personal fields absent from browser exports.
+
 ## Deterministic duplicate rules
 
 Text comparison uses Unicode normalization. Titles and usernames are trimmed,
@@ -32,7 +37,7 @@ duplicate match.
 
 An **identical entry** has the same normalized title and username and the same:
 
-- password, with case and whitespace preserved;
+- password, with exact Unicode, case and whitespace preserved;
 - URL scheme/hostname plus case-sensitive path, query, and fragment;
 - notes, with case and whitespace preserved apart from line-ending normalization;
 - normalized tag set and entry type;

@@ -7,6 +7,7 @@ import ConfirmDialog from "../components/ConfirmDialog";
 
 interface Props {
   onAdd: () => void;
+  onImport: () => void;
   onEdit: (entry: Entry) => void;
 }
 
@@ -14,8 +15,8 @@ function maskPassword(hasPassword: boolean) {
   return hasPassword ? "••••••••" : "—";
 }
 
-export default function VaultList({ onAdd, onEdit }: Props) {
-  const { t } = useI18n();
+export default function VaultList({ onAdd, onEdit, onImport }: Props) {
+  const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [query, setQuery] = useState("");
@@ -165,9 +166,14 @@ export default function VaultList({ onAdd, onEdit }: Props) {
           <h2>{t("list.title")}</h2>
           <p className="field-hint">{t("list.subtitle")}</p>
         </div>
+        <div className="button-row">
+        <button className="secondary" type="button" onClick={onImport}>
+          {locale === "zh" ? "从浏览器导入" : "Import from browser"}
+        </button>
         <button className="primary" type="button" onClick={onAdd}>
           {t("list.addPassword")}
         </button>
+        </div>
       </div>
 
       <div className="list-toolbar">

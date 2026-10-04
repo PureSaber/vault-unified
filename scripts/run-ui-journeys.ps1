@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([string[]]$TestFiles = @())
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -38,7 +38,7 @@ $markers = @(
 $journeyExit = 1
 Push-Location $desktopRoot
 try {
-    & $playwright test
+    & $playwright test @TestFiles
     $journeyExit = $LASTEXITCODE
 }
 finally {

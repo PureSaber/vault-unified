@@ -20,9 +20,10 @@ import Connections from "./pages/Connections";
 import SecurityRecovery from "./pages/SecurityRecovery";
 import { useToast } from "./components/Toast";
 import ConfirmDialog from "./components/ConfirmDialog";
+import ImportWizard from "./components/ImportWizard";
 
 type TopPage = "passwords" | "security" | "connections" | "settings";
-type Page = TopPage | "editor" | "conflicts";
+type Page = TopPage | "editor" | "conflicts" | "import";
 type PendingAction =
   | { kind: "navigate"; page: Page }
   | { kind: "lock" }
@@ -385,6 +386,7 @@ function AppShell() {
             )}
             <VaultList
               onAdd={() => requestNavigation("editor")}
+              onImport={() => requestNavigation("import")}
               onEdit={(e) => {
                 setEditEntry(e);
                 setEditorDirty(false);
@@ -392,6 +394,15 @@ function AppShell() {
               }}
             />
           </>
+        )}
+        {page === "import" && (
+          <div className="card">
+            <button type="button" className="ghost page-back" onClick={() => requestNavigation("passwords")}>
+              {locale === "zh" ? "返回密码" : "Back to passwords"}
+            </button>
+            <h2>{locale === "zh" ? "从浏览器导入" : "Import from browser"}</h2>
+            <ImportWizard initialSource="chrome" onDone={() => requestNavigation("passwords")} />
+          </div>
         )}
         {page === "editor" && (
           <EntryForm
