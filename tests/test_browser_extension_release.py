@@ -30,7 +30,7 @@ def test_extension_manifest_permissions_are_frozen() -> None:
         (REPO_ROOT / "apps/browser-extension/manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["manifest_version"] == 3
-    assert manifest["permissions"] == ["activeTab", "scripting", "storage", "tabs"]
+    assert manifest["permissions"] == ["activeTab", "scripting", "storage", "tabs", "nativeMessaging"]
     assert manifest["host_permissions"] == [
         "http://127.0.0.1/*",
         "http://localhost/*",

@@ -7,6 +7,7 @@ use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::Manager;
+pub mod native_host;
 
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
@@ -296,6 +297,10 @@ fn python_exe(root: &Path) -> PathBuf {
 }
 
 fn apply_api_env(cmd: &mut Command) {
+    if let (Ok(executable), Some(directory)) = (std::env::current_exe(), native_host::directory()) {
+        cmd.env("VAULT_BROWSER_HOST_EXE", executable)
+            .env("VAULT_BROWSER_DISCOVERY_DIR", directory);
+    }
     // The child owns its socket and generates a fresh bootstrap secret. Never
     // inherit a static secret or a remotely bindable API configuration.
     cmd.env_remove("VAULT_API_BOOTSTRAP_SECRET")

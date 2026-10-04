@@ -17,6 +17,7 @@ except ImportError:
 ARCHIVE_FILES = (
     "INSTALL.md",
     "fill.js",
+    "identity.js",
     "manifest.json",
     "popup.css",
     "popup.html",

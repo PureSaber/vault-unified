@@ -1,6 +1,7 @@
 import { open as openExternal } from "@tauri-apps/plugin-shell";
 import { useEffect, useState } from "react";
-import { api, type BrowserPairing } from "../api/client";
+import { api, type BrowserPairing, type BrowserDevice } from "../api/client";
+import ConfirmDialog from "./ConfirmDialog";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 
@@ -12,6 +13,31 @@ export default function ConnectionTools() {
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [showMobileDetails, setShowMobileDetails] = useState(false);
+  const [devices, setDevices] = useState<BrowserDevice[]>([]);
+  const [deviceStorageAvailable, setDeviceStorageAvailable] = useState(true);
+  const [revokeTarget, setRevokeTarget] = useState<BrowserDevice | null>(null);
+
+  async function refreshDevices() {
+    try {
+      const result = await api.browserDevices();
+      setDevices(result.devices);
+      setDeviceStorageAvailable(result.available);
+    } catch { setDeviceStorageAvailable(false); }
+  }
+  useEffect(() => { void refreshDevices(); }, []);
+
+  async function revokeDevice() {
+    if (!revokeTarget) return;
+    setBusy(true);
+    try {
+      await api.revokeBrowserDevice(revokeTarget.id);
+      setRevokeTarget(null);
+      await refreshDevices();
+      showToast(zh ? "设备授权已撤销" : "Device authorization revoked");
+    } catch (error) {
+      showToast(String(error).replace(/^Error:\s*/, ""), "error");
+    } finally { setBusy(false); }
+  }
 
   async function createPairing() {
     setBusy(true);
@@ -82,8 +108,8 @@ export default function ConnectionTools() {
           <p>{zh ? "在支持的网站上填充账号，读取或手动输入密码，核对后保存或更新。" : "Fill accounts on supported sites, then review and save new or updated passwords."}</p>
           <p className="field-hint">
             {zh
-              ? "新建的 v3 保险库可在两端保持运行时记住连接，解锁后无需再次输入配对码（最长 12 小时）。重启任一端后需重新配对。锁定后不能读取或保存密码。"
-              : "For v3 vaults, remember the connection while both apps stay open (up to 12 hours). Unlock to reconnect; restarting either app requires pairing again. Locked vaults cannot read or save passwords."}
+              ? "配对时可授权浏览器在重启后恢复连接。保险库仍需在桌面端解锁；锁定后不能读取或保存密码。你可以在下方随时撤销设备授权。"
+              : "Authorize a browser when pairing to reconnect after restarting. Unlock the vault on the desktop first; locked vaults cannot read or save passwords. Revoke device authorization below at any time."}
           </p>
           <p className="field-hint">
             {zh
@@ -102,7 +128,7 @@ export default function ConnectionTools() {
                   : (zh ? "生成一次性配对码" : "Create one-time pairing code")}
             </button>
             {!pairing && <button className="secondary" type="button" onClick={() => void cancelPairing()} disabled={busy}>
-              {zh ? "解除浏览器连接" : "Disconnect browser"}
+              {zh ? "断开临时浏览器连接" : "Disconnect temporary browser session"}
             </button>}
           </div>
           {pairing && (
@@ -123,6 +149,18 @@ export default function ConnectionTools() {
               </div>
             </div>
           )}
+          <h4>{zh ? "已授权浏览器" : "Authorized browsers"}</h4>
+          {!deviceStorageAvailable && <p role="status">{zh ? "设备授权存储不可用，请检查 Windows 凭据管理器。临时配对仍可使用。" : "Device authorization storage is unavailable. Check Windows Credential Manager. Session-only pairing remains available."}</p>}
+          {deviceStorageAvailable && devices.length === 0 && <p>{zh ? "还没有长期授权的浏览器。" : "No persistently authorized browsers yet."}</p>}
+          <ul>{devices.map((device) => <li key={device.id}>
+            <strong>{device.name}</strong>
+            <span> · {new Date(device.created_at).toLocaleDateString(zh ? "zh-CN" : "en-US")}</span>
+            <details><summary>{zh ? "设备详情" : "Device details"}</summary><p className="path-break">{device.origin}</p></details>
+            <button className="danger" type="button" disabled={busy} onClick={() => setRevokeTarget(device)}>
+              {zh ? `撤销 ${device.name}` : `Revoke ${device.name}`}
+            </button>
+          </li>)}</ul>
+          <button className="secondary" type="button" disabled={busy} onClick={() => void refreshDevices()}>{zh ? "刷新设备列表" : "Refresh devices"}</button>
         </article>
         <article className="connection-card">
           <h4>{zh ? "在手机上使用" : "Use on a phone"}</h4>
@@ -139,6 +177,10 @@ export default function ConnectionTools() {
           )}
         </article>
       </div>
+      <ConfirmDialog open={revokeTarget !== null} title={zh ? "撤销浏览器授权？" : "Revoke browser authorization?"}
+        message={zh ? `撤销后，${revokeTarget?.name || "此浏览器"} 需要重新配对才能访问此保险库。` : `After revocation, ${revokeTarget?.name || "this browser"} must pair again to access this vault.`}
+        confirmLabel={zh ? "撤销授权" : "Revoke authorization"} variant="danger"
+        onConfirm={() => void revokeDevice()} onCancel={() => setRevokeTarget(null)} />
     </section>
   );
 }

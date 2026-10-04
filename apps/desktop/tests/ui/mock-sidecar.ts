@@ -65,6 +65,8 @@ function body(route: Route): Record<string, unknown> {
 }
 
 export class MockAuthenticatedSidecar {
+  browserDevices = [{ id: "generated-browser", name: "Generated Chrome", origin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop", created_at: "2026-10-05T00:00:00Z" }];
+  browserRevocations = 0;
   private vaultExists = false;
   private unlocked = false;
   private masterPassword = "";
@@ -346,6 +348,17 @@ export class MockAuthenticatedSidecar {
 
     if (method === "GET" && url.pathname === "/auth/status") {
       await this.respond(route, 200, { unlocked: true });
+      return;
+    }
+
+    if (method === "GET" && url.pathname === "/browser/devices") {
+      await this.respond(route, 200, { available: true, devices: clone(this.browserDevices) });
+      return;
+    }
+    if (method === "DELETE" && url.pathname.startsWith("/browser/devices/")) {
+      this.browserDevices = this.browserDevices.filter((device) => device.id !== decodeURIComponent(url.pathname.split("/").pop() || ""));
+      this.browserRevocations += 1;
+      await this.respond(route, 200, { revoked: true });
       return;
     }
 

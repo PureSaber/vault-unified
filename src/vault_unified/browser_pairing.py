@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from vault_unified.session import sessions
 from vault_unified.personal_data import PERSONAL_METADATA_KEY
+from vault_unified.browser_trust import browser_trust, BrowserTrustError
 
 
 PAIRING_TTL_SECONDS = 5 * 60
@@ -45,6 +46,7 @@ class _BrowserToken:
     origin: str
     expires_at: float
     connection_key: str = ""
+    device_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -76,8 +78,8 @@ class BrowserPairingStore:
 
     def issue(self, session_token: str) -> str:
         with self._lock:
-            # A new code deliberately invalidates any old extension connection
-            # associated with this vault, including remembered connections.
+            # Replace temporary sessions/codes. Persistent device identities are
+            # separately visible and revocable in the desktop device list.
             self.cancel_session(session_token)
             code = secrets.token_urlsafe(32)
             self._pending[code] = _PendingPairing(
@@ -124,6 +126,7 @@ class BrowserPairingStore:
             self._pending.clear()
             self._tokens.clear()
             self._connections.clear()
+            browser_trust.clear_challenges()
 
     @staticmethod
     def _validate_origin(origin: str) -> None:
@@ -133,7 +136,8 @@ class BrowserPairingStore:
     def exchange(self, code: str, origin: str) -> str:
         return self.pair(code, origin)["browser_token"]
 
-    def pair(self, code: str, origin: str, *, remember: bool = False) -> dict:
+    def pair(self, code: str, origin: str, *, remember: bool = False,
+             public_key: str | None = None, device_name: str = "Browser") -> dict:
         self._validate_origin(origin)
         with self._lock:
             self._clean()
@@ -147,7 +151,12 @@ class BrowserPairingStore:
             token = secrets.token_urlsafe(32)
             connection_key = ""
             binding = sessions.browser_binding(pending.session_token)
-            if remember and binding is not None:
+            device_id = ""
+            if public_key is not None:
+                if not remember or binding is None:
+                    raise BrowserPairingError("Persistent browser authorization requires a v3 vault")
+                device_id = browser_trust.enroll(binding, origin, public_key, device_name)["id"]
+            elif remember and binding is not None:
                 connection_key = secrets.token_urlsafe(32)
                 self._connections[connection_key] = _BrowserConnection(
                     binding=binding, origin=origin,
@@ -158,9 +167,27 @@ class BrowserPairingStore:
                 origin=origin,
                 expires_at=time.monotonic() + TOKEN_TTL_SECONDS,
                 connection_key=connection_key,
+                device_id=device_id,
             )
             return {"browser_token": token, "connection_key": connection_key,
+                    "device_id": device_id,
                     "expires_in_seconds": TOKEN_TTL_SECONDS}
+
+    def trusted_resume(self, device_id: str, origin: str, challenge_id: str, signature: str) -> dict:
+        self._validate_origin(origin)
+        with self._lock:
+            record = browser_trust.verify(device_id, origin, "resume", challenge_id, signature)
+            try:
+                session_token = sessions.browser_session(tuple(record["binding"]))
+            except PermissionError as exc:
+                raise BrowserLockedError("Desktop vault is locked") from exc
+            self._clean()
+            self._tokens = {token: pair for token, pair in self._tokens.items() if pair.device_id != device_id}
+            token = secrets.token_urlsafe(32)
+            self._tokens[token] = _BrowserToken(session_token, origin,
+                                                time.monotonic() + TOKEN_TTL_SECONDS,
+                                                device_id=device_id)
+            return {"browser_token": token, "expires_in_seconds": TOKEN_TTL_SECONDS}
 
     def resume(self, connection_key: str, origin: str) -> dict:
         self._validate_origin(origin)
@@ -212,8 +239,12 @@ class BrowserPairingStore:
             if pair is None or not secrets.compare_digest(pair.origin, origin):
                 raise BrowserPairingError("Browser pairing is invalid or has expired")
         try:
+            if pair.device_id:
+                record = browser_trust.load(pair.device_id, origin)
+                if tuple(record["binding"]) != sessions.browser_binding(pair.session_token):
+                    raise BrowserPairingError("Browser device belongs to another vault")
             return sessions.get(pair.session_token, touch=touch)
-        except PermissionError as exc:
+        except (PermissionError, BrowserTrustError) as exc:
             with self._lock:
                 self._tokens.pop(token, None)
             raise BrowserPairingError("Desktop vault is locked") from exc

@@ -5,7 +5,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from vault_unified.api.deps import get_token
 from vault_unified.api.schemas import (
     BrowserFillIn, BrowserPairIn, BrowserSaveIn, BrowserSaveApplyIn, BrowserSaveCancelIn,
+    BrowserChallengeIn, BrowserProofIn,
 )
+from vault_unified.browser_trust import browser_trust, BrowserTrustError, BrowserTrustUnavailable
+from vault_unified import browser_discovery
 from vault_unified.browser_pairing import (
     BrowserPairingError,
     BrowserLockedError,
@@ -67,10 +70,73 @@ def pair_browser(
     if not pairing_code:
         raise HTTPException(status_code=401, detail="Missing browser pairing code")
     try:
-        result = browser_pairings.pair(pairing_code, _origin(request), remember=body.remember_connection)
+        result = browser_pairings.pair(pairing_code, _origin(request), remember=body.remember_connection,
+                                      public_key=body.public_key, device_name=body.device_name)
+    except BrowserTrustError as exc:
+        raise _trust_error(exc) from exc
     except BrowserPairingError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+    result["discovery_available"] = browser_discovery.register(_origin(request))
     return result
+
+
+def _trust_error(exc: BrowserTrustError) -> HTTPException:
+    return HTTPException(status_code=503 if isinstance(exc, BrowserTrustUnavailable) else 401,
+                         detail=str(exc))
+
+
+@router.get("/devices")
+def trusted_devices(token: str = Depends(get_token)) -> dict:
+    try:
+        binding = sessions.browser_binding(token)
+        return {"available": True, "devices": browser_trust.list_for(binding)}
+    except BrowserTrustUnavailable:
+        return {"available": False, "devices": []}
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Desktop vault is locked") from exc
+
+
+@router.delete("/devices/{device_id}")
+def revoke_browser_device(device_id: str, token: str = Depends(get_token)) -> dict:
+    try:
+        binding = sessions.browser_binding(token)
+        if binding is None:
+            raise BrowserTrustError("Device authorization requires a v3 vault")
+        browser_trust.revoke(binding, device_id)
+    except BrowserTrustError as exc:
+        raise _trust_error(exc) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Desktop vault is locked") from exc
+    return {"revoked": True}
+
+
+@router.post("/device/challenge")
+def browser_device_challenge(body: BrowserChallengeIn, request: Request) -> dict:
+    try:
+        record = browser_trust.load(body.device_id, _origin(request))
+        if body.action == "resume":
+            sessions.browser_session(tuple(record["binding"]))
+        return browser_trust.challenge(body.device_id, _origin(request), body.action)
+    except BrowserTrustError as exc:
+        raise _trust_error(exc) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=423, detail="Desktop vault is locked") from exc
+
+
+@router.post("/device/prove")
+def browser_device_proof(body: BrowserProofIn, request: Request) -> dict:
+    try:
+        if body.action == "resume":
+            return browser_pairings.trusted_resume(body.device_id, _origin(request), body.challenge_id, body.signature)
+        record = browser_trust.verify(body.device_id, _origin(request), "revoke", body.challenge_id, body.signature)
+        browser_trust.revoke(tuple(record["binding"]), body.device_id)
+        return {"revoked": True}
+    except BrowserTrustError as exc:
+        raise _trust_error(exc) from exc
+    except BrowserLockedError as exc:
+        raise HTTPException(status_code=423, detail=str(exc)) from exc
+    except BrowserPairingError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
 
 @router.post("/resume")

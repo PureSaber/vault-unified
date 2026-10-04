@@ -14,7 +14,9 @@ Vault Unified is a local-first password manager. This document describes where d
 
 Vault Unified does not require an external password service for its core local workflow. If a user explicitly enables Bitwarden, KeePassXC, gopass, or Proton Pass, the chosen provider and its command-line client receive the data required for that requested operation under that provider's own terms.
 
-The desktop background service listens only on a system-assigned loopback address and requires per-launch authentication. The browser extension pairs with the local desktop service using a short-lived code. Its token remains in `chrome.storage.session`, and lock, exit, expiry, or re-pairing invalidates the old token. Extension permissions must not be expanded as part of v1.3.
+The desktop background service listens only on a system-assigned loopback address. Vault APIs require per-launch authentication or explicitly authorized browser credentials. The browser extension pairs with a short-lived code. Its access token remains in `chrome.storage.session`, and lock, exit or expiry invalidates it. The public discovery endpoint returns only protocol and instance ID.
+
+Post-v1.3 development adds optional persistent browser authorization. A non-exportable ECDSA signing key stays in the extension's IndexedDB; its public key, browser origin, device label and vault binding are protected by Windows Credential Manager. Signed one-time challenges can issue fresh access only after the matching vault is unlocked. Native Messaging adds one extension permission and returns only the public loopback address and process identity. Device revocation denies subsequent use of existing tokens and signatures. See [trusted browser connections](trusted-browser-connections.md).
 
 ## Metadata that may be stored
 
