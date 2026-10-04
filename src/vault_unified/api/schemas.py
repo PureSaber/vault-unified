@@ -308,7 +308,7 @@ class PersonalSettingsIn(BaseModel):
 
 
 class TransferImportIn(BaseModel):
-    format: Literal["json", "csv"]
+    format: Literal["json", "csv", "browser_csv"]
     # Secret-bearing content is size-checked inside the import parser so a
     # Pydantic 422 response cannot echo the plaintext as a rejected input.
     content: str = ""

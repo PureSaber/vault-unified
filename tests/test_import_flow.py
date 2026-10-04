@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
+import io
 import json
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,6 +18,7 @@ from vault_unified.api.app import create_app
 from vault_unified.backup_manager import list_backups
 from vault_unified.manager import UnifiedVault
 from vault_unified.session import sessions
+from vault_unified.import_flow import ImportFlowError, inspect_transfer
 
 
 BOOTSTRAP_SECRET = "generated-import-bootstrap-0123456789abcdef"
@@ -136,6 +140,165 @@ def _preview(
         },
         headers=headers,
     )
+
+
+def _browser_csv(rows: list[list[str]], *, notes: bool = True, bom: bool = False) -> str:
+    stream = io.StringIO(newline="")
+    writer = csv.writer(stream)
+    writer.writerow(["name", "url", "username", "password", *(["note"] if notes else [])])
+    writer.writerows(rows)
+    return ("\ufeff" if bom else "") + stream.getvalue()
+
+
+@pytest.mark.parametrize("with_notes", [True, False], ids=["chrome", "edge"])
+def test_browser_csv_real_preview_apply_reimport_and_undo(api_client, with_notes):
+    client, vault_path = api_client
+    headers, _ = _unlock(client)
+    secret = f"  {uuid4()}-é,\"\r\n  "
+    note = f"generated note {uuid4()}\n中文,说明"
+    row = ["测试网站", "https://browser.example.invalid/sign-in", " user@example.invalid ", secret]
+    if with_notes:
+        row.append(note)
+    invalid = ["Invalid", "javascript:generated()", "user", secret]
+    if with_notes:
+        invalid.append(note)
+    content = _browser_csv([row, row, invalid], notes=with_notes, bom=True)
+    before = vault_path.read_bytes()
+    preview = _preview(client, headers, content, "browser_csv")
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["source_format"] == "chromium_csv"
+    assert payload["counts"]["add"] == 1
+    assert payload["counts"]["exact_duplicates"] == 1
+    assert payload["counts"]["format_errors"] == 1
+    assert payload["items"][2]["index"] == 3
+    assert payload["items"][2]["username"] == ""
+    assert str(secret.strip()) not in preview.text
+    assert str(note) not in preview.text
+    assert vault_path.read_bytes() == before
+    cancelled = client.post("/api/transfer/import/cancel", headers=headers,
+                            json={"preview_token": payload["preview_token"]})
+    assert cancelled.status_code == 200
+    assert vault_path.read_bytes() == before
+    preview = _preview(client, headers, content, "csv").json()
+    applied = client.post("/api/transfer/import/apply", headers=headers,
+                          json={"preview_token": preview["preview_token"], "decisions": []})
+    assert applied.status_code == 200
+    receipt = applied.json()
+    assert (receipt["added"], receipt["skipped"]) == (1, 2)
+    entries = client.get("/api/entries", headers=headers).json()
+    assert len(entries) == 1
+    saved = client.get(f"/api/entries/{entries[0]['id']}?reveal=true", headers=headers).json()
+    assert saved["password"] == secret
+    assert saved["username"] == row[2]
+    assert saved["notes"] == (note if with_notes else "")
+    reimport = _preview(client, headers, content, "browser_csv").json()
+    assert reimport["counts"]["add"] == 0
+    assert reimport["counts"]["exact_duplicates"] == 2
+    undone = client.post("/api/transfer/import/undo", headers=headers,
+                         json={"transaction_id": receipt["receipt"]["transaction_id"]})
+    assert undone.status_code == 200
+    assert client.get("/api/entries", headers=headers).json() == []
+
+
+def test_browser_csv_preserves_different_unicode_passwords_as_possible_duplicates(api_client):
+    client, _ = api_client
+    headers, _ = _unlock(client)
+    prefix = str(uuid4())
+    content = _browser_csv([
+        ["Unicode", "https://unicode.invalid", "user", prefix + "é", ""],
+        ["Unicode", "https://unicode.invalid", "user", prefix + "e\u0301", ""],
+    ])
+    response = _preview(client, headers, content, "browser_csv")
+    assert response.status_code == 200
+    assert response.json()["counts"]["exact_duplicates"] == 0
+    assert response.json()["counts"]["possible_duplicates"] == 1
+
+
+def test_browser_csv_recognizes_reordered_headers_and_android_accounts():
+    password = str(uuid4())
+    _, rows, family = inspect_transfer(
+        f'\ufeffPASSWORD, URL ,username,notes\r\n{password},android://certificate@com.example.generated,app-user,说明\r\n',
+        "csv",
+    )
+    assert family == "chromium_csv"
+    assert rows[0].entry.title == "com.example.generated"
+    assert rows[0].entry.password == password
+    assert rows[0].entry.notes == "说明"
+
+
+@pytest.mark.parametrize("content,reason", [
+    ("name,url,username,password,PASSWORD\n", "duplicate column"),
+    ("name,url,username,password,note,notes\n", "ambiguous note"),
+    ("name,url,username\n", "needs url"),
+    ("name,url,username,password\n", "no password rows"),
+    ("name,url,username,password,unexpected\n", "unrecognized columns"),
+    ('name,url,username,password\n"unterminated', "CSV is invalid"),
+])
+def test_browser_csv_rejects_ambiguous_files(content, reason):
+    with pytest.raises(ImportFlowError, match=reason):
+        inspect_transfer(content, "browser_csv")
+
+
+def test_browser_csv_bad_rows_do_not_expose_shifted_secrets():
+    secret = str(uuid4())
+    content = _browser_csv([
+        [secret, "https://example.invalid", secret],
+        [secret, "https://example.invalid", secret, secret, secret, secret],
+        [secret, "https://example.invalid", secret, "", secret],
+    ])
+    _, rows, _ = inspect_transfer(content, "browser_csv")
+    assert all(row.entry is None for row in rows)
+    assert secret not in repr(rows)
+
+
+def test_browser_csv_limits_and_invalid_request_redact_content(api_client, monkeypatch):
+    client, _ = api_client
+    headers, _ = _unlock(client)
+    secret = str(uuid4())
+    response = client.post("/api/transfer/import/preview", headers=headers,
+                           json={"format": "browser_csv", "content": [secret], "confirm_plaintext": True})
+    assert response.status_code == 422
+    assert secret not in response.text
+    monkeypatch.setattr("vault_unified.import_flow.MAX_TRANSFER_ENTRIES", 1)
+    content = _browser_csv([["Generated", "https://example.invalid", "user", secret, ""]] * 2)
+    with pytest.raises(ImportFlowError, match="too many entries"):
+        inspect_transfer(content, "browser_csv")
+
+
+def test_browser_update_preserves_fields_missing_from_browser_export(api_client):
+    client, _ = api_client
+    headers, _ = _unlock(client)
+    original = _item("Personal title", username="generated-user", url="https://browser.invalid")
+    attachment_bytes = uuid4().bytes
+    original["attachments"] = [{
+        "id": "generated-preserved-attachment", "filename": "generated.txt", "mime_type": "text/plain",
+        "size": len(attachment_bytes), "sha256": hashlib.sha256(attachment_bytes).hexdigest(),
+        "data_b64": base64.b64encode(attachment_bytes).decode("ascii"),
+    }]
+    original_preview = _preview(client, headers, _json_transfer([original])).json()
+    assert client.post("/api/transfer/import/apply", headers=headers,
+                       json={"preview_token": original_preview["preview_token"]}).status_code == 200
+    entry_id = client.get("/api/entries", headers=headers).json()[0]["id"]
+    new_password = str(uuid4())
+    # Older Edge exports have no note column; a missing name must not erase a
+    # personalized title either. Personal-only metadata is outside this import.
+    content = _browser_csv([["", "https://browser.invalid", "generated-user", new_password]], notes=False)
+    preview = _preview(client, headers, content, "browser_csv").json()
+    applied = client.post("/api/transfer/import/apply", headers=headers, json={
+        "preview_token": preview["preview_token"],
+        "decisions": [{"preview_id": "item-1", "action": "update", "target_entry_id": entry_id}],
+    })
+    assert applied.status_code == 200
+    saved = client.get(f"/api/entries/{entry_id}?reveal=true", headers=headers).json()
+    assert saved["password"] == new_password
+    for field in ["title", "notes", "tags", "totp_secret", "custom_fields"]:
+        assert saved[field] == original[field]
+    assert saved["history_count"] == 1
+    attachment = client.get(f"/api/entries/{entry_id}/attachments/generated-preserved-attachment", headers=headers).json()
+    assert base64.b64decode(attachment["data_b64"]) == attachment_bytes
+    repeated = _preview(client, headers, content, "browser_csv").json()
+    assert repeated["counts"]["exact_duplicates"] == 1
 
 
 def test_preview_is_read_only_classifies_duplicates_and_returns_no_secrets(api_client) -> None:

@@ -350,6 +350,7 @@ export interface ImportPreviewItem {
 }
 
 export interface ImportPreview {
+  source_format?: "chromium_csv" | "vault_csv" | "vault_json";
   preview_token: string;
   source_file_digest: string;
   expires_at: string;
@@ -630,7 +631,7 @@ export const api = {
       "/transfer/export",
       { method: "POST", body: JSON.stringify({ format, confirm_plaintext: true }) }
     ),
-  previewImport: (format: "json" | "csv", content: string) =>
+  previewImport: (format: "json" | "csv" | "browser_csv", content: string) =>
     request<ImportPreview>("/transfer/import/preview", {
       method: "POST",
       body: JSON.stringify({ format, content, confirm_plaintext: true }),

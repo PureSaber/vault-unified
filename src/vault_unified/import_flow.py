@@ -16,7 +16,7 @@ from urllib.parse import urlsplit
 from uuid import uuid4
 
 from vault_unified.models import SecretEntry, Source
-from vault_unified.personal_data import data_for, record_history, set_data
+from vault_unified.personal_data import PERSONAL_METADATA_KEY, data_for, record_history, set_data
 from vault_unified.sync.preview import canonical_digest
 from vault_unified.transfer import (
     JSON_SCHEMA,
@@ -68,6 +68,7 @@ class ParsedImportRow:
     host: str
     error: str
     unsupported_fields: tuple[str, ...]
+    browser_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -195,7 +196,7 @@ def secure_entry_fingerprint(entry: SecretEntry) -> str:
         {
             "title": _normal_text(entry.title),
             "username": _normal_text(entry.username),
-            "password": _exact_text(entry.password),
+            "password": entry.password,
             "url": _exact_url(entry.url),
             "notes": _exact_text(entry.notes),
             "tags": sorted({_normal_text(tag) for tag in entry.tags if tag.strip()}),
@@ -257,11 +258,53 @@ def _parse_value(value: Any, index: int) -> ParsedImportRow:
     )
 
 
-def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedImportRow, ...]]:
+def _browser_row(row: dict[str, str | None], index: int) -> ParsedImportRow:
+    # Browser exports contain no trusted application metadata. Never include a
+    # malformed value (or an arbitrary header) in an error or preview response.
+    error = ""
+    url = (row.get("url") or "").strip()
+    try:
+        parsed = urlsplit(url)
+        valid_url = (
+            parsed.scheme in {"https", "http", "android"}
+            and bool(parsed.hostname)
+            and not any(ord(char) < 32 for char in url)
+        )
+        if parsed.scheme != "android":
+            valid_url = valid_url and parsed.username is None and parsed.port != 0
+    except ValueError:
+        valid_url = False
+    if None in row or any(value is None for value in row.values()):
+        error = "Browser row has missing or extra cells"
+    elif not valid_url:
+        error = "Browser row needs a valid website or Android app address"
+    elif not row.get("password"):
+        error = "Browser row has no password"
+    value = {
+        "title": (row.get("name") or "").strip() or normalized_host(url),
+        "username": row.get("username") or "",
+        "password": row.get("password") or "",
+        "url": url,
+        "notes": row.get("note") or row.get("notes") or "",
+    }
+    if error:
+        # A shifted CSV record may put a password in the name/username column.
+        # Do not surface any fields until the record's shape has been validated.
+        return ParsedImportRow(f"item-{index}", index, None, "", "", "", error, ())
+    fields = ["username", "password", "url"]
+    if (row.get("name") or "").strip():
+        fields.append("title")
+    if "note" in row or "notes" in row:
+        fields.append("notes")
+    return replace(_parse_value(value, index), browser_fields=tuple(fields))
+
+
+def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedImportRow, ...], str]:
     encoded = content.encode("utf-8")
     if len(encoded) > MAX_TRANSFER_BYTES:
         raise ImportFlowError("Transfer file exceeds the 10 MiB limit")
     source_digest = hashlib.sha256(encoded).hexdigest()
+    content = content.removeprefix("\ufeff")
     values: list[Any]
     if format_name == "json":
         def reject_duplicate_names(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
@@ -293,13 +336,34 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
         ):
             raise ImportFlowError("Transfer JSON has an unsupported schema")
         values = raw["entries"]
-    elif format_name == "csv":
+    elif format_name in {"csv", "browser_csv"}:
         try:
             reader = csv.DictReader(io.StringIO(content, newline=""), strict=True)
             if not reader.fieldnames:
                 raise ImportFlowError("Transfer CSV is missing a header")
-            if len(reader.fieldnames) != len(set(reader.fieldnames)):
+            headers = [name.strip().casefold() for name in reader.fieldnames]
+            if len(headers) != len(set(headers)):
                 raise ImportFlowError("Transfer CSV has duplicate column names")
+            browser = format_name == "browser_csv" or (
+                {"url", "username", "password"}.issubset(headers)
+                and ("name" in headers or "title" not in headers)
+            )
+            if browser:
+                if not {"url", "username", "password"}.issubset(headers):
+                    raise ImportFlowError("Browser CSV needs url, username and password columns")
+                if set(headers) - {"name", "url", "username", "password", "note", "notes"}:
+                    raise ImportFlowError("Browser CSV contains unrecognized columns; export it again from Chrome or Edge")
+                if {"note", "notes"}.issubset(headers):
+                    raise ImportFlowError("Browser CSV has ambiguous note columns")
+                reader.fieldnames = headers
+                rows = []
+                for index, row in enumerate(reader, start=1):
+                    if index > MAX_TRANSFER_ENTRIES:
+                        raise ImportFlowError("Transfer contains too many entries")
+                    rows.append(_browser_row(row, index))
+                if not rows:
+                    raise ImportFlowError("Browser CSV has no password rows")
+                return source_digest, tuple(rows), "chromium_csv"
             values = []
             for row in reader:
                 extra_values = row.pop(None, None)
@@ -330,10 +394,14 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
         except csv.Error as exc:
             raise ImportFlowError("Transfer CSV is invalid") from exc
     else:
-        raise ImportFlowError("Format must be json or csv")
+        raise ImportFlowError("Format must be json, csv or browser_csv")
     if len(values) > MAX_TRANSFER_ENTRIES:
         raise ImportFlowError("Transfer contains too many entries")
-    return source_digest, tuple(_parse_value(value, index) for index, value in enumerate(values, start=1))
+    return (
+        source_digest,
+        tuple(_parse_value(value, index) for index, value in enumerate(values, start=1)),
+        "vault_json" if format_name == "json" else "vault_csv",
+    )
 
 
 def _possible_key(entry: SecretEntry) -> tuple[tuple[str, str] | None, tuple[str, str]]:
@@ -342,13 +410,31 @@ def _possible_key(entry: SecretEntry) -> tuple[tuple[str, str] | None, tuple[str
     return ((host, username) if host else None, (_normal_text(entry.title), username))
 
 
+def _same_browser_fields(left: SecretEntry, right: SecretEntry, fields: tuple[str, ...]) -> bool:
+    for field in fields:
+        first, second = getattr(left, field), getattr(right, field)
+        if field in {"title", "username"}:
+            first, second = _normal_text(first), _normal_text(second)
+        elif field == "url":
+            first, second = _exact_url(first), _exact_url(second)
+        elif field == "notes":
+            first, second = _exact_text(first), _exact_text(second)
+        if first != second:
+            return False
+    return True
+
+
 def build_preview(vault: Any, content: str, format_name: str) -> tuple[str, tuple[ImportPreviewItem, ...], dict[str, Any]]:
-    source_digest, rows = inspect_transfer(content, format_name)
+    source_digest, rows, source_format = inspect_transfer(content, format_name)
     existing = vault.local.list_entries(include_deleted=False)
     exact: dict[str, list[SecretEntry]] = {}
     possible: dict[tuple[str, str], list[SecretEntry]] = {}
+    login_ids: set[str] = set()
     for entry in existing:
         exact.setdefault(secure_entry_fingerprint(entry), []).append(entry)
+        personal = entry.source_metadata.get(PERSONAL_METADATA_KEY) or {}
+        if isinstance(personal, dict) and personal.get("entry_type", "login") == "login":
+            login_ids.add(entry.id)
         host_key, title_key = _possible_key(entry)
         if host_key:
             possible.setdefault(host_key, []).append(entry)
@@ -363,7 +449,15 @@ def build_preview(vault: Any, content: str, format_name: str) -> tuple[str, tupl
             continue
         prepared = prepare_imported_entry(row.entry)
         fingerprint = secure_entry_fingerprint(prepared)
+        host_key, title_key = _possible_key(prepared)
+        candidates: dict[str, SecretEntry] = {}
+        if host_key:
+            candidates.update({entry.id: entry for entry in possible.get(host_key, [])})
+        candidates.update({entry.id: entry for entry in possible.get(title_key, [])})
         exact_matches = exact.get(fingerprint, [])
+        if row.browser_fields:
+            candidates = {key: entry for key, entry in candidates.items() if key in login_ids}
+            exact_matches = [entry for entry in candidates.values() if _same_browser_fields(prepared, entry, row.browser_fields)]
         if exact_matches or fingerprint in seen_import_fingerprints:
             items.append(
                 ImportPreviewItem(
@@ -379,11 +473,6 @@ def build_preview(vault: Any, content: str, format_name: str) -> tuple[str, tupl
             )
             seen_import_fingerprints.add(fingerprint)
             continue
-        host_key, title_key = _possible_key(prepared)
-        candidates: dict[str, SecretEntry] = {}
-        if host_key:
-            candidates.update({entry.id: entry for entry in possible.get(host_key, [])})
-        candidates.update({entry.id: entry for entry in possible.get(title_key, [])})
         matches_earlier_file_item = (
             (host_key is not None and host_key in seen_import_keys)
             or title_key in seen_import_keys
@@ -424,7 +513,7 @@ def build_preview(vault: Any, content: str, format_name: str) -> tuple[str, tupl
         "attachments": attachment_count,
         "attachment_bytes": attachment_bytes,
     }
-    return source_digest, tuple(items), {"counts": counts, "items": public_items}
+    return source_digest, tuple(items), {"counts": counts, "items": public_items, "source_format": source_format}
 
 
 def _public_item(vault: Any, item: ImportPreviewItem) -> dict[str, Any]:
@@ -511,16 +600,20 @@ def prepare_apply(
             raise ImportFlowError("Update target changed; create a new preview")
         candidate = copy.deepcopy(current)
         record_history(candidate)
-        history = data_for(candidate)["history"]
-        candidate.title = imported.title
-        candidate.username = imported.username
-        candidate.password = imported.password
-        candidate.url = imported.url
-        candidate.notes = imported.notes
-        candidate.tags = list(imported.tags)
-        personal = data_for(imported)
-        personal["history"] = history
-        set_data(candidate, personal)
+        if item.row.browser_fields:
+            for field in item.row.browser_fields:
+                setattr(candidate, field, getattr(imported, field))
+        else:
+            history = data_for(candidate)["history"]
+            candidate.title = imported.title
+            candidate.username = imported.username
+            candidate.password = imported.password
+            candidate.url = imported.url
+            candidate.notes = imported.notes
+            candidate.tags = list(imported.tags)
+            personal = data_for(imported)
+            personal["history"] = history
+            set_data(candidate, personal)
         candidate.mark_dirty()
         candidates.append(candidate)
         updated_ids.append(candidate.id)

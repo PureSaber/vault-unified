@@ -87,6 +87,8 @@ def create_app(
     async def validation_error(request: Request, exc: RequestValidationError):
         if request.url.path.startswith("/api/browser/"):
             return JSONResponse({"detail": "Invalid browser request"}, status_code=422)
+        if request.url.path.startswith("/api/transfer/import/"):
+            return JSONResponse({"detail": "Invalid import request"}, status_code=422)
         return await request_validation_exception_handler(request, exc)
 
     @app.get("/api/health", include_in_schema=False)
