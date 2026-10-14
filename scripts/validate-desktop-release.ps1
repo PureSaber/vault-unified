@@ -432,8 +432,10 @@ if ($SkipInstallerLifecycle) {
     $msiApp = Wait-ForVaultExecutable
     node $journey $msiApp.FullName $msiData reopen $Version initial
     if ($LASTEXITCODE -ne 0) { throw "MSI upgrade lost data or failed installed checks" }
+    $repair = Start-Process -WindowStyle Hidden -FilePath msiexec.exe -ArgumentList "/fa `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
+    if (@(0, 3010) -notcontains $repair.ExitCode) { throw "MSI repair failed" }
     node $journey $msiApp.FullName $msiData reopen $Version restart
-    if ($LASTEXITCODE -ne 0) { throw "MSI restart did not preserve the generated vault" }
+    if ($LASTEXITCODE -ne 0) { throw "MSI repair/restart did not preserve the generated vault" }
     $msiUninstall = Start-Process -WindowStyle Hidden -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
     if (@(0, 3010) -notcontains $msiUninstall.ExitCode) { throw "MSI uninstall failed with $($msiUninstall.ExitCode)" }
     Wait-ForVaultUninstalled -InstallDirectory $msiApp.DirectoryName
