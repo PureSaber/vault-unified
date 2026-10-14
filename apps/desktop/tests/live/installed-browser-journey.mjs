@@ -87,7 +87,12 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
           await popup.locator('#inline-enable-site').click();
           await popup.getByText('Suggestions are enabled for this website.', { exact: true }).waitFor();
           await popup.locator('#passkey-enabled').check();
+          await popup.waitForFunction(async () => {
+            const ids = (await chrome.scripting.getRegisteredContentScripts()).map(script => script.id);
+            return ids.includes('vault-passkey-main') && ids.includes('vault-passkey-bridge');
+          });
           await website.reload(); await website.bringToFront();
+          await website.waitForFunction(() => globalThis.__vaultPasskeyProvider === true);
           await website.locator('#create').click();
           const dialog = desktop.getByRole('dialog');
           await dialog.getByRole('heading', { name: 'Create a Passkey', exact: true }).waitFor();

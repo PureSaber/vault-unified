@@ -90,8 +90,13 @@ try {
     assert(resolve(manifest.path).toLowerCase() === resolve(executable).toLowerCase(), 'Bridge targets a different executable');
   }
   stage = 'renderer unlock';
+  // Setup requests used a separate desktop session. Close it before the real
+  // UI unlock so browser requests belong to the session displaying approvals.
+  await api('/auth/lock');
+  const unlocked = page.waitForResponse(response => response.url().endsWith('/auth/unlock') && response.request().method() === 'POST');
   await page.getByLabel('Master password', { exact: true }).fill(fixture.master);
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+  token = (await (await unlocked).json()).token;
   await page.getByRole('button', { name: `Open ${fixture.entry.title}`, exact: true }).waitFor();
   if (browserPhase) {
     stage = 'packaged Chrome and Edge flows';
