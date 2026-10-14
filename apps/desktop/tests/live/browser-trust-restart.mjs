@@ -184,7 +184,7 @@ try {
   const persistent = await browser.popup.evaluate(async () => ({ local: await chrome.storage.local.get(null), sync: await chrome.storage.sync.get(null) }));
   const preferences = persistent.local.vaultUnifiedInlinePreferences;
   assert(Object.keys(persistent.local).join() === 'vaultUnifiedInlinePreferences' && Object.keys(persistent.sync).length === 0
-    && Object.keys(preferences).sort().join() === 'all,excluded,language,sites' && preferences.all === false
+    && Object.keys(preferences).sort().join() === 'all,excluded,language,passkeys,sites' && preferences.all === false && preferences.passkeys === false
     && preferences.sites.length === 0 && preferences.excluded.length === 0 && preferences.language === 'en', 'Extension persisted data beyond non-secret inline preferences');
   const devices = await api('/browser/devices', null, 'GET');
   assert(devices.devices.length === 1 && devices.devices[0].id === identityCheck.deviceId, 'Device list lost authorization across restart');
