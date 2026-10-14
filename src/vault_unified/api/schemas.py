@@ -146,6 +146,7 @@ class EntryOut(BaseModel):
     has_totp_secret: bool = False
     attachments: list[dict[str, Any]] = Field(default_factory=list)
     history_count: int = 0
+    passkeys: list[dict[str, Any]] = Field(default_factory=list)
     state: Literal["active", "archived", "trash"] = "active"
     favorite: bool = False
     trashed_at: str = ""

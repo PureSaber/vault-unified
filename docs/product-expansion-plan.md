@@ -31,8 +31,8 @@ than replaced with a simulated completion claim.
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Merged PR #74 / `7aa71f7`; exact-head CI 38528106242 passed, including isolated full-payload recovery and bilingual two-profile migration |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Merged PR #72 / `1e281ce`; exact-head CI 38524795766 passed, including actual Windows Unicode/Tab input, one-use confirmation, focus diversion, cancellation and native lifecycle |
 | 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Merged PR #64 / `57aeb90`; exact-head CI 38505943098 passed, including all 57 renderer journeys |
-| 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Core merged PR #75 / `21992cf`, exact-head CI 38530409684 passed. Connection approval, Windows credentials, bilingual conflict UI and automatic retry implemented; two real API profiles passed folder/WebDAV UI flows. Integration CI pending |
-| 19 | Browser passkey creation and sign-in, storage, recovery and migration lifecycle | Pending |
+| 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Core merged PR #75 / `21992cf`; connection UI merged PR #76 / `27f122a`, exact-head CI 38533830269 passed. Folder/WebDAV, Windows credentials, bilingual conflict choices and automatic retry verified with two isolated API profiles |
+| 19 | Browser passkey creation and sign-in, storage, recovery and migration lifecycle | Portable ES256 protocol/storage implemented with independent RP verification and encrypted migration tests; full CI and browser/desktop approval integration pending. See [Passkeys](passkeys.md) |
 | 20 | Encrypted single-item sharing with expiry/access limits/revocation, then household shared-vault workflow and permissions | Pending |
 
 ## Working method

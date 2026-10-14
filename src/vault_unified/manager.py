@@ -42,6 +42,8 @@ class MetadataPreservingSyncEngine(SyncEngine):
     def _local_from_remote(remote: SecretEntry, source: Source) -> SecretEntry:
         local = SyncEngine._local_from_remote(remote, source)
         local.source_metadata = copy.deepcopy(remote.source_metadata)
+        from vault_unified.passkeys import NAMESPACE
+        local.source_metadata.pop(NAMESPACE, None)
         return local
 
     def _merge_remote(self, local, remote, source, capabilities) -> str:

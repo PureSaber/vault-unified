@@ -143,6 +143,7 @@ class LocalVault:
         from vault_unified.personal_data import data_for, all_history
         from vault_unified.website_rules import require_website_payload
         from vault_unified.template_data import require_template_payload
+        from vault_unified.passkeys import require_payload as require_passkey_payload
         candidate = copy.deepcopy(payload)
         validate_v3_payload(candidate)
         if candidate["version"] != 3:
@@ -157,6 +158,7 @@ class LocalVault:
                 raise EntryTransactionConflict("Vault changed during synchronization; retry")
             require_website_payload(self, list(entries.values()))
             require_template_payload(self, list(entries.values()))
+            require_passkey_payload(self, list(entries.values()))
             self._write_payload(candidate)
             self._entries = entries
             self._metadata = candidate["metadata"]
@@ -167,6 +169,8 @@ class LocalVault:
         require_website_payload(self, list(entries.values()))
         from vault_unified.template_data import require_template_payload
         require_template_payload(self, list(entries.values()))
+        from vault_unified.passkeys import require_payload as require_passkey_payload
+        require_passkey_payload(self, list(entries.values()))
         payload = self._payload(entries)
         self._write_payload(payload)
         self._generation += 1

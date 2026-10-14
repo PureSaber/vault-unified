@@ -353,4 +353,10 @@ def merge_personal_metadata(existing: dict[str, Any] | None, incoming: dict[str,
         result[TEMPLATE_KEY] = copy.deepcopy(existing[TEMPLATE_KEY])
     if WEBSITE_KEY in (existing or {}):
         result[WEBSITE_KEY] = copy.deepcopy(existing[WEBSITE_KEY])
+    from vault_unified.passkeys import NAMESPACE as PASSKEY_NAMESPACE
+    if PASSKEY_NAMESPACE in (existing or {}):
+        result[PASSKEY_NAMESPACE] = copy.deepcopy(existing[PASSKEY_NAMESPACE])
+    else:
+        # Legacy connectors cannot create credentials through arbitrary metadata.
+        result.pop(PASSKEY_NAMESPACE, None)
     return result

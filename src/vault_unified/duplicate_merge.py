@@ -79,6 +79,10 @@ def prepare_merge(target: SecretEntry, source: SecretEntry, choices: dict[str, s
         attachments.append(attachment)
     # Existing attachment limits fail before any write; no binary is silently lost.
     set_data(candidate, personal)
+    from vault_unified.passkeys import credentials_for, combine, set_credentials
+    credentials = combine(credentials_for(target), credentials_for(source))
+    if credentials:
+        set_credentials(candidate, credentials)
 
     # Retain both current versions and every existing history, including versions
     # from earlier merges. This archive is not truncated by ordinary later edits.

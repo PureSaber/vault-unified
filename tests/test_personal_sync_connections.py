@@ -17,6 +17,11 @@ from vault_unified.session import sessions
 from test_system_session_lock import runtime
 
 
+@pytest.fixture(autouse=True)
+def isolated_backup_catalog(tmp_path, monkeypatch):
+    monkeypatch.setenv("VAULT_CONFIG_DIR", str(tmp_path / "generated-config"))
+
+
 class GeneratedKeyring:
     def __init__(self): self.records = {}; self.fail_delete = False
     def get_password(self, service, account): return self.records.get((service, account))
