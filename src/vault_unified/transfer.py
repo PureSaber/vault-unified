@@ -172,8 +172,12 @@ def import_entries(vault: Any, entries: list[ImportedEntry]) -> dict[str, int]:
 
 
 def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
+    from vault_unified.organization import is_fillable
+
     values: list[dict[str, Any]] = []
     for entry in vault.local.list_entries():
+        if not is_fillable(entry):
+            continue
         personal = data_for(entry)
         values.append(
             {
@@ -215,7 +219,7 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
         for value in values:
             writer.writerow(
                 {
-                    **value,
+                    **{key: item for key, item in value.items() if key != "attachments"},
                     "tags": "|".join(value["tags"]),
                     "custom_fields": json.dumps(value["custom_fields"], ensure_ascii=False),
                 }

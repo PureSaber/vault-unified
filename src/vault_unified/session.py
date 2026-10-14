@@ -21,7 +21,7 @@ from vault_unified.v3_crypto import create_v3_file
 from vault_unified.vault_format import V3Container, inspect_vault_format_file, is_framed_vault_file
 
 SESSION_IDLE_SECONDS = 30 * 60
-EMPTY_VAULT_PAYLOAD = {"version": 2, "entries": {}}
+EMPTY_VAULT_PAYLOAD = {"version": 3, "entries": {}, "metadata": {}}
 
 
 @dataclass

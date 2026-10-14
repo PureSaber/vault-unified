@@ -166,7 +166,14 @@ export interface Entry {
   history_count: number;
   created_at: string;
   updated_at: string;
+  state?: "active" | "archived" | "trash";
+  favorite?: boolean;
+  trashed_at?: string;
 }
+
+export type OrganizationAction = "trash" | "archive" | "restore" | "purge" | "favorite" | "unfavorite" | "tag";
+export interface OrganizationChange { entry_ids: string[]; action: OrganizationAction; tags: string[] }
+export interface OrganizationPreview { preview_token: string; action: OrganizationAction; entries: Array<{ id: string; title: string }> }
 
 export interface Attachment {
   id: string;
@@ -529,8 +536,11 @@ export const api = {
   authStatus: () => request<{ unlocked: boolean }>("/auth/status"),
   checkKeyring: () =>
     request<{ has_saved_password: boolean }>("/auth/check-keyring"),
-  listEntries: (q?: string) =>
-    request<Entry[]>(q ? `/entries?q=${encodeURIComponent(q)}` : "/entries"),
+  listEntries: (q?: string, state = "active") =>
+    request<Entry[]>(`/entries?state=${encodeURIComponent(state)}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  previewOrganization: (data: OrganizationChange) => request<OrganizationPreview>("/organization/preview", { method: "POST", body: JSON.stringify(data) }),
+  cancelOrganization: (preview_token: string) => request("/organization/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
+  applyOrganization: (data: OrganizationChange, preview_token: string) => request("/organization/apply", { method: "POST", body: JSON.stringify({ ...data, preview_token, confirm: true }) }),
   getEntry: (id: string, reveal = true) =>
     request<Entry>(`/entries/${id}?reveal=${reveal}`),
   commitEntry: (data: EntryTransactionPayload) =>

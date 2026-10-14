@@ -322,4 +322,7 @@ def merge_personal_metadata(existing: dict[str, Any] | None, incoming: dict[str,
     personal = (existing or {}).get(PERSONAL_METADATA_KEY)
     if personal is not None:
         result[PERSONAL_METADATA_KEY] = copy.deepcopy(personal)
+    from vault_unified.organization import ORGANIZATION_KEY
+    if ORGANIZATION_KEY in (existing or {}):
+        result[ORGANIZATION_KEY] = copy.deepcopy(existing[ORGANIZATION_KEY])
     return result

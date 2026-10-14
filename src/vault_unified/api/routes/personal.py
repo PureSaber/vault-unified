@@ -112,6 +112,11 @@ def save_settings(
 def run_maintenance(vault: UnifiedVault = Depends(get_vault)) -> dict:
     """Run user-owned maintenance and return deduplicable desktop notices."""
     notices: list[dict[str, str]] = []
+    from vault_unified.organization import purge_expired
+    try:
+        purge_expired(vault)
+    except (OSError, ValueError):
+        notices.append({"code": "trash-cleanup-failed", "level": "error", "message": "Trash cleanup failed; retry after reopening the vault"})
     try:
         backup = maybe_create_scheduled_backup(vault)
         if backup:

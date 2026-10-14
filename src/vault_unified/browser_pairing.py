@@ -18,6 +18,7 @@ from urllib.parse import urlsplit
 
 from vault_unified.session import sessions
 from vault_unified.personal_data import PERSONAL_METADATA_KEY
+from vault_unified.organization import is_fillable
 from vault_unified.browser_trust import browser_trust, BrowserTrustError
 
 
@@ -263,6 +264,8 @@ def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, str]]:
     host = parsed.hostname.lower().removeprefix("www.")
     matches: list[dict[str, str]] = []
     for entry in vault.local.list_entries():
+        if not is_fillable(entry):
+            continue
         # Matching needs only the type, not attachment decoding/history validation.
         personal = entry.source_metadata.get(PERSONAL_METADATA_KEY) or {}
         if not isinstance(personal, dict) or personal.get("entry_type", "login") != "login":

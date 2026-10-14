@@ -19,14 +19,14 @@ than replaced with a simulated completion claim.
 | 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Pending |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Pending |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Pending |
-| 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Pending |
+| 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Implemented on `codex/account-organization`; local runtime/regression validation in progress |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Pending |
-| 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Pending |
+| 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Implemented with account organization; integration pending |
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Pending |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
-| 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Pending |
+| 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Bulk preview/apply implemented with organization; duplicate review and merge pending |
 | 14 | Understandable history comparison and selective field restoration | Pending |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Pending |
@@ -105,9 +105,29 @@ Defaults and scope:
   API stale-preview coverage, all 16 focused payload/backup cases passed. All 51
   UI journeys passed, including real-API English/Chinese upgrade and accessibility.
   Rust tests: 3 passed; TypeScript/build passed; Python audit and secret scan clean.
-- See [personal-payload-upgrade.md](personal-payload-upgrade.md). Integration CI is
-  pending; this enables later features' storage and does not mark those features
-  complete.
+- Merged PR #60 / `38b88e1`; exact-head CI 38499628516 passed. See
+  [personal-payload-upgrade.md](personal-payload-upgrade.md). This enables later
+  features' storage and does not mark those features complete.
+
+### Account organization
+
+- New vaults create schema 3 directly; existing vaults retain the explicit upgrade.
+- Trash, archive, restore, favorite, tag/type filters, sort and batch tagging use
+  the existing transaction and session-bound preview mechanism. Browser candidates
+  exclude archive/trash; remote metadata refresh preserves these local states.
+- Expired trash removes credential content and sync base snapshots while retaining
+  deletion acknowledgements. Archive stays indefinitely. Encrypted backups retain
+  complete data; plaintext export explicitly includes active entries only.
+- Self-review/runtime work fixed a category-switch response race and the existing
+  CSV export attachment-column error. Full local Python suite: 361 passed, followed
+  by passing focused organization/retention checks after the final snapshot repair.
+- Full UI run: 52 passed and one generated-API teardown race. Waiting for the
+  unlock backup refresh before shutting down that test API fixed it; both focused
+  organization journeys then passed, including accessibility and artifact scan.
+  The generated screenshot was visually inspected and the search/filter widths
+  corrected. Exact-head CI is pending.
+- See [account-organization.md](account-organization.md). Duplicate merging,
+  history field selection and templates remain stage 2 work.
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

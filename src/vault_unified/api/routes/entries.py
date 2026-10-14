@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from uuid import uuid4
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -18,6 +19,7 @@ from vault_unified.generator import generate_password
 from vault_unified.local_store import EntryTransactionConflict
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
+from vault_unified.organization import organization_for
 from vault_unified.personal_data import (
     PersonalDataError,
     data_for,
@@ -32,6 +34,7 @@ router = APIRouter(prefix="/entries", tags=["entries"])
 
 
 def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
+    organization = organization_for(entry)
     return EntryOut(
         id=entry.id,
         title=entry.title,
@@ -47,6 +50,7 @@ def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
         linked_sources=entry.linked_sources,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
+        state=organization["state"], favorite=organization["favorite"], trashed_at=organization["trashed_at"],
         **public_data(entry, reveal=reveal),
     )
 
@@ -101,6 +105,7 @@ def generate(
 def list_entries(
     source: str | None = None,
     q: str | None = None,
+    state: Literal["active", "archived", "trash", "all"] = "active",
     vault: UnifiedVault = Depends(get_vault),
 ) -> list[EntryOut]:
     if q:
@@ -113,7 +118,7 @@ def list_entries(
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail="Invalid source") from exc
         entries = vault.list_all(source=src)
-    return [_to_out(e) for e in entries]
+    return [_to_out(e) for e in entries if state == "all" or organization_for(e)["state"] == state]
 
 
 @router.get("/{entry_id}", response_model=EntryOut)
@@ -192,6 +197,8 @@ def update_entry(
 
 @router.delete("/{entry_id}")
 def delete_entry(entry_id: str, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    if vault.local.payload_version >= 3:
+        raise HTTPException(status_code=409, detail="Use a trash preview to delete this entry")
     try:
         entry = vault.resolve(entry_id)
     except (KeyError, ValueError) as exc:

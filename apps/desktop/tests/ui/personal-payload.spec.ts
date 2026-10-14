@@ -7,14 +7,13 @@ test.use({ trace: "off", screenshot: "off" });
 for (const locale of ["en", "zh"]) {
   test(`personal payload upgrade cancels and reopens with a retained backup (${locale})`, async ({ page }, testInfo) => {
     test.setTimeout(60_000);
-    const sidecar = await startGeneratedSidecar(page);
+    const sidecar = await startGeneratedSidecar(page, { oldPayload: true });
     const zh = locale === "zh";
     try {
       await page.addInitScript(value => localStorage.setItem("vault_locale", value), locale);
       await page.goto("/");
       await page.getByLabel(zh ? "主密码" : "Master password", { exact: true }).fill(testData.masterPassword);
-      await page.getByLabel(zh ? "再次输入主密码" : "Confirm master password", { exact: true }).fill(testData.masterPassword);
-      await page.getByRole("button", { name: zh ? "创建并解锁" : "Create and unlock", exact: true }).click();
+      await page.getByRole("button", { name: zh ? "解锁" : "Unlock", exact: true }).click();
       await page.getByRole("button", { name: zh ? "安全与恢复" : "Security & recovery", exact: true }).click();
       const review = page.getByRole("button", { name: zh ? "查看升级" : "Review upgrade", exact: true });
       await review.click();
