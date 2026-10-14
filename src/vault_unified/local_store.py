@@ -92,6 +92,8 @@ class LocalVault:
         return self._payload_version
 
     def _save_entries(self, entries: dict[str, SecretEntry]) -> None:
+        from vault_unified.template_data import require_template_payload
+        require_template_payload(self, list(entries.values()))
         payload = self._payload(entries)
         write_encrypted_file(self.vault_path, self.credential, payload)
         self._generation += 1
@@ -470,6 +472,8 @@ class LocalVault:
     def import_entries(
         self, entries: list[SecretEntry], *, from_remote: bool = True
     ) -> dict[str, int]:
+        from vault_unified.template_data import require_template_payload
+        require_template_payload(self, entries)
         added = 0
         updated = 0
         conflicts = 0

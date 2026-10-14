@@ -98,7 +98,7 @@ def apply(body: OrganizationApplyIn, vault: UnifiedVault = Depends(get_vault), t
 class MergeIn(BaseModel):
     target_id: str = Field(min_length=1, max_length=128)
     source_id: str = Field(min_length=1, max_length=128)
-    choices: dict[str, Literal["target", "source"]] = Field(max_length=8)
+    choices: dict[str, Literal["target", "source"]] = Field(max_length=9)
 
 
 class MergeApplyIn(MergeIn):

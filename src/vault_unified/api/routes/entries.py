@@ -20,6 +20,7 @@ from vault_unified.local_store import EntryTransactionConflict
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
 from vault_unified.organization import organization_for
+from vault_unified.template_data import template_for
 from vault_unified.personal_data import (
     PersonalDataError,
     data_for,
@@ -73,10 +74,13 @@ def _commit(vault: UnifiedVault, body: EntryTransactionIn) -> SecretEntry:
             add_attachments=[item.model_dump() for item in body.add_attachments],
             remove_attachment_ids=body.remove_attachment_ids,
             restore_history_id=body.restore_history_id,
+            template_data=body.template_data,
         )
     except EntryTransactionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PersonalDataError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except KeyError as exc:
         raise HTTPException(
@@ -149,6 +153,7 @@ def create_entry(body: EntryIn, vault: UnifiedVault = Depends(get_vault)) -> Ent
             notes=body.notes,
             tags=body.tags,
             entry_type=body.entry_type,
+            template_data=body.template_data,
             custom_fields=body.custom_fields,
             totp_secret=body.totp_secret,
         ),
@@ -186,6 +191,7 @@ def update_entry(
                 notes=body.notes if body.notes is not None else existing.notes,
                 tags=body.tags if body.tags is not None else existing.tags,
                 entry_type=body.entry_type if body.entry_type is not None else personal["entry_type"],
+                template_data=body.template_data,
                 custom_fields=body.custom_fields if body.custom_fields is not None else personal["custom_fields"],
                 totp_secret=body.totp_secret if body.totp_secret is not None else personal["totp_secret"],
             ),
@@ -352,3 +358,18 @@ def copy_field(
         raise HTTPException(status_code=400, detail=f"No {field}")
     copy_to_clipboard(value)
     return {"copied": field, "title": entry.title, "clears_in_seconds": 45}
+
+
+@router.post("/{entry_id}/recovery-codes/{code_id}/copy")
+def copy_recovery_code(entry_id: str, code_id: str, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    try:
+        entry = vault.resolve(entry_id)
+        code = next((item for item in template_for(entry).get("recovery_codes", []) if item["id"] == code_id), None)
+        if code is None:
+            raise KeyError("Recovery code not found")
+        if code["used_at"]:
+            raise HTTPException(status_code=409, detail="This recovery code is marked used")
+        copy_to_clipboard(code["value"])
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Recovery code not found") from exc
+    return {"copied": "recovery_code", "clears_in_seconds": 45}

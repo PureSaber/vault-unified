@@ -125,7 +125,8 @@ class EntryOut(BaseModel):
     linked_sources: dict[str, str] = Field(default_factory=dict)
     created_at: str
     updated_at: str
-    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] = "login"
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code", "software_license", "api_credential"] = "login"
+    template_data: dict[str, Any] = Field(default_factory=dict)
     custom_fields: list[dict[str, Any]] = Field(default_factory=list)
     totp_secret: str = ""
     has_totp_secret: bool = False
@@ -143,7 +144,8 @@ class EntryIn(BaseModel):
     url: str = ""
     notes: str = ""
     tags: list[str] = Field(default_factory=list)
-    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] = "login"
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code", "software_license", "api_credential"] = "login"
+    template_data: dict[str, Any] | None = None
     custom_fields: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
     totp_secret: str = Field(default="", max_length=1024)
 
@@ -155,7 +157,8 @@ class EntryUpdate(BaseModel):
     url: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
-    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] | None = None
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code", "software_license", "api_credential"] | None = None
+    template_data: dict[str, Any] | None = None
     custom_fields: list[dict[str, Any]] | None = Field(default=None, max_length=32)
     totp_secret: str | None = Field(default=None, max_length=1024)
 
@@ -176,7 +179,8 @@ class EntryTransactionIn(BaseModel):
     url: str = ""
     notes: str = ""
     tags: list[str] = Field(default_factory=list)
-    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code"] = "login"
+    entry_type: Literal["login", "secure_note", "card", "identity", "ssh_key", "recovery_code", "software_license", "api_credential"] = "login"
+    template_data: dict[str, Any] | None = None
     custom_fields: list[dict[str, Any]] = Field(default_factory=list, max_length=32)
     totp_secret: str = Field(default="", max_length=1024)
     add_attachments: list[AttachmentIn] = Field(default_factory=list, max_length=10)

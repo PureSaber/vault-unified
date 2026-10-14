@@ -10,12 +10,13 @@ from typing import Any
 
 from vault_unified.models import SecretEntry
 from vault_unified.personal_data import PersonalDataError, data_for, set_data, update_data
+from vault_unified.template_data import normalize_template, template_for, set_template
 
 
 MAX_TRANSFER_BYTES = 10 * 1024 * 1024
 MAX_TRANSFER_ENTRIES = 5_000
 JSON_SCHEMA = "vault-unified-transfer"
-JSON_VERSION = 1
+JSON_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,7 @@ class ImportedEntry:
     custom_fields: list[dict[str, Any]]
     totp_secret: str
     attachments: list[dict[str, Any]]
+    template_data: dict[str, Any] | None = None
 
 
 def _text(value: Any, *, name: str, maximum: int = 100_000) -> str:
@@ -62,6 +64,7 @@ def _entry_from_json(value: Any) -> ImportedEntry:
         "custom_fields",
         "totp_secret",
         "attachments",
+        "template_data",
     }
     if set(value) - allowed:
         raise ValueError("transfer entry contains an unknown field")
@@ -79,6 +82,7 @@ def _entry_from_json(value: Any) -> ImportedEntry:
         custom_fields=value.get("custom_fields", []),
         totp_secret=_text(value.get("totp_secret", ""), name="TOTP secret", maximum=1024),
         attachments=value.get("attachments", []),
+        template_data=normalize_template(value["template_data"]) if value.get("template_data") is not None else None,
     )
 
 
@@ -111,6 +115,7 @@ def prepare_imported_entry(item: ImportedEntry) -> SecretEntry:
     personal = data_for(entry)
     personal["attachments"] = item.attachments
     set_data(entry, personal)
+    set_template(entry, item.template_data or {})
     return entry
 
 
@@ -125,7 +130,7 @@ def parse_transfer(text: str, format_name: str) -> list[ImportedEntry]:
         if (
             not isinstance(raw, dict)
             or raw.get("schema") != JSON_SCHEMA
-            or raw.get("version") != JSON_VERSION
+            or type(raw.get("version")) is not int or raw.get("version") not in {1, JSON_VERSION}
             or not isinstance(raw.get("entries"), list)
         ):
             raise ValueError("transfer JSON has an unsupported schema")
@@ -149,6 +154,7 @@ def parse_transfer(text: str, format_name: str) -> list[ImportedEntry]:
                     "custom_fields": json.loads(row["custom_fields"]) if row.get("custom_fields") else [],
                     "totp_secret": row.get("totp_secret", ""),
                     "attachments": [],
+                    "template_data": json.loads(row["template_data"]) if row.get("template_data") else None,
                 }
             )
     else:
@@ -191,6 +197,7 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
                 "custom_fields": personal["custom_fields"],
                 "totp_secret": personal["totp_secret"],
                 "attachments": personal["attachments"],
+                "template_data": template_for(entry),
             }
         )
     if format_name == "json":
@@ -213,6 +220,7 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
                 "entry_type",
                 "custom_fields",
                 "totp_secret",
+                "template_data",
             ],
         )
         writer.writeheader()
@@ -222,6 +230,7 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
                     **{key: item for key, item in value.items() if key != "attachments"},
                     "tags": "|".join(value["tags"]),
                     "custom_fields": json.dumps(value["custom_fields"], ensure_ascii=False),
+                    "template_data": json.dumps(value["template_data"], ensure_ascii=False),
                 }
             )
         return stream.getvalue(), "vault-unified-export.csv", "text/csv"

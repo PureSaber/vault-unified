@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Entry } from "../api/client";
+import { api, type Entry, type TemplateData } from "../api/client";
+import { templateDisplay } from "./template-display";
 import { useI18n } from "../i18n";
 
-export const historyFields = ["title", "username", "password", "url", "notes", "tags", "entry_type", "custom_fields", "totp_secret"] as const;
+export const historyFields = ["title", "username", "password", "url", "notes", "tags", "entry_type", "custom_fields", "totp_secret", "template_data"] as const;
 export type HistoryField = typeof historyFields[number];
 export type HistoryValues = Pick<Entry, HistoryField>;
 
@@ -28,8 +29,9 @@ export default function HistoryReview({ entryId, historyId, current, onRestore, 
     url: zh ? "网站" : "Website", notes: zh ? "备注" : "Notes", tags: zh ? "标签" : "Tags",
     entry_type: zh ? "内容类型" : "Content type", custom_fields: zh ? "自定义字段" : "Custom fields",
     totp_secret: zh ? "验证码密钥" : "Authenticator key",
+    template_data: zh ? "模板详情与恢复码" : "Template details and recovery codes",
   };
-  const sensitive = new Set<HistoryField>(["password", "notes", "totp_secret", "custom_fields"]);
+  const sensitive = new Set<HistoryField>(["password", "notes", "totp_secret", "custom_fields", "template_data"]);
   useEffect(() => {
     const before = document.activeElement as HTMLElement | null;
     dialogRef.current?.showModal();
@@ -39,8 +41,9 @@ export default function HistoryReview({ entryId, historyId, current, onRestore, 
     let cancelled = false;
     void api.previewEntryHistory(entryId, historyId).then(result => {
       if (cancelled) return;
-      setPrevious(result.entry);
-      setSelected(historyFields.filter(field => JSON.stringify(initialCurrent.current[field]) !== JSON.stringify(result.entry[field])));
+      const previous = { ...result.entry, template_data: result.entry.template_data || {} };
+      setPrevious(previous);
+      setSelected(historyFields.filter(field => JSON.stringify(initialCurrent.current[field]) !== JSON.stringify(previous[field])));
     }).catch(() => { if (!cancelled) setError(true); });
     const hide = () => setRevealed([]);
     window.addEventListener("blur", hide);
@@ -55,11 +58,13 @@ export default function HistoryReview({ entryId, historyId, current, onRestore, 
   const changed = previous ? historyFields.filter(field => JSON.stringify(current[field]) !== JSON.stringify(previous[field])) : [];
   function display(field: HistoryField, value: unknown) {
     if (sensitive.has(field) && !revealed.includes(field)) return zh ? "已隐藏" : "Hidden";
+    if (field === "template_data") return templateDisplay(value as TemplateData, zh);
     if (field === "entry_type") {
-      const types: Record<string, string> = { login: zh ? "登录信息" : "Login", secure_note: zh ? "安全备注" : "Secure note", card: zh ? "卡片" : "Card", identity: zh ? "身份信息" : "Identity", ssh_key: zh ? "SSH 密钥" : "SSH key", recovery_code: zh ? "恢复码" : "Recovery codes" };
+      const types: Record<string, string> = { login: zh ? "登录信息" : "Login", secure_note: zh ? "安全备注" : "Secure note", card: zh ? "卡片" : "Card", identity: zh ? "身份信息" : "Identity", ssh_key: zh ? "SSH 密钥" : "SSH key", recovery_code: zh ? "恢复码" : "Recovery codes", software_license: zh ? "软件许可证" : "Software license", api_credential: zh ? "API 凭据" : "API credential" };
       return types[String(value)] || String(value);
     }
     if (Array.isArray(value)) return value.length ? JSON.stringify(value, null, 2) : "—";
+    if (value && typeof value === "object") return JSON.stringify(value, null, 2);
     return String(value || "—");
   }
   return <dialog ref={dialogRef} className="card history-review" aria-labelledby="history-review-title" onCancel={event => { event.preventDefault(); onCancel(); }}>

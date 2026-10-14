@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, mergeFields, type Entry, type MergeField, type MergeChange, type MergePreview } from "../api/client";
 import { useI18n } from "../i18n";
+import { templateDisplay } from "./template-display";
 
 interface Props { ids: [string, string]; onCancel: () => void; onMerged: () => void }
 
@@ -14,8 +15,8 @@ export default function DuplicateMerge({ ids, onCancel, onMerged }: Props) {
   const [revealed, setRevealed] = useState<MergeField[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const labels: Record<MergeField, string> = { title: zh ? "名称" : "Name", username: zh ? "用户名" : "Username", password: zh ? "密码" : "Password", url: zh ? "网站" : "Website", notes: zh ? "备注" : "Notes", tags: zh ? "标签" : "Tags", custom_fields: zh ? "自定义字段" : "Custom fields", totp_secret: zh ? "验证码密钥" : "Authenticator key" };
-  const sensitive = new Set<MergeField>(["password", "notes", "custom_fields", "totp_secret"]);
+  const labels: Record<MergeField, string> = { title: zh ? "名称" : "Name", username: zh ? "用户名" : "Username", password: zh ? "密码" : "Password", url: zh ? "网站" : "Website", notes: zh ? "备注" : "Notes", tags: zh ? "标签" : "Tags", custom_fields: zh ? "自定义字段" : "Custom fields", totp_secret: zh ? "验证码密钥" : "Authenticator key", template_data: zh ? "模板详情与恢复码" : "Template details and recovery codes" };
+  const sensitive = new Set<MergeField>(["password", "notes", "custom_fields", "totp_secret", "template_data"]);
   useEffect(() => {
     let cancelled = false;
     const before = document.activeElement as HTMLElement | null;
@@ -51,7 +52,9 @@ export default function DuplicateMerge({ ids, onCancel, onMerged }: Props) {
   }
   function display(field: MergeField, entry: Entry) {
     if (sensitive.has(field) && !revealed.includes(field)) return zh ? "已隐藏" : "Hidden";
+    if (field === "template_data") return templateDisplay(entry.template_data, zh);
     const value = entry[field];
+    if (value && !Array.isArray(value) && typeof value === "object") return JSON.stringify(value, null, 2);
     return Array.isArray(value) ? (value.length ? JSON.stringify(value, null, 2) : "—") : String(value || "—");
   }
   return <dialog className="card history-review" ref={dialog} aria-labelledby="merge-title" onCancel={event => { event.preventDefault(); cancel(); }}>

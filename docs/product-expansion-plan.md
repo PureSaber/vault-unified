@@ -26,11 +26,11 @@ than replaced with a simulated completion claim.
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Pending |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
-| 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Bulk preview/apply merged; duplicate field merge implemented on `codex/duplicate-merge`, validation in progress |
+| 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Pending |
-| 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Pending |
+| 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Implemented on `codex/credential-templates`; relevant backend and real English/Chinese renderer journeys passed; integration pending |
 | 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Pending |
 | 19 | Browser passkey creation and sign-in, storage, recovery and migration lifecycle | Pending |
 | 20 | Encrypted single-item sharing with expiry/access limits/revocation, then household shared-vault workflow and permissions | Pending |
@@ -159,8 +159,26 @@ Defaults and scope:
 - All 28 focused Python cases passed before the final attachment-reference and
   legacy-refusal additions. Four real-API organization/history/merge journeys
   passed, including accessibility and artifact scan; the screenshot was inspected.
-  Full Python and exact-head CI are pending before integration.
+  Full local Python: 368 passed. Exact-head CI 38504714200 passed, including all
+  55 renderer journeys, Python, native desktop and audits. Merged PR #63 / `95d126a`.
 - See [duplicate-account-merge.md](duplicate-account-merge.md).
+
+### Credential templates
+
+- Recovery codes have individual encrypted values and used timestamps. Copy is
+  separate from editing, refuses used codes, and uses existing clipboard clearing.
+  Software licenses and API credentials have dedicated key/detail forms.
+- Schema-3 checks cover saves and imports. History comparisons/restoration and
+  duplicate field choices include template details. JSON v2 and CSV preserve
+  template data; old JSON v1 remains readable and absent template fields in old
+  imports do not erase current data. Recovery packages preserve everything.
+- Eight initial template cases and 46 existing editor/import/personal/merge
+  backend cases passed. After compatibility refinements, 32 template/import cases
+  passed. Fifteen renderer journeys passed, including English/Chinese templates,
+  used-code persistence, discard, existing editors, accessibility and artifact
+  scan. Screenshot inspected; TypeScript/build and secret scan passed.
+- Exact-head full CI is required before integration. See
+  [credential-templates.md](credential-templates.md).
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

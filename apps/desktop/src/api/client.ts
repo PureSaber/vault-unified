@@ -145,6 +145,9 @@ export interface VaultInfo {
   path: string;
 }
 
+export interface RecoveryCode { id: string; value: string; used_at: string }
+export interface TemplateData { recovery_codes?: RecoveryCode[]; registered_to?: string; expires_on?: string; environment?: string; scopes?: string }
+
 export interface Entry {
   id: string;
   title: string;
@@ -158,7 +161,8 @@ export interface Entry {
   tags: string[];
   sync_status: string;
   linked_sources: Record<string, string>;
-  entry_type: "login" | "secure_note" | "card" | "identity" | "ssh_key" | "recovery_code";
+  entry_type: "login" | "secure_note" | "card" | "identity" | "ssh_key" | "recovery_code" | "software_license" | "api_credential";
+  template_data?: TemplateData;
   custom_fields: Array<{ label: string; value: string; concealed: boolean }>;
   totp_secret: string;
   has_totp_secret: boolean;
@@ -174,7 +178,7 @@ export interface Entry {
 export type OrganizationAction = "trash" | "archive" | "restore" | "purge" | "favorite" | "unfavorite" | "tag";
 export interface OrganizationChange { entry_ids: string[]; action: OrganizationAction; tags: string[] }
 export interface OrganizationPreview { preview_token: string; action: OrganizationAction; entries: Array<{ id: string; title: string }> }
-export const mergeFields = ["title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret"] as const;
+export const mergeFields = ["title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret", "template_data"] as const;
 export type MergeField = typeof mergeFields[number];
 export interface MergeChange { target_id: string; source_id: string; choices: Record<MergeField, "target" | "source"> }
 export interface MergePreview { preview_token: string; target_title: string; source_title: string; history_count: number; attachment_count: number }
@@ -188,6 +192,7 @@ export interface Attachment {
 }
 
 export interface EntryTransactionPayload {
+  template_data?: TemplateData;
   transaction_id: string;
   entry_id: string | null;
   expected_updated_at: string | null;
@@ -564,6 +569,7 @@ export const api = {
     request<{ history_id: string; entry: Entry }>(`/entries/${id}/history/${historyId}`),
   copy: (id: string, field = "password") =>
     request(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
+  copyRecoveryCode: (id: string, codeId: string) => request(`/entries/${encodeURIComponent(id)}/recovery-codes/${encodeURIComponent(codeId)}/copy`, { method: "POST" }),
   generate: (length = 20, symbols = true) =>
     request<{ password: string }>(
       `/entries/tools/generate?length=${length}&symbols=${symbols}`
