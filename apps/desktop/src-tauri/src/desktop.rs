@@ -80,6 +80,13 @@ pub fn show_main(app: &AppHandle) {
     }
 }
 
+#[tauri::command]
+pub fn show_desktop_approval(app: AppHandle, window: WebviewWindow) -> Result<(), String> {
+    check_window(&window)?;
+    show_main(&app);
+    Ok(())
+}
+
 pub fn quick_search(app: &AppHandle) {
     show_main(app);
     if let Some(state) = app.try_state::<DesktopState>() {

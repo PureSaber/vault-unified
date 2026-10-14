@@ -13,6 +13,8 @@
     "inline-disable-site": ["停用此网站", "Disable this website"],
     "inline-enable-all": ["允许所有网站", "Allow all websites"],
     "inline-disable-all": ["关闭全部建议并撤销权限", "Disable all suggestions and revoke permissions"],
+    "passkey-label": ["在已授权网站使用 Vault Unified 通行密钥", "Use Vault Unified Passkeys on authorized websites"],
+    "passkey-hint": ["默认关闭。开启后，网站的创建和登录请求需要在桌面端确认；仍可选择其他方式。", "Off by default. Website creation and sign-in requests require desktop confirmation. You can choose another provider."],
   };
   function localize() { for (const [id, values] of Object.entries(labels)) document.getElementById(id).textContent = values[zh() ? 0 : 1]; }
   function origin() {
@@ -23,6 +25,7 @@
   async function refresh() {
     try {
       const result = await chrome.runtime.sendMessage({ type: "vault-inline-status", origin: origin() });
+      document.getElementById("passkey-enabled").checked = result.passkeys === true;
       status.textContent = result.enabled ? (zh() ? "此网站已开启输入框建议。" : "Suggestions are enabled for this website.") : (zh() ? "此网站的输入框建议已关闭。" : "Suggestions are off for this website.");
     } catch { status.textContent = zh() ? "请输入有效的 http 或 https 网站地址。" : "Enter a valid http or https website address."; }
   }
@@ -42,6 +45,13 @@
     } catch { status.textContent = zh() ? "设置未完成，请检查网站地址后重试。" : "Settings were not applied. Check the website address and retry."; }
   });
   field.addEventListener("change", () => void refresh());
+  document.getElementById("passkey-enabled").addEventListener("change", async event => {
+    try {
+      const result = await chrome.runtime.sendMessage({ type: "vault-inline-settings", action: event.target.checked ? "passkeys-on" : "passkeys-off", origin: origin(), tabId, language: zh() ? "zh" : "en" });
+      if (result.error) throw new Error();
+      await refresh();
+    } catch { status.textContent = zh() ? "通行密钥设置未完成，请重试。" : "Passkey settings could not be applied. Try again."; }
+  });
   document.getElementById("language").addEventListener("change", () => { localize(); void refresh(); });
   localize();
   void selectedTab().then(tab => {

@@ -534,6 +534,11 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
         {!isSecureNote && (
           <>
+            {Boolean(entry?.passkeys?.length) && <section className="context-notice" aria-label={locale === "zh" ? "通行密钥" : "Passkeys"}>
+              <h3>{locale === "zh" ? "通行密钥" : "Passkeys"}</h3>
+              {entry?.passkeys?.map(item => <p key={item.id}><strong>{item.rp_id}</strong> · {item.user_name}<br /><span className="muted">{locale === "zh" ? "创建于 " : "Created "}{new Date(item.created_at).toLocaleDateString(locale)}</span></p>)}
+              <p>{locale === "zh" ? "通行密钥会随加密备份和多电脑同步保存。将账号移入回收站后停止用于登录。" : "Passkeys are included in encrypted backups and computer sync. Moving this account to trash stops its use for sign-in."}</p>
+            </section>}
             <div className="field">
               <label className="field-label" htmlFor="entry-username">{t("form.username")}</label>
               <input id="entry-username" value={draft.username} onChange={(event) => patchDraft({ username: event.target.value })} placeholder={t("form.usernamePlaceholder")} autoComplete="off" />

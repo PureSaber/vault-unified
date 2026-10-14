@@ -548,6 +548,7 @@ pub fn run() {
             desktop::get_desktop_status,
             desktop::set_desktop_preferences,
             desktop::desktop_ready,
+            desktop::show_desktop_approval,
             desktop::exit_desktop,
             hello::windows_hello_status,
             hello::enable_windows_hello,

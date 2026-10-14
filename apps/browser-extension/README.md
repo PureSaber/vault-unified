@@ -1,6 +1,6 @@
 # Vault Unified browser extension
 
-The source branch adds reviewed account saving and persistent device authorization. These
+The source branch adds reviewed account saving, persistent device authorization and optional Passkeys. These
 features are not in the published v1.3.0 installers; run the matching desktop/API
 source when testing this branch.
 
@@ -30,10 +30,12 @@ After the first authorized pairing, Native Messaging discovers the desktop's
 current loopback address without receiving any authentication material. This
 requires the matching desktop executable; a Python-only API retains manual
 address entry. Legacy vaults and unchecked authorization use session pairing.
-The extension never opens or unlocks the desktop automatically.
+The extension does not launch or unlock the desktop. A Passkey confirmation can
+bring the running desktop window forward.
 
 The extension receives login titles and usernames for the displayed site's host,
-scheme and port (a leading `www.` is normalized). Other subdomains do not match.
+scheme and port. Other subdomains do not match unless explicitly allowed by the
+account's extra-website or base-domain rules.
 Passwords are read only on explicit actions. Status checks do not extend idle time.
 
 ## Daily use
@@ -59,6 +61,19 @@ Normal login filling refuses change-password pages. The separate new-password
 action accepts one form with one or two `autocomplete="new-password"` fields and
 leaves current-password fields untouched. Ambiguous multi-form, iframe and Shadow
 DOM cases require manual entry. Chinese and English are available in the popup.
+
+## Passkeys / 通行密钥
+
+Enable the website under **Choose accounts inside fields**, then check **Use
+Vault Unified Passkeys on authorized websites**. Creation and sign-in require
+checking the website/account and entering the master password in the desktop
+window. The extension receives public authentication responses, never private
+keys or the master password. You can cancel or use another provider; unsupported
+requests continue to the browser. See [the workflow and tested scope](../../docs/passkeys.md).
+
+在「输入框内选择账号」中开启网站后，勾选「在已授权网站使用 Vault Unified
+通行密钥」。创建或登录时，在桌面窗口核对网站和账号，并用主密码确认。
+可以取消或选择其他提供方。通行密钥默认关闭，并随加密备份和多电脑同步保存。
 
 ## Developer validation
 

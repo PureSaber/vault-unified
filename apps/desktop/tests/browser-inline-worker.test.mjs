@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import vm from 'node:vm';
 
 const source = readFileSync(new URL('../../browser-extension/background.js', import.meta.url), 'utf8');
+const passkeySource = readFileSync(new URL('../../browser-extension/passkey-worker.js', import.meta.url), 'utf8');
 const ownId = 'generated-extension';
 const origin = 'https://login.example.invalid';
 const event = () => ({ addListener() {} });
@@ -27,11 +28,14 @@ function fixture(sites = [origin]) {
   };
   const connection = { connectedRequest: async (path, body) => {
     state.apiCalls.push({ path, body });
-    if (state.afterRequest) state.afterRequest();
+    if (state.afterRequest) await state.afterRequest(path, body);
+    if (path === '/passkeys/begin') return { status: 'pending', request_id: body.request_id, timeout_ms: 120000 };
+    if (path === '/passkeys/status') return { status: 'complete', credential: { generatedPublicResponse: true } };
+    if (path === '/passkeys/cancel') return { cancelled: true };
     return path.startsWith('/matches') ? { matches: [{ id: 'entry-one', title: 'Generated account', username: 'generated-user' }] }
       : { username: 'generated-user', password: randomUUID() };
   } };
-  const worker = vm.runInNewContext(`${source}\n;({ handle, preferences });`, { chrome, URL, crypto: { randomUUID }, importScripts() {},
+  const worker = vm.runInNewContext(`${passkeySource}\n${source}\n;({ handle, preferences });`, { chrome, URL, crypto: { randomUUID }, importScripts() {},
     vaultBrowserConnection: connection, Date: { now: () => state.now } });
   const sender = { id: ownId, tab: { id: 7 }, frameId: 0, documentId: 'document-one', documentLifecycle: 'active', origin, url: `${origin}/login` };
   const select = { type: 'vault-inline-select', mode: 'password', entryId: 'entry-one', nonce: randomUUID() };
@@ -109,4 +113,53 @@ test('malformed preferences cannot broaden site access; simultaneous updates sur
     type: 'vault-inline-settings', action: 'enable-site', origin, language: 'en',
   }, popup)));
   assert.equal(state.preferences.sites.length, 3);
+});
+
+test('Passkeys are opt-in and cannot select a different page origin', async () => {
+  const { worker, state, sender } = fixture();
+  const message = { type: 'vault-passkey-begin', id: randomUUID(), operation: 'get', origin: 'https://other.invalid', options: { challenge: 'generated' } };
+  assert.equal((await worker.handle(message, sender)).status, 'fallback');
+  assert.equal(state.apiCalls.length, 0);
+  state.preferences.passkeys = true;
+  assert.equal((await worker.handle(message, sender)).status, 'complete');
+  assert.equal(state.apiCalls[0].body.origin, origin);
+  assert.equal(state.apiCalls.at(-1).path, '/passkeys/cancel');
+});
+
+test('Passkey cross-origin frames and ungranted sites never reach the vault', async () => {
+  for (const change of [state => state.grants = false, state => state.tab.url = 'https://outer.invalid']) {
+    const { worker, state, sender } = fixture(); state.preferences.passkeys = true; change(state);
+    assert.equal((await worker.handle({ type: 'vault-passkey-begin', id: randomUUID(), operation: 'create', options: {} }, sender)).status, 'fallback');
+    assert.equal(state.apiCalls.length, 0);
+  }
+});
+
+test('immediate Passkey cancellation wins before asynchronous permission checks', async () => {
+  const { worker, state, sender } = fixture(); state.preferences.passkeys = true;
+  const id = randomUUID();
+  const started = worker.handle({ type: 'vault-passkey-begin', id, operation: 'create', options: {} }, sender);
+  await worker.handle({ type: 'vault-passkey-cancel', id }, sender);
+  assert.equal((await started).status, 'cancelled');
+  assert.equal(state.apiCalls.length, 0);
+});
+
+test('navigation and Passkey opt-out before result delivery cancel the approved response', async () => {
+  for (const change of [state => state.documentOrigin = 'https://other.invalid', state => state.preferences.passkeys = false]) {
+    const { worker, state, sender } = fixture(); state.preferences.passkeys = true;
+    state.afterRequest = path => { if (path === '/passkeys/status') change(state); };
+    const result = await worker.handle({ type: 'vault-passkey-begin', id: randomUUID(), operation: 'get', options: {} }, sender);
+    assert.equal(result.status, 'cancelled');
+    assert.equal(result.credential, undefined);
+    assert.equal(state.apiCalls.at(-1).path, '/passkeys/cancel');
+  }
+});
+
+test('Passkey validation rejection falls back, but uncertain begin delivery fails closed', async () => {
+  for (const code of [400, 401, undefined]) {
+    const { worker, state, sender } = fixture(); state.preferences.passkeys = true;
+    state.afterRequest = path => { if (path === '/passkeys/begin') throw Object.assign(new Error('generated rejection'), { code }); };
+    const result = await worker.handle({ type: 'vault-passkey-begin', id: randomUUID(), operation: 'create', options: {} }, sender);
+    assert.equal(result.status, code ? 'fallback' : 'cancelled');
+    assert.equal(state.apiCalls.at(-1).path, '/passkeys/cancel');
+  }
 });

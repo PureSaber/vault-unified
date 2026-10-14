@@ -1836,3 +1836,10 @@ button.conflict-chip-btn:hover:not(:disabled) {
 .personal-sync-option input { width: auto; margin-top: 4px; flex-shrink: 0; }
 .personal-sync-option > span { min-width: 0; }
 .personal-sync-value { display: block; overflow-wrap: anywhere; white-space: pre-wrap; margin-top: var(--space-xs); color: var(--color-text-muted); max-height: 200px; overflow-y: auto; }
+
+.passkey-dialog { width: min(560px, calc(100vw - 48px)); max-height: calc(100vh - 48px); overflow-y: auto; padding: var(--space-xl); color: var(--color-text); background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); }
+.passkey-dialog::backdrop { background: rgb(0 0 0 / 45%); }
+.passkey-dialog label { display: grid; gap: var(--space-sm); margin-block: var(--space-md); }
+.passkey-dialog dd { margin-inline-start: 0; overflow-wrap: anywhere; font-weight: 600; }
+.passkey-dialog dt { margin-top: var(--space-md); color: var(--color-text-muted); }
+.passkey-dialog .button-row { flex-wrap: wrap; margin-block: var(--space-lg); }

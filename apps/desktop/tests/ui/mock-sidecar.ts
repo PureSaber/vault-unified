@@ -346,6 +346,10 @@ export class MockAuthenticatedSidecar {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/passkeys/pending") {
+      await this.respond(route, 200, { items: [] });
+      return;
+    }
     if (method === "POST" && url.pathname === "/personal-sync/run") {
       await this.respond(route, 200, { skipped: true });
       return;

@@ -16,6 +16,8 @@ export interface PersonalSyncStatus { connected: boolean; reconnect?: boolean; u
 export interface PersonalSyncResult { skipped?: boolean; busy?: boolean; waiting?: number; more?: boolean; downloaded?: number; uploaded?: number; conflicts?: number; changed?: boolean }
 export interface PersonalSyncChoice { id: string; object: string; title: string; path: string[]; kind: string; device: string; local: { present: boolean; value: string; state?: string; truncated?: boolean }; remote: { present: boolean; value: string; state?: string; truncated?: boolean } }
 export interface PersonalSyncConflicts { generation: number; items: PersonalSyncChoice[] }
+export interface PasskeySummary { id: string; rp_id: string; rp_name: string; user_name: string; user_display_name: string; created_at: string }
+export interface PasskeyRequest { id: string; operation: "create" | "get"; origin: string; rp_id: string; user_name: string; user_display_name: string; remaining_seconds: number; state: "pending" | "verifying"; choices: Array<{ entry_id: string; credential_id: string; title: string; user_name: string; user_display_name: string }> }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -182,6 +184,7 @@ export interface Entry {
   entry_type: "login" | "secure_note" | "card" | "identity" | "ssh_key" | "recovery_code" | "software_license" | "api_credential";
   template_data?: TemplateData;
   website_rules?: WebsiteRules;
+  passkeys?: PasskeySummary[];
   custom_fields: Array<{ label: string; value: string; concealed: boolean }>;
   totp_secret: string;
   has_totp_secret: boolean;
@@ -533,6 +536,9 @@ export interface SyncPreview {
 }
 
 export const api = {
+  pendingPasskeys: (signal?: AbortSignal) => request<{ items: PasskeyRequest[] }>("/passkeys/pending", { signal }),
+  approvePasskey: (request_id: string, password: string, entry_id = "", credential_id = "") => request<{ approved: boolean; changed: boolean }>("/passkeys/approve", { method: "POST", body: JSON.stringify({ request_id, password, entry_id, credential_id, confirm: true }) }),
+  rejectPasskey: (request_id: string, fallback = false) => request("/passkeys/reject", { method: "POST", body: JSON.stringify({ request_id, fallback }) }),
   personalSyncStatus: () => request<PersonalSyncStatus>("/personal-sync/status"),
   previewPersonalSync: (setup: PersonalSyncSetup) => request<PersonalSyncPreview>("/personal-sync/preview", { method: "POST", body: JSON.stringify(setup) }),
   cancelPersonalSync: (preview_token: string) => request("/personal-sync/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
