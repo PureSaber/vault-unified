@@ -21,7 +21,7 @@ from vault_unified.generation_history import generate_saved, list_generated, get
 from vault_unified.local_store import EntryTransactionConflict
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
-from vault_unified.organization import organization_for
+from vault_unified.organization import organization_for, is_fillable
 from vault_unified.template_data import template_for
 from vault_unified.website_rules import normalize_rules, validate_rules, matches_rules, website
 from vault_unified.totp import current_totp, TotpError
@@ -36,6 +36,26 @@ from vault_unified.personal_data import (
 )
 
 router = APIRouter(prefix="/entries", tags=["entries"])
+
+
+class AutoTypeIn(BaseModel):
+    entry_id: UUID
+
+
+@router.post("/tools/auto-type")
+def auto_type_values(body: AutoTypeIn, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    entry = vault.local.get(str(body.entry_id))
+    try:
+        allowed = entry is not None and is_fillable(entry) and data_for(entry)["entry_type"] == "login"
+    except ValueError:
+        allowed = False
+    if not allowed:
+        raise HTTPException(status_code=400, detail="Choose an active login for automatic typing")
+    values = (entry.username, entry.password)
+    if any(len(value) > 256 or any(ord(char) < 32 or ord(char) == 127 for char in value) for value in values):
+        raise HTTPException(status_code=400, detail="This login cannot be typed automatically")
+    return {"username": entry.username, "password": entry.password}
 
 
 class TotpPreviewIn(BaseModel):

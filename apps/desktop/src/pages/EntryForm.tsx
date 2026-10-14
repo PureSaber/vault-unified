@@ -9,6 +9,7 @@ import HistoryReview, { type HistoryField } from "../components/HistoryReview";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
+import AutoTypeButton from "../components/AutoTypeButton";
 
 interface Props {
   entry?: Entry | null;
@@ -717,6 +718,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         <div className="button-row entry-editor-actions">
           <button className="primary" type="submit" disabled={saving}>{saving ? t("form.saving") : t("form.save")}</button>
           <button className="secondary" type="button" onClick={() => onDone()} disabled={saving}>{t("form.cancel")}</button>
+          {entry && <AutoTypeButton entry={entry} disabled={saving || loading || dirty} />}
         </div>
       </form>
       {entry && historyToRestore && <HistoryReview entryId={entry.id} historyId={historyToRestore}

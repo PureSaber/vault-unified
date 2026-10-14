@@ -23,13 +23,13 @@ than replaced with a simulated completion claim.
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Merged PR #66 / `4c5f73c`; exact-head CI 38508845006 passed, including native extension restart recovery |
 | 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
-| 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | OS lock/suspend merged PR #70 / `f8bdc89`; exact-head CI 38517316036 passed. Hello native key operations and process-only quick unlock implemented; integration checks underway; owner biometric acceptance remains in final installed acceptance |
+| 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | OS lock/suspend merged PR #70 / `f8bdc89`; Hello merged PR #71 / `c4cc6aa`, exact-head CI 38519483457 passed. Native WinRT availability and API boundary checked; owner biometric and physical OS acceptance remain in final installed acceptance |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Merged PR #67 / `2e37952`; exact-head CI 38510146700 passed, including offline suffix boundaries and native extension extra-URL filling |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
-| 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Pending |
+| 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Native one-shot target selection, literal Unicode/Tab typing and foreground-change stop implemented. Actual isolated WinForms target and bilingual UI checks passed; integration checks underway |
 | 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Merged PR #64 / `57aeb90`; exact-head CI 38505943098 passed, including all 57 renderer journeys |
 | 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Pending |
 | 19 | Browser passkey creation and sign-in, storage, recovery and migration lifecycle | Pending |

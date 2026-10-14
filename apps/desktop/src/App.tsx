@@ -59,6 +59,7 @@ function AppShell() {
 
   const lockToUnlock = useCallback(() => {
     cancelHello();
+    if (isTauri()) void api.cancelAutoType().catch(() => {});
     lockApp();
     setUnlocked(false);
     setEditEntry(null);
