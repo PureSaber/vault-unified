@@ -3,6 +3,18 @@ function vaultUnifiedFillInputs(values) {
     return { username: false, password: false, reason: "page-changed" };
   }
   const visible = (input) => input && input.offsetParent !== null && !input.disabled && !input.readOnly;
+  if (values.otp) {
+    if (!/^\d{6}(\d{2})?$/.test(values.otp) || !Number.isFinite(values.expiresAt) || Date.now() >= values.expiresAt) {
+      return { reason: "otp-expired" };
+    }
+    const candidates = [...document.querySelectorAll('input[autocomplete="one-time-code"]')].filter(visible);
+    if (candidates.length !== 1 || candidates[0].type === "password") return { reason: "otp-target-ambiguous" };
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
+    setter.call(candidates[0], values.otp);
+    candidates[0].dispatchEvent(new Event("input", { bubbles: true }));
+    candidates[0].dispatchEvent(new Event("change", { bubbles: true }));
+    return { reason: "otp-filled" };
+  }
   const visiblePasswords = [...document.querySelectorAll('input[type="password"]')].filter(visible);
   const hasIframe = document.querySelector("iframe") !== null;
   const hasShadowRoot = [...document.querySelectorAll("*")].some((element) => element.shadowRoot);

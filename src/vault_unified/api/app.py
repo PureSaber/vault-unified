@@ -127,6 +127,7 @@ def create_app(
                 "/api/browser/generate", "/api/browser/save/preview",
                 "/api/browser/save/apply", "/api/browser/save/cancel",
                 "/api/browser/disconnect",
+                "/api/browser/totp",
             }
             and bool(request.headers.get("x-vault-browser-token"))
         )

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Attachment, type Entry, type TemplateData } from "../api/client";
 import CredentialTemplateFields from "../components/CredentialTemplateFields";
+import TotpEditor from "../components/TotpEditor";
 import HistoryReview, { type HistoryField } from "../components/HistoryReview";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
@@ -61,7 +62,6 @@ const copy = {
     addTag: "添加",
     removeTag: "移除标签 {tag}",
     authenticatorKey: "验证器密钥（TOTP 密钥）",
-    authenticatorHint: "只保存验证器密钥；当前版本不会生成动态验证码或倒计时。",
     customFields: "自定义字段",
     fieldLabel: "字段名称",
     fieldValue: "字段内容",
@@ -121,7 +121,6 @@ const copy = {
     addTag: "Add",
     removeTag: "Remove tag {tag}",
     authenticatorKey: "Authenticator key (TOTP key)",
-    authenticatorHint: "Stores only the authenticator key. This version does not generate timed codes or a countdown.",
     customFields: "Custom fields",
     fieldLabel: "Field name",
     fieldValue: "Field content",
@@ -612,10 +611,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
               </div>
             </section>
 
-            <section className="settings-section" aria-labelledby="entry-totp-heading">
-              <h3 id="entry-totp-heading" className="section-title">{text.authenticatorKey}</h3>
-              <PasswordField id="entry-totp" label={text.authenticatorKey} value={draft.totpSecret} onChange={(totpSecret) => patchDraft({ totpSecret })} hint={text.authenticatorHint} />
-            </section>
+            <TotpEditor value={draft.totpSecret} onChange={totpSecret => patchDraft({ totpSecret })} savedValue={original.totpSecret} entryId={entry?.id} />
 
             <section className="settings-section" aria-labelledby="custom-fields-heading">
               <h3 id="custom-fields-heading" className="section-title">{text.customFields}</h3>

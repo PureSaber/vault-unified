@@ -4,7 +4,8 @@ import copy
 from uuid import uuid4
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 
 from vault_unified.api.deps import get_vault
 from vault_unified.api.schemas import (
@@ -21,6 +22,7 @@ from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
 from vault_unified.organization import organization_for
 from vault_unified.template_data import template_for
+from vault_unified.totp import current_totp, TotpError
 from vault_unified.personal_data import (
     PersonalDataError,
     data_for,
@@ -32,6 +34,38 @@ from vault_unified.personal_data import (
 )
 
 router = APIRouter(prefix="/entries", tags=["entries"])
+
+
+class TotpPreviewIn(BaseModel):
+    value: str = Field(max_length=1024, repr=False)
+
+
+@router.post("/tools/totp/preview")
+def preview_totp(body: TotpPreviewIn, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return {"valid": True, **current_totp(body.value)}
+    except TotpError:
+        return {"valid": False}
+
+
+@router.get("/{entry_id}/totp")
+def entry_totp(entry_id: str, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        entry = vault.resolve(entry_id)
+        return current_totp(data_for(entry)["totp_secret"])
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="This entry has no valid authenticator key") from exc
+
+
+@router.post("/{entry_id}/totp/copy")
+def copy_totp(entry_id: str, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    import math
+    result = entry_totp(entry_id, response, vault)
+    seconds = min(45, max(1, math.ceil(result["remaining_seconds"])))
+    copy_to_clipboard(result["code"], clear_after=seconds)
+    return {"copied": "totp", "clears_in_seconds": seconds}
 
 
 def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:

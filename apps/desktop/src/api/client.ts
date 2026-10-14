@@ -146,6 +146,7 @@ export interface VaultInfo {
 }
 
 export interface RecoveryCode { id: string; value: string; used_at: string }
+export interface TotpCode { code: string; period: number; expires_at: number; remaining_seconds: number; algorithm: string; digits: number; label: string; issuer: string }
 export interface TemplateData { recovery_codes?: RecoveryCode[]; registered_to?: string; expires_on?: string; environment?: string; scopes?: string }
 
 export interface Entry {
@@ -570,6 +571,8 @@ export const api = {
   copy: (id: string, field = "password") =>
     request(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
   copyRecoveryCode: (id: string, codeId: string) => request(`/entries/${encodeURIComponent(id)}/recovery-codes/${encodeURIComponent(codeId)}/copy`, { method: "POST" }),
+  previewTotp: (value: string) => request<({ valid: true } & TotpCode) | { valid: false }>("/entries/tools/totp/preview", { method: "POST", body: JSON.stringify({ value }) }),
+  copyTotp: (id: string) => request<{ clears_in_seconds: number }>(`/entries/${encodeURIComponent(id)}/totp/copy`, { method: "POST" }),
   generate: (length = 20, symbols = true) =>
     request<{ password: string }>(
       `/entries/tools/generate?length=${length}&symbols=${symbols}`

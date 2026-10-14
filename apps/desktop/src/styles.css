@@ -470,6 +470,8 @@ textarea:focus-visible {
 .history-field legend label { display: flex; align-items: center; gap: var(--space-sm); }
 .history-field input { width: auto; margin: 0; }
 .merge-choice { display: flex; align-items: center; gap: var(--space-sm); }
+.totp-current { display: flex; align-items: center; gap: var(--space-lg); margin-block: var(--space-md); flex-wrap: wrap; }
+.totp-current output { font: 2rem monospace; letter-spacing: .2em; }
 .history-values { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-lg); }
 .history-values pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
 .history-review > .button-row { flex-shrink: 0; margin-top: var(--space-md); }

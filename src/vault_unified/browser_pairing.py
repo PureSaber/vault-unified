@@ -251,7 +251,7 @@ class BrowserPairingStore:
             raise BrowserPairingError("Desktop vault is locked") from exc
 
 
-def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, str]]:
+def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, Any]]:
     """Return only non-secret login metadata for the active browser origin."""
     try:
         parsed = urlsplit(requested_url)
@@ -261,8 +261,8 @@ def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, str]]:
     if (parsed.scheme not in {"http", "https"} or not parsed.hostname
             or parsed.username is not None or parsed.password is not None):
         raise BrowserPairingError("A valid http or https page is required")
-    host = parsed.hostname.lower().removeprefix("www.")
-    matches: list[dict[str, str]] = []
+    host = parsed.hostname.lower()
+    matches: list[dict[str, Any]] = []
     for entry in vault.local.list_entries():
         if not is_fillable(entry):
             continue
@@ -277,11 +277,13 @@ def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, str]]:
             continue
         if saved.scheme not in {"http", "https"} or not saved.hostname:
             continue
-        if saved.hostname.lower().removeprefix("www.") != host:
+        if saved.hostname.lower() != host:
             continue
         if saved.scheme != parsed.scheme or saved_port != port:
             continue
         matches.append({"id": entry.id, "title": entry.title, "username": entry.username})
+        if personal.get("totp_secret"):
+            matches[-1]["has_totp"] = True
     return sorted(matches, key=lambda item: (item["title"].lower(), item["username"].lower()))
 
 
