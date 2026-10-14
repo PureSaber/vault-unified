@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Page, Request } from "@playwright/test";
+import type { Page, Request, Response } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
@@ -14,34 +14,41 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   let changed = () => {};
   const started = (request: Request) => { pending.add(request); changed(); };
   const finished = (request: Request) => { pending.delete(request); changed(); };
+  // A reload can detach the old document before its page-level finished event.
+  // Observe the response completion too; both paths require the request to finish.
+  const responded = (response: Response) => { void response.finished().then(() => finished(response.request()), () => finished(response.request())); };
   page.on("request", started);
   page.on("requestfinished", finished);
   page.on("requestfailed", finished);
+  page.on("response", responded);
+  const drain = async () => {
+    // waitForLoadState can reuse an earlier idle state. Observe a fresh quiet
+    // interval instead, so cancellation and unlock effects finish before exit.
+    if (!page.isClosed()) await new Promise<void>((accept, reject) => {
+      let quiet: ReturnType<typeof setTimeout> | undefined;
+      const deadline = setTimeout(() => {
+        clearTimeout(quiet);
+        changed = () => {};
+        const requests = [...pending].map(request => `${request.method()} ${new URL(request.url()).pathname} (end=${request.timing().responseEnd}, failed=${Boolean(request.failure())})`).join(", ");
+        reject(new Error(`Generated API still has pending renderer requests: ${requests}`));
+      }, 5000);
+      changed = () => {
+        clearTimeout(quiet);
+        if (!pending.size) quiet = setTimeout(() => {
+          clearTimeout(deadline);
+          changed = () => {};
+          accept();
+        }, 500);
+      };
+      changed();
+    });
+  };
   const stop = async () => {
     let stopError: unknown;
     if (child?.pid && child.exitCode === null && child.signalCode === null) {
       const exited = new Promise<void>((accept) => child!.once("exit", () => accept()));
       try {
-        // waitForLoadState can reuse an earlier idle state. Observe a fresh quiet
-        // interval instead, so cancellation and unlock effects finish before exit.
-        if (!page.isClosed()) await new Promise<void>((accept, reject) => {
-          let quiet: ReturnType<typeof setTimeout> | undefined;
-          const deadline = setTimeout(() => {
-            clearTimeout(quiet);
-            changed = () => {};
-            const requests = [...pending].map(request => `${request.method()} ${new URL(request.url()).pathname}`).join(", ");
-            reject(new Error(`Generated API still has pending renderer requests: ${requests}`));
-          }, 5000);
-          changed = () => {
-            clearTimeout(quiet);
-            if (!pending.size) quiet = setTimeout(() => {
-              clearTimeout(deadline);
-              changed = () => {};
-              accept();
-            }, 500);
-          };
-          changed();
-        });
+        await drain();
       } catch (error) {
         stopError = error;
       } finally {
@@ -50,6 +57,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
         page.off("request", started);
         page.off("requestfinished", finished);
         page.off("requestfailed", finished);
+        page.off("response", responded);
       }
     }
     const target = resolve(directory);
@@ -104,7 +112,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
         },
       } });
     }, { base_url: `http://127.0.0.1:${port}/api`, bootstrap_secret: testData.bootstrapSecret, instance_id: "generated-renderer-api" });
-    return { stop, directory, apiUrl: `http://127.0.0.1:${port}/api` };
+    return { stop, drain, directory, apiUrl: `http://127.0.0.1:${port}/api` };
   } catch (error) {
     await stop();
     throw error;
