@@ -306,6 +306,8 @@ class Connections:
         def display(present, value, root=False):
             from vault_unified.passkeys import NAMESPACE as PASSKEY_NAMESPACE, redact
             if not present: return {"present": False, "value": ""}
+            if object_id == "metadata/vault_unified:sharing":
+                return {"present": True, "value": "••••••••"}
             if root:
                 if not isinstance(value, dict): raise ProtocolError("Invalid conflict value")
                 return {"present": True, "value": str(value.get("title", "")), "state": value.get("source_metadata", {}).get("vault_unified:organization", {}).get("state", "active")}

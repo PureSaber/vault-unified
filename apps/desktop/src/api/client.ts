@@ -18,6 +18,14 @@ export interface PersonalSyncChoice { id: string; object: string; title: string;
 export interface PersonalSyncConflicts { generation: number; items: PersonalSyncChoice[] }
 export interface PasskeySummary { id: string; rp_id: string; rp_name: string; user_name: string; user_display_name: string; created_at: string }
 export interface PasskeyRequest { id: string; operation: "create" | "get"; origin: string; rp_id: string; user_name: string; user_display_name: string; remaining_seconds: number; state: "pending" | "verifying"; choices: Array<{ entry_id: string; credential_id: string; title: string; user_name: string; user_display_name: string }> }
+export type SharingAction = "share" | "revoke-share" | "create-family" | "join-family" | "invite" | "approve-member" | "remove-member" | "revoke-invite" | "save-entry" | "trash-entry" | "restore-entry" | "restore-history";
+export interface SharedValues { title: string; username: string; password: string; url: string; notes: string }
+export interface SharedEntry extends SharedValues { updated_at: number; trashed_at: number; history: Array<SharedValues & { updated_at: number }> }
+export interface SharingOptions { action: SharingAction; family_id?: string; entry_id?: string; fields?: string[]; hours?: number; max_reads?: number; name?: string; invite?: string; role?: "reader" | "editor"; member_id?: string; pending_id?: string; values?: SharedValues; history_index?: number; replace_pending_id?: string }
+export interface SharingPreview { preview_token: string; action: SharingAction; title: string; server: string; details: string[] }
+export interface SharingStatus { service: string; identity: string; shares: Array<{ id: string; title: string; server: string; expires: number; max_reads: number; phase: string; reads: number }>; families: Array<{ id: string; name: string; server: string; pending: boolean; revision: number; removed: boolean }>; outbox: Array<{ id: string; action: SharingAction; title: string; family: string }> }
+export interface SharedFamily { id: string; name: string; role: "owner" | "editor" | "reader"; revision: number; members: Array<{ id: string; role: string }>; entries: Array<{ id: string; title: string; username: string; url: string; trashed_at: number; history_count: number }> }
+export interface FamilyPending { requests: Array<{ id: string; identity: string; role: "reader" | "editor"; expires: number }>; invitations: Array<{ id: string; role: string; expires: number; accepted: boolean }> }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -536,6 +544,21 @@ export interface SyncPreview {
 }
 
 export const api = {
+  sharingStatus: () => request<SharingStatus>("/sharing/status"),
+  configureSharing: (server: string, admin_token: string) => request<SharingStatus>("/sharing/connection", { method: "PUT", body: JSON.stringify({ server, admin_token, confirm: true }) }),
+  previewSharing: (options: SharingOptions) => request<SharingPreview>("/sharing/preview", { method: "POST", body: JSON.stringify({ options }) }),
+  cancelSharing: (preview_token: string) => request("/sharing/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
+  applySharing: (options: SharingOptions, preview_token: string) => request<{ completed: boolean; action: SharingAction; invitation?: string }>("/sharing/apply", { method: "POST", body: JSON.stringify({ options, preview_token, confirm: true }) }),
+  pendingSharing: (id: string, action: "retry" | "discard") => request<{ invitation?: string }>(`/sharing/pending/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  reviewPendingSharing: (id: string) => request<{ options: SharingOptions; current: SharedValues | null }>(`/sharing/pending/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  sharingLink: (id: string) => request<{ link: string }>(`/sharing/shares/${encodeURIComponent(id)}/link`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  copySharingLink: (id: string) => request(`/sharing/shares/${encodeURIComponent(id)}/copy`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  sharedFamily: (id: string) => request<SharedFamily>(`/sharing/families/${encodeURIComponent(id)}`),
+  refreshFamily: (id: string) => request<{ pending: boolean }>(`/sharing/families/${encodeURIComponent(id)}/refresh`, { method: "POST" }),
+  sharedEntry: (family: string, id: string) => request<SharedEntry>(`/sharing/families/${encodeURIComponent(family)}/entry/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  copySharedEntry: (family: string, id: string, field: "username" | "password") => request(`/sharing/families/${encodeURIComponent(family)}/entry/${encodeURIComponent(id)}/copy/${field}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  familyPending: (id: string) => request<FamilyPending>(`/sharing/families/${encodeURIComponent(id)}/pending`),
+  copyFamilyInvitation: (code: string) => request("/sharing/invitations/copy", { method: "POST", body: JSON.stringify({ code, confirm: true }) }),
   pendingPasskeys: (signal?: AbortSignal) => request<{ items: PasskeyRequest[] }>("/passkeys/pending", { signal }),
   approvePasskey: (request_id: string, password: string, entry_id = "", credential_id = "") => request<{ approved: boolean; changed: boolean }>("/passkeys/approve", { method: "POST", body: JSON.stringify({ request_id, password, entry_id, credential_id, confirm: true }) }),
   rejectPasskey: (request_id: string, fallback = false) => request("/passkeys/reject", { method: "POST", body: JSON.stringify({ request_id, fallback }) }),

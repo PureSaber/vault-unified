@@ -6,7 +6,7 @@ import type { Page, Request } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
-export async function startGeneratedSidecar(page: Page, options: { oldPayload?: boolean; personalSync?: boolean } = {}) {
+export async function startGeneratedSidecar(page: Page, options: { oldPayload?: boolean; personalSync?: boolean; sharing?: boolean } = {}) {
   const root = resolve(process.cwd(), "../..");
   const directory = await mkdtemp(join(tmpdir(), "vault-renderer-generated-"));
   let child: ChildProcess | undefined;
@@ -56,7 +56,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("vault-renderer-generated-")) {
       throw new Error("Generated test directory is outside its cleanup boundary");
     }
-    if (options.personalSync) {
+    if (options.personalSync || options.sharing) {
       await new Promise<void>((accept, reject) => {
         const cleanup = spawn(join(root, process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python"), [join(root, "apps/desktop/tests/live/cleanup-generated-sync.py"), directory], {
           cwd: directory, windowsHide: true, stdio: "ignore", env: { ...process.env, PYTHONPATH: join(root, "src"), UI_GENERATED_SYNC_MASTER: testData.masterPassword },

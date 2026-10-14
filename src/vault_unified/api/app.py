@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 
-from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer, organization, security, personal_sync, passkeys
+from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer, organization, security, personal_sync, passkeys, sharing
 from vault_unified.env import load_env
 from vault_unified import browser_discovery
 
@@ -87,11 +87,14 @@ def create_app(
     app.include_router(security.router, prefix="/api")
     app.include_router(personal_sync.router, prefix="/api")
     app.include_router(passkeys.router, prefix="/api")
+    app.include_router(sharing.router, prefix="/api")
     app.include_router(sync.router, prefix="/api")
     app.include_router(transfer.router, prefix="/api")
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/sharing/"):
+            return JSONResponse({"detail": "Invalid sharing request"}, status_code=422)
         if request.url.path.startswith("/api/passkeys/"):
             return JSONResponse({"detail": "Invalid Passkey request"}, status_code=422)
         if request.url.path.startswith("/api/personal-sync/"):
