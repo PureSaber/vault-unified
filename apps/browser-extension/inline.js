@@ -147,6 +147,7 @@
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (sender.id !== chrome.runtime.id) return false;
     if (message.type === "vault-inline-deliver") { respond(deliver(message)); return false; }
+    if (message.type === "vault-inline-cancel" && pending?.nonce === message.nonce) { close(); target?.focus(); respond({ cancelled: true }); }
     if (message.type === "vault-inline-reset") { close(); if (kind(document.activeElement)) void showButton(document.activeElement); respond({ done: true }); }
     if (message.type === "vault-inline-open" && document.hasFocus() && kind(target)) { void openPicker(); respond({ opened: true }); }
     return false;

@@ -53,6 +53,16 @@ export async function inlineJourney({ browser, context, api, password, assert })
     assert(await website.locator('#first-password').inputValue() === '', 'Inline fill changed a different form');
     assert(await website.locator('#second-user').inputValue() === 'generated-user', 'Inline fill did not use the selected form');
     assert(await website.locator('#second-password').inputValue() === password, 'Selected password field did not fill');
+    step = 'dynamic Shadow DOM form';
+    await website.goto(`${siteUrl}/dynamic`);
+    await website.getByRole('button', { name: 'Show login', exact: true }).click();
+    await selectAccount(website.locator('[type=password]'));
+    await website.waitForFunction(() => document.querySelector('section').shadowRoot.querySelector('[type=password]').value.length > 0);
+    assert(await website.locator('[type=password]').inputValue() === password, 'Dynamic shadow form did not fill');
+    step = 'inline verification code';
+    await website.goto(siteUrl);
+    await selectAccount(website.locator('[autocomplete=one-time-code]'));
+    await website.waitForFunction(() => /^\d{6}$/.test(document.querySelector('[autocomplete=one-time-code]').value));
     step = 'synthetic click and replaced target';
     await website.goto(`${siteUrl}/step-two`);
     await website.locator('[type=password]').click();

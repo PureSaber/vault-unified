@@ -75,6 +75,8 @@ jobs:
           $env:TAURI_CONFIG = '{"identifier":"com.puresaber.vault-unified.generated-test","app":{"windows":[{"label":"main","title":"Vault Unified generated test","width":1000,"height":700}]}}'
           cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --bin vault-unified-desktop --features tauri/custom-protocol
           npm --prefix apps/desktop run test:ui:install
+          node --test apps/desktop/tests/browser-inline-worker.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node apps/desktop/tests/live/browser-trust-restart.mjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node apps/desktop/tests/live/desktop-lifecycle.mjs

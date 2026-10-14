@@ -5,6 +5,7 @@ const scriptId = "vault-unified-inline";
 const pendingFrames = new Map();
 const selections = new Map();
 let scriptUpdates = Promise.resolve();
+let settingsUpdates = Promise.resolve();
 const fail = key => { throw Object.assign(new Error(), { key }); };
 function originOf(value) {
   const url = new URL(value);
@@ -14,7 +15,10 @@ function originOf(value) {
 function permissionPattern(origin) { const url = new URL(origin); return `${url.protocol}//${url.hostname}/*`; }
 async function preferences() {
   const stored = (await chrome.storage.local.get(inlineKey))[inlineKey] || {};
-  return { all: stored.all === true, sites: Array.isArray(stored.sites) ? stored.sites : [], excluded: Array.isArray(stored.excluded) ? stored.excluded : [], language: stored.language === "zh" ? "zh" : "en" };
+  const origins = values => Array.isArray(values) ? [...new Set(values.slice(0, 1000).flatMap(value => {
+    try { return typeof value === "string" ? [originOf(value)] : []; } catch { return []; }
+  }))] : [];
+  return { all: stored.all === true, sites: origins(stored.sites), excluded: origins(stored.excluded), language: stored.language === "zh" ? "zh" : "en" };
 }
 async function allowed(origin) {
   const settings = await preferences();
@@ -57,6 +61,11 @@ async function fill(context, message) {
   } finally { if (values.password) values.password = ""; if (values.otp) values.otp = ""; }
 }
 function synchronizeScripts() { scriptUpdates = scriptUpdates.catch(() => {}).then(updateScripts); return scriptUpdates; }
+async function cancelFrame(id) {
+  const pending = pendingFrames.get(id);
+  pendingFrames.delete(id);
+  if (pending) await chrome.tabs.sendMessage(pending.context.tabId, { type: "vault-inline-cancel", nonce: pending.message.nonce }, { documentId: pending.context.documentId }).catch(() => {});
+}
 async function updateScripts() {
   const settings = await preferences();
   const grants = (await chrome.permissions.getAll()).origins || [];
@@ -88,6 +97,10 @@ async function changeSettings(message) {
   if (settings.sites.length > 1000 || settings.excluded.length > 1000) fail("requestError");
   settings.language = message.language === "zh" ? "zh" : "en";
   await chrome.storage.local.set({ [inlineKey]: settings });
+  if (message.action.startsWith("disable")) {
+    selections.clear();
+    for (const [id, value] of pendingFrames) if (message.action === "disable-all" || value.context.origin === origin) await cancelFrame(id);
+  }
   if (message.action === "disable-all") {
     const origins = ((await chrome.permissions.getAll()).origins || []).filter(value => !["http://127.0.0.1/*", "http://localhost/*"].includes(value));
     if (origins.length) await chrome.permissions.remove({ origins });
@@ -104,14 +117,17 @@ async function changeSettings(message) {
 }
 async function handle(message, sender) {
   if (extensionPage(sender, "popup.html")) {
-    if (message.type === "vault-inline-settings") return changeSettings(message);
+    if (message.type === "vault-inline-settings") {
+      settingsUpdates = settingsUpdates.catch(() => {}).then(() => changeSettings(message));
+      return settingsUpdates;
+    }
     if (message.type === "vault-inline-status") return { enabled: await allowed(originOf(message.origin)), all: (await preferences()).all };
   }
   if (extensionPage(sender, "frame-confirm.html")) {
     const pending = pendingFrames.get(message.id);
     if (!pending || pending.expires <= Date.now()) fail("expired");
     if (message.type === "vault-frame-info") return { origin: pending.context.origin, topOrigin: pending.context.topOrigin, title: pending.title, username: pending.username, language: pending.language, expires: pending.expires };
-    if (message.type === "vault-frame-cancel") { pendingFrames.delete(message.id); return { cancelled: true }; }
+    if (message.type === "vault-frame-cancel") { await cancelFrame(message.id); return { cancelled: true }; }
     if (message.type === "vault-frame-approve") {
       pendingFrames.delete(message.id);
       return fill(pending.context, pending.message);
@@ -156,6 +172,11 @@ chrome.commands.onCommand.addListener(async command => {
   });
 });
 chrome.tabs.onRemoved.addListener(tabId => { selections.delete(tabId); for (const [id, value] of pendingFrames) if (value.context.tabId === tabId) pendingFrames.delete(id); });
-chrome.permissions.onRemoved.addListener(() => { void synchronizeScripts(); void chrome.tabs.query({}).then(tabs => Promise.all(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: "vault-inline-reset" }).catch(() => {})))); });
-chrome.runtime.onInstalled.addListener(() => { void synchronizeScripts(); });
-chrome.runtime.onStartup.addListener(() => { void synchronizeScripts(); });
+chrome.permissions.onRemoved.addListener(() => {
+  selections.clear();
+  for (const id of pendingFrames.keys()) void cancelFrame(id);
+  void synchronizeScripts().catch(() => {});
+  void chrome.tabs.query({}).then(tabs => Promise.all(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: "vault-inline-reset" }).catch(() => {})))).catch(() => {});
+});
+chrome.runtime.onInstalled.addListener(() => { void synchronizeScripts().catch(() => {}); });
+chrome.runtime.onStartup.addListener(() => { void synchronizeScripts().catch(() => {}); });

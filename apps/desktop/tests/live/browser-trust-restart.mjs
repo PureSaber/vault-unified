@@ -93,6 +93,7 @@ try {
     if (url.pathname === '/step-one') return response.end('<!doctype html><form onsubmit="event.preventDefault();this.dataset.submitted=\'yes\'"><input autocomplete="username"></form>');
     if (url.pathname === '/step-two') return response.end('<!doctype html><form><input type="password" autocomplete="current-password"></form>');
     if (url.pathname === '/complex') return response.end('<!doctype html><form><input autocomplete="username"><input id="first-password" type="password"></form><form><input id="second-user" autocomplete="username"><input id="second-password" type="password"></form>');
+    if (url.pathname === '/dynamic') return response.end('<!doctype html><button id="mount" onclick="const root=document.querySelector(\'section\').attachShadow({mode:\'open\'});root.innerHTML=\'<form><input autocomplete=username><input type=password autocomplete=current-password></form>\';this.remove()">Show login</button><section></section>');
     if (url.pathname === '/embedded' && /^http:\/\/127\.0\.0\.1:\d+$/.test(url.searchParams.get('origin') || '')) return response.end(`<!doctype html><iframe src="${url.searchParams.get('origin')}"></iframe>`);
     response.end('<!doctype html><input autocomplete="username"><input type="password" autocomplete="current-password"><input autocomplete="one-time-code">');
   });
@@ -181,7 +182,10 @@ try {
     assert(await browser.popup.locator('#pair-form').isHidden(), 'Manual address fallback required new authorization');
   } finally { await rename(disabledManifest, manifest); }
   const persistent = await browser.popup.evaluate(async () => ({ local: await chrome.storage.local.get(null), sync: await chrome.storage.sync.get(null) }));
-  assert(JSON.stringify(persistent) === '{"local":{"vaultUnifiedInlinePreferences":{"all":false,"sites":[],"excluded":[],"language":"en"}},"sync":{}}', 'Extension persisted data beyond non-secret inline preferences');
+  const preferences = persistent.local.vaultUnifiedInlinePreferences;
+  assert(Object.keys(persistent.local).join() === 'vaultUnifiedInlinePreferences' && Object.keys(persistent.sync).length === 0
+    && Object.keys(preferences).sort().join() === 'all,excluded,language,sites' && preferences.all === false
+    && preferences.sites.length === 0 && preferences.excluded.length === 0 && preferences.language === 'en', 'Extension persisted data beyond non-secret inline preferences');
   const devices = await api('/browser/devices', null, 'GET');
   assert(devices.devices.length === 1 && devices.devices[0].id === identityCheck.deviceId, 'Device list lost authorization across restart');
   step = 'desktop revocation rejects outstanding browser authorization';

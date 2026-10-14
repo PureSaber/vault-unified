@@ -16,8 +16,8 @@ than replaced with a simulated completion claim.
 |---|---|---|
 | 1 | Chrome / Edge import: source guidance, format detection, faithful fields, duplicate review, invalid rows, cancel, apply, undo, password-page entry point | Merged in PR #58 / `6cf4237`; CI run 37187313246 passed; source feature, not yet released |
 | 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Merged PR #59 / `6518339`; full CI run 38497981145 passed, including actual native restart journey; source feature, not yet released |
-| 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Pending |
-| 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Implemented on `codex/desktop-quick-search`; renderer and actual Windows global-shortcut/tray/exit/restart checks passed, integration pending |
+| 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Implemented on `codex/browser-inline-fill`; explicit site permissions, isolated picker, stepwise fields and extension-owned frame consent; integration pending |
+| 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Merged PR #68 / `db88b8e`; exact-head CI 38514736044 passed, including actual Windows global-shortcut/tray/exit/restart checks |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Merged PR #65 / `67b2db3`; exact-head CI 38507719041 passed, including native extension TOTP filling |
 | 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |

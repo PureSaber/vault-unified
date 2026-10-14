@@ -46,3 +46,25 @@ It keeps a draft in memory while you finish the website action. Generate and fil
 explicitly marked new-password fields, then confirm the website accepted the
 password before saving. Closing the window, locking, or leaving the original
 website clears the draft. No background form monitoring is used.
+
+## Optional input-field suggestions in development builds
+
+In the extension, expand **Choose accounts inside fields** and enable the current
+website. To authorize an embedded website, enter its address separately. You can
+also explicitly allow all HTTP/HTTPS websites, or disable all suggestions and
+revoke those optional permissions. Ordinary popup filling still works with
+suggestions off.
+
+Click **V** next to a login field, select an account, or use **Alt+Shift+V** and
+the arrow/Enter keys. Suggestions support separate username/password steps,
+dynamic forms and accessible open Shadow DOM inputs. They fill the chosen form
+without submitting it. One-time-code fields offer accounts with TOTP enabled.
+An embedded form from another origin always requires confirmation in a separate
+extension window showing the outer page and the actual destination.
+
+Suggestions are off by default and record only site preferences locally.
+Passwords and access tokens never go into persistent extension settings. A
+changed document, replaced target, lock, expired confirmation or revoked site
+permission prevents the pending fill. On unsupported fields, use the extension
+popup or copy from the desktop. Configure the shortcut in the browser's extension
+shortcut settings if another extension already uses it.
