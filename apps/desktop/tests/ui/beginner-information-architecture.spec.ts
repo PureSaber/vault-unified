@@ -48,8 +48,8 @@ test("keeps the beginner path compact and progressively reveals connection detai
   await page.getByRole("button", { name: "Create and unlock" }).click();
 
   const navigation = page.getByRole("navigation", { name: "Main navigation" });
-  await expect(navigation.getByRole("button")).toHaveCount(5);
-  for (const label of ["Passwords", "Security & recovery", "Connections", "Settings", "Lock now"]) {
+  await expect(navigation.getByRole("button")).toHaveCount(6);
+  for (const label of ["Passwords", "Security & recovery", "Connections", "Settings", "Quick search", "Lock now"]) {
     await expect(navigation.getByRole("button", { name: label, exact: true })).toBeVisible();
   }
   await expect(navigation.getByRole("button", { name: "Add", exact: true })).toHaveCount(0);

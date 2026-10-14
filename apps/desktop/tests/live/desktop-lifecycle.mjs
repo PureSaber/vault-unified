@@ -12,18 +12,26 @@ const isolated = await mkdtemp(join(tmpdir(), 'vault-desktop-generated-'));
 const executable = join(isolated, 'vault-generated.exe');
 const master = randomBytes(32).toString('hex');
 const password = randomBytes(24).toString('hex');
-let child, browser, page, step = 'startup';
+let child, browser, page, startupErrors = '', step = 'startup';
 const assert = (condition, message) => { if (!condition) throw new Error(message); };
 const delay = ms => new Promise(accept => setTimeout(accept, ms));
-const wait = async predicate => { for (let i = 0; i < 100; i++) { if (await predicate()) return; await delay(100); } throw new Error('Condition timed out'); };
+const wait = async (predicate, timeout = 10_000) => { const deadline = Date.now() + timeout; while (Date.now() < deadline) { if (await predicate()) return; await delay(100); } throw new Error('Condition timed out'); };
 const env = { ...process.env, VAULT_DATA_DIR: isolated, VAULT_CONFIG_DIR: join(isolated, 'config'), VAULT_FILE: join(isolated, 'generated.vault'), VAULT_BROWSER_DISCOVERY_DIR: join(isolated, 'bridge'), VAULT_API_SIDECAR: '', WEBVIEW2_USER_DATA_FOLDER: join(isolated, 'webview') };
 const native = action => JSON.parse(execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'apps/desktop/tests/live/native-window.ps1'), '-TargetProcessId', String(child.pid), '-Action', action], { windowsHide: true, encoding: 'utf8' }));
 async function start() {
   const reservation = createServer(); await new Promise(accept => reservation.listen(0, '127.0.0.1', accept));
   const port = reservation.address().port; await new Promise(accept => reservation.close(accept));
   env.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = `--remote-debugging-port=${port}`;
-  child = spawn(executable, [], { cwd: root, env, windowsHide: true, stdio: 'ignore' });
-  await wait(async () => { try { return (await fetch(`http://127.0.0.1:${port}/json/version`)).ok; } catch { return false; } });
+  startupErrors = '';
+  child = spawn(executable, [], { cwd: root, env, windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+  child.stderr.on('data', chunk => {
+    const safe = chunk.toString().split('\n').filter(line => !/secret|token|VAULT_API_READY/i.test(line)).join('\n');
+    startupErrors = (startupErrors + safe).slice(-1800);
+  });
+  await wait(async () => {
+    if (child.exitCode !== null) throw new Error(`Native startup exited (${child.exitCode}): ${startupErrors}`);
+    try { return (await fetch(`http://127.0.0.1:${port}/json/version`)).ok; } catch { return false; }
+  }, 45_000).catch(error => { throw new Error(`${error.message}; native exit=${child.exitCode}; ${startupErrors}`); });
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   await wait(() => browser.contexts().some(context => context.pages().length));
   page = browser.contexts()[0].pages()[0]; page.setDefaultTimeout(15_000);
