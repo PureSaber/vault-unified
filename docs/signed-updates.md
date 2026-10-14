@@ -37,8 +37,9 @@ manifest cannot label an older signed installer as a new release. `latest.json`
 must contain the actual installer URL and signature contents for each Windows
 installer target. The release build produces matching installers, signatures,
 manifest and personal-edition kit. Installed evidence is recorded in the
-[v1.4.0 delivery record](release-record-v1.4.0.md). Draft release assets do not
-enter the public update channel; promotion publishes the matching manifest.
+[v1.4.0 delivery record](release-record-v1.4.0.md). Drafts and prereleases do not
+enter the stable update channel. Download the v1.4 candidate manually; promotion
+to the latest stable release makes its matching manifest available to the updater.
 
 ## Verification
 
