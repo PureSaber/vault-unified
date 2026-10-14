@@ -97,6 +97,10 @@ try {
   await dialog().getByRole('button', { name: 'Close', exact: true }).click();
   const status = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'));
   assert(status.tray_available && status.shortcut_registered, 'Native tray and global shortcut must be available');
+  step = 'native Passkey approval window';
+  native('close'); await wait(() => !native('state').visible);
+  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('show_desktop_approval'));
+  await wait(() => native('state').visible);
   step = 'close, hidden search and repeat launch';
   native('close'); await wait(() => !native('state').visible);
   assert(child.exitCode === null, 'Close-to-tray must keep the process alive');
@@ -112,7 +116,11 @@ try {
   await wait(async () => !(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'))).shortcut_registered);
   await page.getByLabel('Global shortcut', { exact: true }).selectOption('Control+Shift+Space');
   await wait(async () => (await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'))).shortcut_registered);
-  await page.getByLabel('Keep running in the tray when the window closes', { exact: true }).uncheck();
+  const trayCheckbox = page.getByLabel('Keep running in the tray when the window closes', { exact: true });
+  assert(await trayCheckbox.isChecked(), 'Close-to-tray starts enabled');
+  // The controlled value is acknowledged asynchronously by the native command.
+  await trayCheckbox.click();
+  await wait(async () => !await trayCheckbox.isChecked());
   await wait(async () => !(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'))).preferences.close_to_tray);
   await page.getByRole('button', { name: 'Passwords', exact: true }).click();
   await page.getByRole('button', { name: 'Add password', exact: true }).click();
@@ -136,7 +144,7 @@ try {
   const restored = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'));
   assert(!restored.preferences.close_to_tray, 'Preferences must survive restart');
   native('close'); await wait(() => child.exitCode !== null); browser = undefined;
-  console.log(JSON.stringify({ nativeQuickSearch: true, globalShortcutFromAnotherWindow: true, closeToTray: true, singleInstance: true, dirtyExit: true, lockedRestart: true, preferencesPersisted: true, qrImageUnderNativeCsp: true, shortcutToggle: true, sidecarShutdown: true, nativeSessionNotifications: true, nativeSuspendNotifications: true, pendingDraftClearedOnSystemLock: true, resumeStayedLocked: true }));
+  console.log(JSON.stringify({ nativeQuickSearch: true, globalShortcutFromAnotherWindow: true, closeToTray: true, singleInstance: true, dirtyExit: true, lockedRestart: true, preferencesPersisted: true, qrImageUnderNativeCsp: true, shortcutToggle: true, sidecarShutdown: true, nativeSessionNotifications: true, nativeSuspendNotifications: true, pendingDraftClearedOnSystemLock: true, resumeStayedLocked: true, passkeyApprovalWindow: true }));
 } catch (error) {
   console.error(`Generated desktop lifecycle failed at ${step}: ${String(error.message).split(master).join('[generated]').split(password).join('[generated]')}`);
   process.exitCode = 1;

@@ -1,4 +1,4 @@
-importScripts("identity.js", "connection.js");
+importScripts("identity.js", "connection.js", "passkey-worker.js");
 
 const inlineKey = "vaultUnifiedInlinePreferences";
 const scriptId = "vault-unified-inline";
@@ -18,7 +18,7 @@ async function preferences() {
   const origins = values => Array.isArray(values) ? [...new Set(values.slice(0, 1000).flatMap(value => {
     try { return typeof value === "string" ? [originOf(value)] : []; } catch { return []; }
   }))] : [];
-  return { all: stored.all === true, sites: origins(stored.sites), excluded: origins(stored.excluded), language: stored.language === "zh" ? "zh" : "en" };
+  return { all: stored.all === true, passkeys: stored.passkeys === true, sites: origins(stored.sites), excluded: origins(stored.excluded), language: stored.language === "zh" ? "zh" : "en" };
 }
 async function allowed(origin) {
   const settings = await preferences();
@@ -72,16 +72,25 @@ async function updateScripts() {
   const desired = settings.all ? ["http://*/*", "https://*/*"] : [...new Set(settings.sites.map(permissionPattern))];
   const matches = [];
   for (const pattern of desired) if (grants.includes(pattern) || await chrome.permissions.contains({ origins: [pattern] })) matches.push(pattern);
-  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [scriptId] });
-  if (!matches.length) { if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [scriptId] }); return; }
-  const script = { id: scriptId, matches, js: ["inline.js"], allFrames: true, runAt: "document_idle", persistAcrossSessions: true, world: "ISOLATED" };
-  if (existing.length) await chrome.scripting.updateContentScripts([script]);
-  else await chrome.scripting.registerContentScripts([script]);
+  const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [scriptId, "vault-passkey-bridge", "vault-passkey-main"] });
+  const desiredScripts = matches.length ? [{ id: scriptId, matches, js: ["inline.js"], allFrames: true, runAt: "document_idle", persistAcrossSessions: true, world: "ISOLATED" }] : [];
+  if (matches.length && settings.passkeys) {
+    desiredScripts.push({ id: "vault-passkey-bridge", matches, js: ["passkey-bridge.js"], allFrames: true, runAt: "document_start", persistAcrossSessions: true, world: "ISOLATED" });
+    desiredScripts.push({ id: "vault-passkey-main", matches, js: ["passkey-main.js"], allFrames: true, runAt: "document_start", persistAcrossSessions: true, world: "MAIN" });
+  }
+  const removed = existing.filter(value => !desiredScripts.some(script => script.id === value.id)).map(value => value.id);
+  if (removed.length) await chrome.scripting.unregisterContentScripts({ ids: removed });
+  for (const script of desiredScripts) {
+    if (existing.some(value => value.id === script.id)) await chrome.scripting.updateContentScripts([script]);
+    else await chrome.scripting.registerContentScripts([script]);
+  }
 }
 async function changeSettings(message) {
   const settings = await preferences();
   const origin = originOf(message.origin);
-  if (message.action === "enable-all") {
+  if (message.action === "passkeys-on" || message.action === "passkeys-off") {
+    settings.passkeys = message.action === "passkeys-on";
+  } else if (message.action === "enable-all") {
     if (!await chrome.permissions.contains({ origins: ["http://*/*", "https://*/*"] })) fail("siteDisabled");
     settings.all = true; settings.excluded = [];
   } else if (message.action === "disable-all") {
@@ -109,19 +118,24 @@ async function changeSettings(message) {
   for (const tab of await chrome.tabs.query({})) {
     if (!/^https?:/.test(tab.url || "")) continue;
     await chrome.tabs.sendMessage(tab.id, { type: "vault-inline-reset" }).catch(() => {});
-    if (message.action.startsWith("enable") && tab.id === message.tabId) {
+    if ((message.action.startsWith("enable") || message.action === "passkeys-on") && tab.id === message.tabId) {
       await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ["inline.js"] }).catch(() => {});
+      if (settings.passkeys && await allowed(originOf(tab.url))) {
+        await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ["passkey-bridge.js"] }).catch(() => {});
+        await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, world: "MAIN", files: ["passkey-main.js"] }).catch(() => {});
+      }
     }
   }
   return { enabled: await allowed(origin), all: settings.all };
 }
 async function handle(message, sender) {
+  if (["vault-passkey-begin", "vault-passkey-cancel"].includes(message.type)) return handlePasskey(message, sender);
   if (extensionPage(sender, "popup.html")) {
     if (message.type === "vault-inline-settings") {
       settingsUpdates = settingsUpdates.catch(() => {}).then(() => changeSettings(message));
       return settingsUpdates;
     }
-    if (message.type === "vault-inline-status") return { enabled: await allowed(originOf(message.origin)), all: (await preferences()).all };
+    if (message.type === "vault-inline-status") { const settings = await preferences(); return { enabled: await allowed(originOf(message.origin)), all: settings.all, passkeys: settings.passkeys }; }
   }
   if (extensionPage(sender, "frame-confirm.html")) {
     const pending = pendingFrames.get(message.id);

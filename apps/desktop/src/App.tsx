@@ -23,6 +23,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import ImportWizard from "./components/ImportWizard";
 import QuickSearch from "./components/QuickSearch";
 import PersonalSyncRunner from "./components/PersonalSyncRunner";
+import PasskeyRequests from "./components/PasskeyRequests";
 import { cancelHello, desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
 
 type TopPage = "passwords" | "security" | "connections" | "settings";
@@ -50,6 +51,7 @@ function AppShell() {
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
   const [quickSearch, setQuickSearch] = useState(false);
+  const [passkeyPending, setPasskeyPending] = useState(false);
   const [desktop, setDesktop] = useState<DesktopStatus | null>(null);
   const pendingQuickSearch = useRef(false);
   const nativeHandlers = useRef({ search: () => {}, lock: () => {}, exit: () => {} });
@@ -70,6 +72,7 @@ function AppShell() {
     setPendingAction(null);
     setIdleCountdown(null);
     setQuickSearch(false);
+    setPasskeyPending(false);
   }, []);
 
   useEffect(() => {
@@ -438,7 +441,8 @@ function AppShell() {
             />
           </>
         )}
-        <PersonalSyncRunner paused={["editor", "import", "connections", "conflicts"].includes(page)} onOpen={() => requestNavigation("connections")} />
+        <PasskeyRequests onPendingChange={setPasskeyPending} />
+        <PersonalSyncRunner paused={passkeyPending || ["editor", "import", "connections", "conflicts"].includes(page)} onOpen={() => requestNavigation("connections")} />
         {page === "import" && (
           <div className="card">
             <button type="button" className="ghost page-back" onClick={() => requestNavigation("passwords")}>

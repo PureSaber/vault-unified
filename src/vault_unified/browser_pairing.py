@@ -231,6 +231,13 @@ class BrowserPairingStore:
                 if pair.connection_key:
                     self.disconnect(pair.connection_key, origin)
 
+    def session_for(self, token: str, origin: str) -> str:
+        self.vault_for(token, origin, touch=False)
+        with self._lock:
+            pair = self._tokens.get(token)
+            if pair is None: raise BrowserPairingError("Browser pairing is no longer active")
+            return pair.session_token
+
     def vault_for(self, token: str, origin: str, *, touch: bool = True) -> Any:
         self._validate_origin(origin)
         with self._lock:

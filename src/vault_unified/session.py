@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 from threading import RLock
+from contextlib import contextmanager
 
 from vault_unified.config import get_vault_path
 from vault_unified.crypto import decrypt_payload
@@ -201,10 +202,20 @@ class SessionManager:
                     del self._sessions[token]
                     from vault_unified.personal_sync.connections import connections
                     connections.clear_scope(token)
+                    from vault_unified.passkey_requests import requests
+                    requests.clear(token)
                 raise PermissionError("Session expired or invalid")
             if touch:
                 session.touch()
             return session.vault
+
+    @contextmanager
+    def active(self, token: str, vault):
+        """Serialize a short local commit with explicit/system session locking."""
+        with self._guard:
+            if self.get(token, touch=False) is not vault:
+                raise PermissionError("Desktop session changed")
+            yield
 
     def browser_binding(self, token: str) -> tuple[str, str, str] | None:
         with self._guard:
@@ -229,6 +240,8 @@ class SessionManager:
                 self._epoch += 1
             from vault_unified.personal_sync.connections import connections
             connections.clear_scope(token)
+            from vault_unified.passkey_requests import requests
+            requests.clear(token)
 
     def lock_all(self) -> None:
         with self._guard:
@@ -236,6 +249,8 @@ class SessionManager:
             self._sessions.clear()
             from vault_unified.personal_sync.connections import connections
             connections.clear_scope(None)
+            from vault_unified.passkey_requests import requests
+            requests.clear()
 
     def is_unlocked(self, token: str) -> bool:
         session = self._sessions.get(token)

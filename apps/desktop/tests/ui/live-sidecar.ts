@@ -104,7 +104,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
         },
       } });
     }, { base_url: `http://127.0.0.1:${port}/api`, bootstrap_secret: testData.bootstrapSecret, instance_id: "generated-renderer-api" });
-    return { stop, directory };
+    return { stop, directory, apiUrl: `http://127.0.0.1:${port}/api` };
   } catch (error) {
     await stop();
     throw error;

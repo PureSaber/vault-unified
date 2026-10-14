@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><title>Generated Passkey website</title>
+<main><h1>Generated Passkey website</h1>
+<button id="create">Create Passkey</button><button id="get">Sign in</button><button id="discoverable">Choose account</button>
+<button id="abort">Abort request</button><button id="timeout">Short request</button><button id="wrong-rp">Wrong RP</button>
+<p id="result" role="status">Ready</p></main>
+<script>
+let controller;
+const result = document.getElementById('result');
+const bytes = value => Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
+const post = async (path, body) => {
+  const response = await fetch(path, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  if (!response.ok) throw new Error('Verification failed');
+  return response.json();
+};
+async function run(operation, mode) {
+  controller = new AbortController(); result.textContent = 'Waiting';
+  try {
+    const request = await post('/'+operation+'/options', {discoverable: mode === 'discoverable'});
+    const publicKey = request.options;
+    publicKey.challenge = bytes(publicKey.challenge);
+    if (publicKey.user) publicKey.user.id = bytes(publicKey.user.id);
+    for (const name of ['allowCredentials','excludeCredentials']) for (const credential of publicKey[name] || []) credential.id = bytes(credential.id);
+    if (mode === 'timeout') publicKey.timeout = 1000;
+    if (mode === 'wrong-rp') publicKey.rp.id = 'example.net';
+    const credential = await navigator.credentials[operation]({publicKey, signal:controller.signal});
+    const response = await post('/'+operation+'/verify', {state:request.state, credential:credential.toJSON()});
+    result.textContent = response.verified ? (operation === 'create' ? 'Registered' : 'Signed in') : 'Failed';
+    document.body.dataset.credentialClass = String(credential instanceof PublicKeyCredential);
+    document.body.dataset.responseClass = String(credential.response instanceof (operation === 'create' ? AuthenticatorAttestationResponse : AuthenticatorAssertionResponse));
+    if (operation === 'create') document.body.dataset.algorithm = String(credential.response.getPublicKeyAlgorithm());
+  } catch (error) { result.textContent = error.name; }
+}
+for (const id of ['create','get','discoverable','timeout','wrong-rp']) document.getElementById(id).onclick = () => void run(['get','discoverable'].includes(id) ? 'get' : 'create', id);
+document.getElementById('abort').onclick = () => controller?.abort();
+</script></html>
