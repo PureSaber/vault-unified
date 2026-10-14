@@ -24,7 +24,7 @@ Chrome／Edge 扩展和可部署的分享服务；普通本地使用无需云账
 | 安装版浏览器 | 同轮安装验证通过 Chrome／Edge 保存、填充、改密、TOTP、Passkey 创建／登录／取消、重启重连和撤销 |
 | 服务部署包 | [Sharing service 38571418946](https://github.com/PureSaber/vault-unified/actions/runs/38571418946)：实际解压服务 ZIP、Compose 构建与 HTTP 加密分享／权限验证通过 |
 | 同步与恢复 | 两套隔离配置已验证文件夹／WebDAV、离线合并、同字段／删除冲突、重试和完整加密恢复；各阶段证据见 [开发记录](product-expansion-plan.md) |
-| 生产签名文件 | 两种安装格式已通过真实 Tauri 下载与签名／版本校验；[下载验证 38575607343](https://github.com/PureSaber/vault-unified/actions/runs/38575607343)记录从公开预发布页重新下载这些文件的安装流程，最终文件结果见随附发布清单 |
+| 生产签名文件 | 两种安装格式已通过真实 Tauri 下载与签名／版本校验；[候选版下载验证](https://github.com/PureSaber/vault-unified/actions/workflows/personal-delivery.yml)记录从公开预发布页重新下载这些文件的安装流程，最终文件结果见随附发布清单 |
 
 安装流程只在一次性 CI Windows 环境中运行；本机检查使用生成的隔离数据。
 正式交付清单记录每个文件的版本、大小、摘要和安装验证结果，复用既有发布清单格式。
