@@ -81,7 +81,7 @@ export default function PasswordHealth({ onOpen }: { onOpen: (entry: Entry) => v
       {running && <p role="status">{zh ? `正在查询，已有 ${Object.keys(exposure).length} 个结果…` : `Checking; ${Object.keys(exposure).length} results so far…`}</p>}
       <p className="field-hint">{zh ? "先在网站修改密码，再更新这里保存的登录信息。编辑器可生成新密码，生成历史可随时找回和复制。" : "Change the password on the website, then update the saved login here. The editor can generate passwords; generated history lets you recover and copy them."}</p>
       <div className="button-row">
-        <label>{zh ? "筛选问题" : "Filter findings"}<select value={filter} onChange={event => { setFilter(event.target.value); setLimit(50); }}><option value="attention">{zh ? "需要处理" : "Needs attention"}</option><option value="all">{zh ? "全部" : "All"}</option><option value="weak">{zh ? "弱密码" : "Weak"}</option><option value="reused">{zh ? "重复密码" : "Reused"}</option><option value="exposed">{zh ? "已泄露" : "Exposed"}</option></select></label>
+        <label>{zh ? "筛选问题" : "Filter findings"}<select aria-label={zh ? "筛选问题" : "Filter findings"} value={filter} onChange={event => { setFilter(event.target.value); setLimit(50); }}><option value="attention">{zh ? "需要处理" : "Needs attention"}</option><option value="all">{zh ? "全部" : "All"}</option><option value="weak">{zh ? "弱密码" : "Weak"}</option><option value="reused">{zh ? "重复密码" : "Reused"}</option><option value="exposed">{zh ? "已泄露" : "Exposed"}</option></select></label>
         <label>{zh ? "查找账号" : "Find a login"}<input value={query} onChange={event => { setQuery(event.target.value); setLimit(50); }} /></label>
       </div>
       {!results.length && <p>{zh ? "此筛选下没有待处理账号。" : "No logins to address with this filter."}</p>}
