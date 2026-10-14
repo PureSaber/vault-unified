@@ -36,7 +36,14 @@ try {
   }
   assert(ready, 'Installed WebView did not become ready');
   browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const page = browser.contexts()[0].pages()[0]; page.setDefaultTimeout(30000);
+  let page;
+  while (Date.now() < deadline) {
+    page = browser.contexts().flatMap(context => context.pages())[0];
+    if (page) break;
+    await delay(100);
+  }
+  assert(page, 'Installed WebView did not create its page');
+  page.setDefaultTimeout(30000);
   await page.waitForFunction(() => Boolean(window.__TAURI_INTERNALS__));
   assert(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:app|version')) === expectedVersion, 'Installed version differs from installer');
   await page.evaluate(() => localStorage.setItem('vault_locale', 'en')); await page.reload();
@@ -74,9 +81,11 @@ try {
     }
     const restoredAfter = await api(`/entries/${fixture.id}?reveal=true`, null, 'GET');
     assert(restoredAfter.password === fixture.entry.password && restoredAfter.notes === fixture.entry.notes, 'Migration lost data');
-    const pairing = await api('/browser/pairing-code');
-    const paired = await api('/browser/pair', { remember_connection: false }, 'POST', { Origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'X-Vault-Browser-Pairing': pairing.pairing_code, 'X-Vault-Extension-Version': expectedVersion });
-    assert(paired.discovery_available === true, 'Installed app did not register browser bridge');
+    if (browserPhase !== 'restart') {
+      const pairing = await api('/browser/pairing-code');
+      const paired = await api('/browser/pair', { remember_connection: false }, 'POST', { Origin: 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'X-Vault-Browser-Pairing': pairing.pairing_code, 'X-Vault-Extension-Version': expectedVersion });
+      assert(paired.discovery_available === true, 'Installed app did not register browser bridge');
+    }
     const manifest = JSON.parse(await readFile(join(data, 'bridge/native-host.json'), 'utf8'));
     assert(resolve(manifest.path).toLowerCase() === resolve(executable).toLowerCase(), 'Bridge targets a different executable');
   }
