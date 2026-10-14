@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Entry, type TemplateData } from "../api/client";
+import { api, type Entry, type TemplateData, type WebsiteRules } from "../api/client";
+import { normalizedWebsiteRules, websiteRulesText } from "./WebsiteRulesEditor";
 import { templateDisplay } from "./template-display";
 import { useI18n } from "../i18n";
 
-export const historyFields = ["title", "username", "password", "url", "notes", "tags", "entry_type", "custom_fields", "totp_secret", "template_data"] as const;
+export const historyFields = ["title", "username", "password", "url", "notes", "tags", "entry_type", "custom_fields", "totp_secret", "template_data", "website_rules"] as const;
 export type HistoryField = typeof historyFields[number];
 export type HistoryValues = Pick<Entry, HistoryField>;
 
@@ -30,6 +31,7 @@ export default function HistoryReview({ entryId, historyId, current, onRestore, 
     entry_type: zh ? "内容类型" : "Content type", custom_fields: zh ? "自定义字段" : "Custom fields",
     totp_secret: zh ? "验证码密钥" : "Authenticator key",
     template_data: zh ? "模板详情与恢复码" : "Template details and recovery codes",
+    website_rules: zh ? "网站匹配规则" : "Website matching rules",
   };
   const sensitive = new Set<HistoryField>(["password", "notes", "totp_secret", "custom_fields", "template_data"]);
   useEffect(() => {
@@ -41,7 +43,7 @@ export default function HistoryReview({ entryId, historyId, current, onRestore, 
     let cancelled = false;
     void api.previewEntryHistory(entryId, historyId).then(result => {
       if (cancelled) return;
-      const previous = { ...result.entry, template_data: result.entry.template_data || {} };
+      const previous = { ...result.entry, template_data: result.entry.template_data || {}, website_rules: normalizedWebsiteRules(result.entry.website_rules) };
       setPrevious(previous);
       setSelected(historyFields.filter(field => JSON.stringify(initialCurrent.current[field]) !== JSON.stringify(previous[field])));
     }).catch(() => { if (!cancelled) setError(true); });
@@ -59,6 +61,7 @@ export default function HistoryReview({ entryId, historyId, current, onRestore, 
   function display(field: HistoryField, value: unknown) {
     if (sensitive.has(field) && !revealed.includes(field)) return zh ? "已隐藏" : "Hidden";
     if (field === "template_data") return templateDisplay(value as TemplateData, zh);
+    if (field === "website_rules") return websiteRulesText(value as WebsiteRules, zh);
     if (field === "entry_type") {
       const types: Record<string, string> = { login: zh ? "登录信息" : "Login", secure_note: zh ? "安全备注" : "Secure note", card: zh ? "卡片" : "Card", identity: zh ? "身份信息" : "Identity", ssh_key: zh ? "SSH 密钥" : "SSH key", recovery_code: zh ? "恢复码" : "Recovery codes", software_license: zh ? "软件许可证" : "Software license", api_credential: zh ? "API 凭据" : "API credential" };
       return types[String(value)] || String(value);

@@ -29,7 +29,8 @@ characters. License/API primary keys use the existing encrypted password field.
 Only login entries qualify for browser matching. Concealed API listings/history
 responses do not contain template values; validation errors omit submitted values.
 
-JSON export is now transfer version 2; readers also accept version 1. CSV stores
+Templates were introduced in transfer version 2. Current JSON exports use version
+3 with website rules; readers accept versions 1, 2 and 3. CSV stores
 template details as JSON in `template_data`. Updating from an older export that
 lacks this field preserves current template details; an explicit empty object
 clears them. Bad CSV template JSON is an item-level preview error. Plaintext

@@ -14,7 +14,6 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import urlsplit
 
 from vault_unified.session import sessions
 from vault_unified.personal_data import PERSONAL_METADATA_KEY
@@ -253,15 +252,11 @@ class BrowserPairingStore:
 
 def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, Any]]:
     """Return only non-secret login metadata for the active browser origin."""
+    from vault_unified.website_rules import website, matches_entry
     try:
-        parsed = urlsplit(requested_url)
-        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        target = website(requested_url)
     except ValueError as exc:
         raise BrowserPairingError("A valid http or https page is required") from exc
-    if (parsed.scheme not in {"http", "https"} or not parsed.hostname
-            or parsed.username is not None or parsed.password is not None):
-        raise BrowserPairingError("A valid http or https page is required")
-    host = parsed.hostname.lower()
     matches: list[dict[str, Any]] = []
     for entry in vault.local.list_entries():
         if not is_fillable(entry):
@@ -270,16 +265,7 @@ def matches_for_url(vault: Any, requested_url: str) -> list[dict[str, Any]]:
         personal = entry.source_metadata.get(PERSONAL_METADATA_KEY) or {}
         if not isinstance(personal, dict) or personal.get("entry_type", "login") != "login":
             continue
-        try:
-            saved = urlsplit(entry.url)
-            saved_port = saved.port or (443 if saved.scheme == "https" else 80)
-        except ValueError:
-            continue
-        if saved.scheme not in {"http", "https"} or not saved.hostname:
-            continue
-        if saved.hostname.lower() != host:
-            continue
-        if saved.scheme != parsed.scheme or saved_port != port:
+        if not matches_entry(entry, target):
             continue
         matches.append({"id": entry.id, "title": entry.title, "username": entry.username})
         if personal.get("totp_secret"):

@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Attachment, type Entry, type TemplateData } from "../api/client";
+import { api, type Attachment, type Entry, type TemplateData, type WebsiteRules } from "../api/client";
 import CredentialTemplateFields from "../components/CredentialTemplateFields";
 import TotpEditor from "../components/TotpEditor";
 import GeneratorOptions, { defaultGenerationOptions } from "../components/GeneratorOptions";
 import GenerationHistory from "../components/GenerationHistory";
+import WebsiteRulesEditor, { normalizedWebsiteRules } from "../components/WebsiteRulesEditor";
 import HistoryReview, { type HistoryField } from "../components/HistoryReview";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
@@ -30,6 +31,7 @@ type Draft = {
   customFields: CustomField[];
   totpSecret: string;
   templateData: TemplateData;
+  websiteRules: WebsiteRules;
   attachments: Attachment[];
   pendingAttachments: PendingAttachment[];
   restoreHistoryId: string | null;
@@ -174,6 +176,7 @@ function emptyDraft(): Draft {
     customFields: [],
     totpSecret: "",
     templateData: {},
+    websiteRules: normalizedWebsiteRules(),
     attachments: [],
     pendingAttachments: [],
     restoreHistoryId: null,
@@ -192,6 +195,7 @@ function draftFromEntry(entry: Entry): Draft {
     customFields: (entry.custom_fields || []).map((field) => ({ ...field, clientId: clientId() })),
     totpSecret: entry.totp_secret || "",
     templateData: structuredClone(entry.template_data || {}),
+    websiteRules: structuredClone(normalizedWebsiteRules(entry.website_rules)),
     attachments: [...(entry.attachments || [])],
     pendingAttachments: [],
     restoreHistoryId: null,
@@ -210,6 +214,7 @@ function fingerprint(draft: Draft): string {
     customFields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })),
     totpSecret: draft.totpSecret,
     templateData: draft.templateData,
+    websiteRules: draft.websiteRules,
     attachmentIds: draft.attachments.map((item) => item.id),
     pendingAttachments: draft.pendingAttachments.map(({ clientId: id, file }) => ({
       id,
@@ -347,13 +352,14 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
     const summary: string[] = [];
     if (draft.tags.length) summary.push(interpolate(text.tagsSummary, { count: draft.tags.length }));
     if (draft.totpSecret) summary.push(text.totpSummary);
+    if (draft.websiteRules.match !== "exact" || draft.websiteRules.additional_urls.length || draft.websiteRules.excluded_urls.length) summary.push(locale === "zh" ? "网站匹配规则" : "Website matching rules");
     if (draft.customFields.length) summary.push(interpolate(text.customSummary, { count: draft.customFields.length }));
     const attachmentCount = draft.attachments.length + draft.pendingAttachments.length;
     if (attachmentCount) summary.push(interpolate(text.attachmentSummary, { count: attachmentCount }));
     if (history.length) summary.push(interpolate(text.historySummary, { count: history.length }));
     if (draft.restoreHistoryId) summary.push(text.restoredSummary);
     return summary;
-  }, [draft.attachments.length, draft.customFields.length, draft.pendingAttachments.length, draft.restoreHistoryId, draft.tags.length, draft.totpSecret, history.length, text]);
+  }, [draft.attachments.length, draft.customFields.length, draft.pendingAttachments.length, draft.restoreHistoryId, draft.tags.length, draft.totpSecret, draft.websiteRules, history.length, text, locale]);
 
   function patchDraft(patch: Partial<Draft>) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -442,6 +448,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         tags: draft.tags,
         entry_type: draft.entryType,
         template_data: draft.templateData,
+        website_rules: draft.websiteRules,
         custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })),
         totp_secret: draft.totpSecret,
         add_attachments: addAttachments,
@@ -454,7 +461,11 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
       showToast(entry ? t("form.updated") : t("form.added"));
       onDone(true);
     } catch (saveError) {
-      const message = String(saveError).replace(/^Error:\s*/, "");
+      let message = String(saveError).replace(/^Error:\s*/, "");
+      if (/website rules|HTTP or HTTPS website|twenty websites|Base domain matching/i.test(message)) {
+        setShowMore(true);
+        if (locale === "zh") message = "请检查网站匹配规则：网址需使用 HTTP 或 HTTPS；基础域名匹配不能用于本机地址或公共后缀。";
+      }
       setError(message);
       showToast(message || t("form.saveError"), "error");
     } finally {
@@ -479,7 +490,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   function previewHistoryRestore(previous: Entry, fields: HistoryField[]) {
     const restored = draftFromEntry(previous);
-    const mapping = { title: "title", username: "username", password: "password", url: "url", notes: "notes", tags: "tags", entry_type: "entryType", custom_fields: "customFields", totp_secret: "totpSecret", template_data: "templateData" } as const;
+    const mapping = { title: "title", username: "username", password: "password", url: "url", notes: "notes", tags: "tags", entry_type: "entryType", custom_fields: "customFields", totp_secret: "totpSecret", template_data: "templateData", website_rules: "websiteRules" } as const;
     setDraft(current => ({ ...current, ...Object.fromEntries(fields.map(field => [mapping[field], restored[mapping[field]]])), restoreHistoryId: historyToRestore }));
     setShowMore(false);
     showToast(text.loadedDraft);
@@ -581,6 +592,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
         {showMore && (
           <div id="entry-more-options" className="entry-more-options">
+            {personalReady && (draft.entryType === "login" || draft.websiteRules.match !== "exact" || draft.websiteRules.additional_urls.length > 0 || draft.websiteRules.excluded_urls.length > 0) && <WebsiteRulesEditor primaryUrl={draft.url} value={draft.websiteRules} onChange={websiteRules => patchDraft({ websiteRules })} />}
             {advancedError && <div className="error" role="alert" id="entry-advanced-error" tabIndex={-1}>{advancedError}</div>}
 
             <section className="settings-section" aria-labelledby="entry-tags-heading">
@@ -708,7 +720,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         </div>
       </form>
       {entry && historyToRestore && <HistoryReview entryId={entry.id} historyId={historyToRestore}
-        current={{ title: draft.title, username: draft.username, password: draft.password, url: draft.url, notes: draft.notes, tags: draft.tags, entry_type: draft.entryType, custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })), totp_secret: draft.totpSecret, template_data: draft.templateData }}
+        current={{ title: draft.title, username: draft.username, password: draft.password, url: draft.url, notes: draft.notes, tags: draft.tags, entry_type: draft.entryType, custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })), totp_secret: draft.totpSecret, template_data: draft.templateData, website_rules: draft.websiteRules }}
         onRestore={previewHistoryRestore} onCancel={() => setHistoryToRestore(null)} />}
     </div>
   );

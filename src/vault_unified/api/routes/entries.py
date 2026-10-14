@@ -23,6 +23,7 @@ from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
 from vault_unified.organization import organization_for
 from vault_unified.template_data import template_for
+from vault_unified.website_rules import normalize_rules, validate_rules, matches_rules, website
 from vault_unified.totp import current_totp, TotpError
 from vault_unified.personal_data import (
     PersonalDataError,
@@ -110,6 +111,7 @@ def _commit(vault: UnifiedVault, body: EntryTransactionIn) -> SecretEntry:
             remove_attachment_ids=body.remove_attachment_ids,
             restore_history_id=body.restore_history_id,
             template_data=body.template_data,
+            website_rules=body.website_rules,
         )
     except EntryTransactionConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -189,6 +191,22 @@ def copy_generation(record_id: str, response: Response, vault: UnifiedVault = De
     return {"copied": True, "clears_in_seconds": 45}
 
 
+class WebsiteMatchIn(BaseModel):
+    primary_url: str = Field(default="", max_length=2048)
+    rules: dict = Field(default_factory=dict)
+    test_url: str = Field(max_length=2048)
+
+
+@router.post("/tools/website-match")
+def test_website_match(body: WebsiteMatchIn, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    try:
+        rules = normalize_rules(body.rules)
+        validate_rules(body.primary_url, rules)
+        return {"valid": True, "matches": matches_rules(body.primary_url, rules, website(body.test_url))}
+    except ValueError:
+        return {"valid": False, "matches": False}
+
+
 @router.get("", response_model=list[EntryOut])
 def list_entries(
     source: str | None = None,
@@ -238,6 +256,7 @@ def create_entry(body: EntryIn, vault: UnifiedVault = Depends(get_vault)) -> Ent
             tags=body.tags,
             entry_type=body.entry_type,
             template_data=body.template_data,
+            website_rules=body.website_rules,
             custom_fields=body.custom_fields,
             totp_secret=body.totp_secret,
         ),
@@ -276,6 +295,7 @@ def update_entry(
                 tags=body.tags if body.tags is not None else existing.tags,
                 entry_type=body.entry_type if body.entry_type is not None else personal["entry_type"],
                 template_data=body.template_data,
+                website_rules=body.website_rules,
                 custom_fields=body.custom_fields if body.custom_fields is not None else personal["custom_fields"],
                 totp_secret=body.totp_secret if body.totp_secret is not None else personal["totp_secret"],
             ),

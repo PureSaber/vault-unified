@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 from vault_unified.template_data import TEMPLATE_KEY, template_for, set_template
+from vault_unified.website_rules import WEBSITE_KEY, rules_for, set_rules
 
 
 PERSONAL_METADATA_KEY = "vault_unified:personal"
@@ -257,6 +258,7 @@ def snapshot(entry: Any) -> dict[str, Any]:
         "totp_secret": value["totp_secret"],
         "attachment_ids": [item["id"] for item in value["attachments"]],
         **({"template_data": template_for(entry)} if TEMPLATE_KEY in entry.source_metadata else {}),
+        **({"website_rules": rules_for(entry)} if WEBSITE_KEY in entry.source_metadata else {}),
     }
 
 
@@ -311,6 +313,7 @@ def restore_history(entry: Any, history_id: str) -> None:
     entry.notes = snap["notes"]
     entry.tags = list(snap["tags"])
     set_template(entry, snap.get("template_data", {}))
+    set_rules(entry, snap.get("website_rules", {}))
     current["entry_type"] = snap["entry_type"]
     current["custom_fields"] = copy.deepcopy(snap["custom_fields"])
     current["totp_secret"] = snap["totp_secret"]
@@ -331,6 +334,7 @@ def public_data(entry: Any, *, reveal: bool) -> dict[str, Any]:
         "attachments": [attachment_public(item) for item in value["attachments"]],
         "history_count": len(all_history(entry)),
         "template_data": template_for(entry) if reveal else {},
+        "website_rules": rules_for(entry),
     }
 
 
@@ -347,4 +351,6 @@ def merge_personal_metadata(existing: dict[str, Any] | None, incoming: dict[str,
         result[MERGED_HISTORY_KEY] = copy.deepcopy(existing[MERGED_HISTORY_KEY])
     if TEMPLATE_KEY in (existing or {}):
         result[TEMPLATE_KEY] = copy.deepcopy(existing[TEMPLATE_KEY])
+    if WEBSITE_KEY in (existing or {}):
+        result[WEBSITE_KEY] = copy.deepcopy(existing[WEBSITE_KEY])
     return result

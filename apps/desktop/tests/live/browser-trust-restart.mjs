@@ -97,7 +97,7 @@ try {
   assert(Object.keys(discovered).sort().join() === 'base_url,instance_id,protocol', 'Discovery returned unexpected fields');
   assert(discovered.instance_id === first.instance_id, 'Native host did not find the running API');
   // Public RFC test key; the vault/master/browser credentials are generated above.
-  const generatedEntry = await api('/entries', { title: 'Generated restart account', username: 'generated-user', password, url: browser.siteUrl, totp_secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' });
+  const generatedEntry = await api('/entries', { title: 'Generated restart account', username: 'generated-user', password, url: 'https://generated.invalid', website_rules: { additional_urls: [browser.siteUrl] }, totp_secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' });
   const pairing = await api('/browser/pairing-code');
   await browser.popup.locator('#sidecar-url').fill(apiUrl);
   await browser.popup.locator('#pairing-code').fill(pairing.pairing_code);
@@ -183,7 +183,7 @@ try {
   console.log(JSON.stringify({ result: 'passed', actual_native_executable: true, actual_windows_credentials: true,
     actual_chromium_extension: true, actual_api_restart: true, changed_port_discovered: true,
     private_key_export_denied: true, stale_instance_rejected: true, locked_access_denied: true, manual_address_fallback: true,
-    desktop_revocation: true, real_totp_fill: true, generated_password_recovered: true, real_credentials_used: false }));
+    desktop_revocation: true, real_totp_fill: true, extra_website_matched: true, generated_password_recovered: true, real_credentials_used: false }));
 } catch (error) {
   console.error(`Generated trust restart check failed at ${step}: ${String(error.message).split('\n')[0]}`);
   process.exitCode = 1;

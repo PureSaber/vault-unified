@@ -78,7 +78,7 @@ def test_template_transfer_roundtrip_fingerprints_and_recovery(organized_api, tm
     for format_name in ("json", "csv"):
         content, _, _ = export_transfer(vault, format_name)
         if format_name == "json":
-            assert json.loads(content)["version"] == 2
+            assert json.loads(content)["version"] == 3
         items = parse_transfer(content, format_name)
         imported = next(item for item in items if item.title == entry["title"])
         assert imported.template_data == data
