@@ -43,7 +43,7 @@ class Store:
         db = self.connect()
         try:
             version = db.execute("PRAGMA user_version").fetchone()[0]
-            if version not in {0, 1}: raise SharingError("Unsupported sharing database version")
+            if version not in {0, 1, 2}: raise SharingError("Unsupported sharing database version")
             db.executescript("""
                 PRAGMA journal_mode=WAL;
                 CREATE TABLE IF NOT EXISTS nonces(identity TEXT, nonce TEXT, expires INTEGER, PRIMARY KEY(identity,nonce));
@@ -56,9 +56,16 @@ class Store:
                 CREATE TABLE IF NOT EXISTS invitations(id TEXT PRIMARY KEY, family TEXT NOT NULL, secret_hash TEXT NOT NULL,
                   role TEXT NOT NULL, expires INTEGER NOT NULL, accepted TEXT);
                 CREATE TABLE IF NOT EXISTS pending(id TEXT PRIMARY KEY, family TEXT NOT NULL, identity TEXT NOT NULL,
-                  public TEXT NOT NULL, role TEXT NOT NULL, expires INTEGER NOT NULL);
-                PRAGMA user_version=1;
+                  public TEXT NOT NULL, role TEXT NOT NULL, expires INTEGER NOT NULL, proof TEXT NOT NULL);
             """)
+            if version == 1:
+                db.executescript("""BEGIN IMMEDIATE;
+                    ALTER TABLE pending ADD COLUMN proof TEXT NOT NULL DEFAULT '';
+                    DELETE FROM pending;
+                    PRAGMA user_version=2;
+                    COMMIT;
+                """)
+            else: db.execute("PRAGMA user_version=2")
         finally: db.close()
 
     def connect(self):
@@ -180,7 +187,7 @@ class Store:
         identifier(gid)
         with self.transaction() as (db, now):
             who, payload = self.authenticate(db, signed, path, now)
-            if action == "accept": return self.accept(db, now, gid, who, signed["identity"], payload)
+            if action == "accept": return self.accept(db, now, gid, who, signed, payload)
             if action == "status":
                 fields(payload, "")
                 pending = db.execute("SELECT id FROM pending WHERE family=? AND identity=?", (gid, who)).fetchone()
@@ -213,7 +220,7 @@ class Store:
                 return {"id": iid, "expires": payload["expires"]}
             if action == "pending":
                 fields(payload, "")
-                return {"requests": [{"id": r["id"], "identity": r["identity"], "public": json.loads(r["public"]), "role": r["role"], "expires": r["expires"]}
+                return {"requests": [{"id": r["id"], "identity": r["identity"], "public": json.loads(r["public"]), "role": r["role"], "expires": r["expires"], "proof": json.loads(r["proof"])}
                                      for r in db.execute("SELECT * FROM pending WHERE family=?", (gid,))],
                         "invitations": [{"id": r["id"], "role": r["role"], "expires": r["expires"], "accepted": bool(r["accepted"])} for r in db.execute("SELECT * FROM invitations WHERE family=?", (gid,))]}
             if action == "revoke-invite":
@@ -238,20 +245,20 @@ class Store:
         db.execute("UPDATE families SET revision=?,blob=?,author=?,content_revision=?,content_signature=? WHERE id=?",
                    (next_revision, blob, author, next_revision, payload["content_signature"], row["id"]))
 
-    def accept(self, db, now, gid, who, signing, payload):
+    def accept(self, db, now, gid, who, signed, payload):
         fields(payload, "id secret encryption_key"); identifier(payload["id"]); decode(payload["encryption_key"], 32)
         invite = db.execute("SELECT * FROM invitations WHERE id=? AND family=?", (payload["id"], gid)).fetchone()
         if not invite or not hmac.compare_digest(invite["secret_hash"], secret_hash(payload["secret"])):
             raise ServiceError(410, "Invitation is unavailable")
         if invite["accepted"] and invite["accepted"] != who: raise ServiceError(410, "Invitation was already used")
-        public = canonical({"signing_key": signing, "encryption_key": payload["encryption_key"]}).decode()
+        public = canonical({"signing_key": signed["identity"], "encryption_key": payload["encryption_key"]}).decode()
         old = db.execute("SELECT * FROM pending WHERE id=?", (payload["id"],)).fetchone()
         if old and old["public"] != public: raise ServiceError(409, "Invitation identity changed")
         family = db.execute("SELECT * FROM families WHERE id=?", (gid,)).fetchone()
         if not family: raise ServiceError(404, "Shared vault not found")
         if who in json.loads(family["manifest"])["members"]: return {"pending": False, "owner": family["owner"]}
         db.execute("UPDATE invitations SET accepted=? WHERE id=?", (who, payload["id"]))
-        db.execute("INSERT OR IGNORE INTO pending VALUES(?,?,?,?,?,?)", (payload["id"], gid, who, public, invite["role"], invite["expires"]))
+        db.execute("INSERT OR IGNORE INTO pending VALUES(?,?,?,?,?,?,?)", (payload["id"], gid, who, public, invite["role"], invite["expires"], canonical(signed).decode()))
         return {"pending": True, "owner": family["owner"]}
 
     def membership(self, db, now, row, old, payload, action):

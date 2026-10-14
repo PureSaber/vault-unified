@@ -1843,3 +1843,10 @@ button.conflict-chip-btn:hover:not(:disabled) {
 .passkey-dialog dd { margin-inline-start: 0; overflow-wrap: anywhere; font-weight: 600; }
 .passkey-dialog dt { margin-top: var(--space-md); color: var(--color-text-muted); }
 .passkey-dialog .button-row { flex-wrap: wrap; margin-block: var(--space-lg); }
+.sharing-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: 18px; margin: 16px 0; }
+.sharing-page label { display: block; margin: 12px 0; }
+.sharing-page .checkbox-label { display: inline-flex; gap: 8px; align-items: center; white-space: nowrap; }
+.sharing-page .checkbox-label input { width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); }
+.sharing-page fieldset { border: 1px solid var(--color-border); border-radius: 10px; padding: 16px; }
+.sharing-entry { border-top: 1px solid var(--color-border); padding: 16px 0; }
+.sharing-code { display: block; overflow-wrap: anywhere; margin: 10px 0; }

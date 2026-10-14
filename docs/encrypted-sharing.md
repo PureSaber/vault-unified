@@ -2,9 +2,37 @@
 
 The sharing service runs separately from the desktop's loopback API. It stores
 ciphertext and access metadata in SQLite; it never opens a personal vault. No
-Vault Unified cloud account is needed. Desktop creation and family-management
-controls are a separate integration increment; the service and browser viewer
-are implemented here.
+Vault Unified cloud account is needed. The desktop Sharing page manages service
+connections, selected-field links and independent family vaults in Chinese/English.
+
+## Desktop workflow / 桌面使用
+
+Open Sharing, save the service address and its administration token. The token
+stays in Windows Credential Manager; identity keys, link keys, shared accounts and
+pending operations stay in the encrypted personal vault. No automatic sharing
+request runs in the background. Joining an invitation does not need the token.
+
+Choose a personal account, select its fields, expiry and view limit, then preview
+and confirm. Copy the created link or revoke it from the same page. Notes are
+excluded initially. Personal history and other accounts never enter the snapshot.
+
+Create a family vault, add shared accounts, and invite readers or editors. Ask the
+invitee for their identity code before approving the request. Shared accounts have
+title, username, password, website and notes, 20 saved revisions and 30-day trash.
+Readers can open and copy accounts; editors can change them; owners manage members.
+Removing a member rotates the key. Personal accounts remain separate.
+
+Pending writes survive restart. Retry after reconnecting. For an account conflict,
+choose Review pending draft, compare the latest fields, and preview the revised
+proposal. Cancelling keeps the saved draft. Discard refreshes the remote state;
+an operation already accepted by the service is not undone. Cached family accounts
+remain usable offline; refresh checks current membership before replacing them.
+
+在「分享」中配置服务地址和管理令牌，然后预览创建链接或家庭库。受邀者粘贴
+邀请码，所有者核对双方身份码后批准。只读成员可查看和复制，共享库与个人账号
+分开。网络中断留下加密的待发送操作；发生冲突时可重新核对草稿并选择最新字段。
+
+![Generated desktop sharing page](screenshots/desktop-sharing-zh.png)
 
 ## Deploy / 部署
 
@@ -76,7 +104,8 @@ invitation and verify the manifest before using an envelope.
 
 An invitation is single-use, expires within seven days and specifies editor or
 reader. Accepting binds the invitation to the invitee's signing/encryption keys,
-but grants no access yet. The owner reviews the pending identity and signs its
+but grants no access yet. The desktop verifies the invitee's signed acceptance,
+including its encryption key and family binding. The owner reviews the identity and signs its
 membership/key envelope. Removing a member atomically advances the epoch,
 re-encrypts content, replaces every remaining member's key envelope and invalidates
 outstanding invitations. The removed identity cannot read or write later versions.
@@ -97,12 +126,17 @@ rejection, invitation binding/expiry/revocation, owner approval, key rotation,
 removed-member denial, persistent revocation and quota failure. Browser journeys
 use the real HTTP service and Web Crypto in English/Chinese, with accessibility
 and secret-artifact scanning. CI builds and runs the real Compose container; local
-Windows development has no Docker executable. Record CI success before claiming
-deployment validation.
+Windows development has no Docker executable. Actual Compose deployment passed
+CI 38551994491. Desktop journeys use independent profiles, the real HTTP service
+and Windows Credential Manager, including read-only and removed-member behavior.
 
 Stopping this optional service leaves personal vault operation intact. Preserve
 its database and the clients' encrypted identities before reverting. Database
-version 1 is explicit and unknown versions are refused.
+version 2 adds signed invitation acceptance proofs. Upgrading version 1 preserves
+active shares and families, but drops pending requests without proofs; those
+invitees submit their invitation again. Keep a database backup before upgrading.
+Version 1 service binaries refuse version 2; rollback uses that database backup.
+Desktop sharing metadata is optional and retained by older payload-v3 clients.
 
 References: [cryptography AEAD](https://cryptography.io/en/latest/hazmat/primitives/aead/),
 [Web Crypto decryption](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/decrypt),

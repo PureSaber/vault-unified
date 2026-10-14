@@ -24,9 +24,10 @@ import ImportWizard from "./components/ImportWizard";
 import QuickSearch from "./components/QuickSearch";
 import PersonalSyncRunner from "./components/PersonalSyncRunner";
 import PasskeyRequests from "./components/PasskeyRequests";
+import Sharing from "./pages/Sharing";
 import { cancelHello, desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
 
-type TopPage = "passwords" | "security" | "connections" | "settings";
+type TopPage = "passwords" | "security" | "connections" | "sharing" | "settings";
 type Page = TopPage | "editor" | "conflicts" | "import";
 type PendingAction =
   | { kind: "navigate"; page: Page; entry?: Entry }
@@ -377,6 +378,7 @@ function AppShell() {
     { id: "passwords", label: t("nav.passwords") },
     { id: "security", label: t("nav.securityRecovery") },
     { id: "connections", label: t("nav.connections") },
+    { id: "sharing", label: locale === "zh" ? "分享" : "Sharing" },
     { id: "settings", label: t("nav.settings") },
   ];
 
@@ -442,7 +444,7 @@ function AppShell() {
           </>
         )}
         <PasskeyRequests onPendingChange={setPasskeyPending} />
-        <PersonalSyncRunner paused={passkeyPending || ["editor", "import", "connections", "conflicts"].includes(page)} onOpen={() => requestNavigation("connections")} />
+        <PersonalSyncRunner paused={passkeyPending || ["editor", "import", "connections", "conflicts", "sharing"].includes(page)} onOpen={() => requestNavigation("connections")} />
         {page === "import" && (
           <div className="card">
             <button type="button" className="ghost page-back" onClick={() => requestNavigation("passwords")}>
@@ -469,6 +471,7 @@ function AppShell() {
           />
         )}
         {page === "settings" && <Settings desktop={desktop} onDesktopChange={setDesktop} onExit={requestExit} />}
+        {page === "sharing" && <Sharing onDirtyChange={setEditorDirty} onSavingChange={setEditorSaving} />}
         {page === "conflicts" && (
           <>
             <button type="button" className="ghost page-back" onClick={() => setPage("passwords")}>

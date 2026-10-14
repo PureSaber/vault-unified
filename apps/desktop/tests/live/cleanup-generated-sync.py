@@ -23,3 +23,15 @@ if path.exists():
         account = manager._account(state["connection"])
         if backend.get_password(SERVICE, account) is not None:
             backend.delete_password(SERVICE, account)
+    from vault_unified.sharing.desktop import DesktopSharing, CREDENTIAL_SERVICE, NAMESPACE
+    shared = local.metadata_value(NAMESPACE)
+    if shared:
+        sharing = DesktopSharing()
+        servers = {shared.get("service", "")}
+        servers.update(item["server"] for item in shared.get("shares", {}).values())
+        servers.update(item["server"] for item in shared.get("families", {}).values())
+        backend = get_approved_backend()
+        for server in servers - {""}:
+            account = sharing.admin_account(local, server)
+            if backend.get_password(CREDENTIAL_SERVICE, account) is not None:
+                backend.delete_password(CREDENTIAL_SERVICE, account)

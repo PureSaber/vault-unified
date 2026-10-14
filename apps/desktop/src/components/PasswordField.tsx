@@ -9,6 +9,7 @@ interface Props {
   onChange: (value: string) => void;
   hint?: string;
   required?: boolean;
+  readOnly?: boolean;
   action?: ReactNode;
 }
 
@@ -19,6 +20,7 @@ export default function PasswordField({
   onChange,
   hint,
   required,
+  readOnly,
   action,
 }: Props) {
   const { t } = useI18n();
@@ -42,6 +44,7 @@ export default function PasswordField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           required={required}
+          readOnly={readOnly}
           autoComplete="off"
           spellCheck={false}
         />

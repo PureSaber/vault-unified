@@ -132,6 +132,9 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
       await expect(section(page).getByRole("alert")).toBeVisible();
       server.state.offline = false; await sync(page);
     }
+    await page.getByRole("button", { name: text("Lock now", "立即锁定"), exact: true }).click();
+    await expect(page.getByLabel(text("Master password", "主密码"), { exact: true })).toBeVisible();
+    await source.drain();
     await page.reload();
     await page.getByLabel(text("Master password", "主密码"), { exact: true }).fill(testData.masterPassword);
     await page.getByRole("button", { name: text("Unlock", "解锁"), exact: true }).click();
@@ -140,6 +143,8 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
       await section(target).getByRole("button", { name: text("Disconnect this computer", "断开这台电脑"), exact: true }).click();
       await target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click();
       await expect(section(target).getByRole("button", { name: text("Set up computer sync", "设置多电脑同步"), exact: true })).toBeVisible();
+      await target.getByRole("button", { name: text("Lock now", "立即锁定"), exact: true }).click();
+      await expect(target.getByLabel(text("Master password", "主密码"), { exact: true })).toBeVisible();
     }
   } finally {
     const stopped = await Promise.allSettled([destination?.stop(), source.stop()]);
