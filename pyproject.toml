@@ -35,12 +35,13 @@ dev = [
 [project.scripts]
 vault = "vault_unified.cli:main"
 vault-api = "vault_unified.api.app:main"
+vault-share = "vault_unified.sharing.service:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-vault_unified = ["wordlists/*.txt", "wordlists/*.md"]
+vault_unified = ["wordlists/*.txt", "wordlists/*.md", "sharing/web/*.html", "sharing/web/*.js", "sharing/web/*.css"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

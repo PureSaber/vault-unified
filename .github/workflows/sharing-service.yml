@@ -1,0 +1,27 @@
+name: Sharing service
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sharing-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Create generated deployment credential
+        run: |
+          mkdir -p deploy/sharing/secrets
+          python -c "import pathlib,secrets; pathlib.Path('deploy/sharing/secrets/admin-token.txt').write_text(secrets.token_urlsafe(32))"
+      - name: Build and start the actual Compose deployment
+        run: docker compose -f deploy/sharing/compose.yaml up --build --detach --wait --wait-timeout 90
+      - name: Verify encrypted HTTP access and revocation
+        run: docker compose -f deploy/sharing/compose.yaml exec -T sharing python - < scripts/verify-sharing-service.py
+      - name: Remove generated containers and volume
+        if: always()
+        run: docker compose -f deploy/sharing/compose.yaml down --volumes
