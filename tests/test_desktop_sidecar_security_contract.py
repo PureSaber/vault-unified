@@ -37,18 +37,23 @@ def test_desktop_has_no_fixed_port_or_existing_process_reuse():
     assert "app.exit(0)" in rust
 
 
-def test_native_window_close_preserves_draft_confirmation_before_destroy():
+def test_native_window_close_routes_to_tray_or_guarded_exit():
     renderer = read("apps/desktop/src/App.tsx")
+    native = read("apps/desktop/src-tauri/src/desktop.rs")
+    launcher = read("apps/desktop/src-tauri/src/lib.rs")
     capabilities = json.loads(read("apps/desktop/src-tauri/capabilities/default.json"))
 
     assert 'import { isTauri } from "@tauri-apps/api/core"' in renderer
     assert "if (!isTauri()) return" in renderer
-    assert 'import { getCurrentWindow } from "@tauri-apps/api/window"' in renderer
-    assert ".onCloseRequested(async (event) =>" in renderer
-    assert "event.preventDefault()" in renderer
+    assert "api.prevent_close()" in launcher
+    assert "desktop::close_requested(app)" in launcher
+    assert "status.tray_available && status.preferences.close_to_tray" in native
+    assert "window.hide()" in native
+    assert '"desktop-exit-requested"' in native
+    assert 'subscribe("desktop-exit-requested"' in renderer
     assert 'setPendingAction({ kind: "close" })' in renderer
     assert 'kind: "close"' in renderer
-    assert "await getCurrentWindow().destroy()" in renderer
+    assert "await exitDesktop()" in renderer
     assert "Discard changes and close?" in renderer
     assert capabilities["windows"] == ["main"]
     assert "core:window:allow-destroy" in capabilities["permissions"]

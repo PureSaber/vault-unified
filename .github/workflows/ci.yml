@@ -34,7 +34,10 @@ jobs:
         run: .\.venv\Scripts\python scripts\scan_repository_secrets.py --repo-root .
 
   desktop:
-    runs-on: windows-latest
+    # Server 2025 WebView2 automation currently fails before opening its DevTools
+    # port: actions/runner-images#14738. Keep native GUI checks on Server 2022;
+    # Python and renderer checks still use windows-latest. Do not downgrade runtime.
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,13 +65,19 @@ jobs:
           New-Item -ItemType File -Force -Path $path | Out-Null
       - name: Check authenticated sidecar launcher
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
-      - name: Verify actual native browser reconnection with generated data
+      - name: Verify actual native browser and desktop lifecycle with generated data
         run: |
+          $runtimeKey = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $runtimeVersion = (Get-ItemProperty -LiteralPath "HKLM:\$runtimeKey" -Name pv -ErrorAction SilentlyContinue).pv
+          Write-Output "WebView2 runtime: $runtimeVersion"
           python -m venv .venv
           .\.venv\Scripts\python -m pip install -e ".[api]"
-          cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --bin vault-unified-desktop
+          $env:TAURI_CONFIG = '{"identifier":"com.puresaber.vault-unified.generated-test","app":{"windows":[{"label":"main","title":"Vault Unified generated test","width":1000,"height":700}]}}'
+          cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml --bin vault-unified-desktop --features tauri/custom-protocol
           npm --prefix apps/desktop run test:ui:install
           node apps/desktop/tests/live/browser-trust-restart.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node apps/desktop/tests/live/desktop-lifecycle.mjs
       - name: Parse release validator PowerShell
         shell: pwsh
         run: |
