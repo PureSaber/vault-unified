@@ -1,9 +1,7 @@
 //! Windows session/power notifications revoke API access even if the webview stalls.
 #[cfg(windows)]
 mod windows {
-    use crate::{shutdown_api_sidecar, ApiSidecar};
-    use std::io::{Read, Write};
-    use std::net::{SocketAddr, TcpStream};
+    use crate::shutdown_api_sidecar;
     use std::sync::mpsc::{channel, Sender};
     use std::time::Duration;
     use tauri::{AppHandle, Emitter, Manager};
@@ -32,36 +30,21 @@ mod windows {
         send: Sender<(Event, Sender<bool>)>,
     }
 
-    fn notify_api(app: &AppHandle, blocked: bool) -> std::io::Result<()> {
-        let state = app.state::<ApiSidecar>();
-        let authority = state
-            .config
-            .base_url
-            .strip_prefix("http://")
-            .and_then(|value| value.strip_suffix("/api"))
-            .ok_or_else(|| std::io::Error::other("Invalid API address"))?;
-        let address: SocketAddr = authority
-            .parse()
-            .map_err(|_| std::io::Error::other("Invalid API address"))?;
-        if !address.ip().is_loopback() {
-            return Err(std::io::Error::other("Invalid API address"));
-        }
-        let mut stream = TcpStream::connect_timeout(&address, Duration::from_millis(400))?;
-        stream.set_read_timeout(Some(Duration::from_millis(400)))?;
-        stream.set_write_timeout(Some(Duration::from_millis(400)))?;
+    fn notify_api(app: &AppHandle, blocked: bool) -> Result<(), String> {
         let body = if blocked {
             "{\"blocked\":true}"
         } else {
             "{\"blocked\":false}"
         };
-        let request = format!("POST /api/auth/system-state HTTP/1.1\r\nHost: {}\r\nX-Vault-Bootstrap: {}\r\nX-Vault-Client: vault-unified-desktop\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", authority, state.config.bootstrap_secret, body.len(), body);
-        stream.write_all(request.as_bytes())?;
-        let mut response = Vec::new();
-        stream.take(4096).read_to_end(&mut response)?;
-        if !response.starts_with(b"HTTP/1.1 200 ") {
-            return Err(std::io::Error::other("System lock not acknowledged"));
-        }
-        Ok(())
+        crate::native_api::request(
+            app,
+            "POST",
+            "/auth/system-state",
+            body,
+            None,
+            Duration::from_millis(400),
+        )
+        .map(|_| ())
     }
 
     unsafe extern "system" fn observe(
@@ -83,6 +66,7 @@ mod windows {
             _ => None,
         };
         if let Some(event) = event {
+            crate::hello::cancel_pending(&observer.app);
             // Clear visible secrets immediately, without a draft confirmation dialog.
             let _ = observer.app.emit("desktop-system-locked", ());
             let (acknowledge, received) = channel();

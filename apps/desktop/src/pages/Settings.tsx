@@ -2,6 +2,7 @@ import packageMetadata from "../../package.json";
 import { useState } from "react";
 import { useI18n, type Locale } from "../i18n";
 import { saveDesktopPreferences, type DesktopPreferences, type DesktopStatus } from "../desktop";
+import HelloSettings from "../components/HelloSettings";
 
 export default function Settings({ desktop, onDesktopChange, onExit }: { desktop: DesktopStatus | null; onDesktopChange: (value: DesktopStatus) => void; onExit: () => void }) {
   const { t, locale, setLocale } = useI18n();
@@ -56,6 +57,7 @@ export default function Settings({ desktop, onDesktopChange, onExit }: { desktop
         <button type="button" className="secondary" onClick={onExit}>{zh ? "退出 Vault Unified" : "Quit Vault Unified"}</button>
       </section>}
 
+      {desktop && <HelloSettings />}
       <section className="settings-section" aria-labelledby="about-heading">
         <h3 id="about-heading" className="section-title">{t("settings.about")}</h3>
         <dl className="status-grid">

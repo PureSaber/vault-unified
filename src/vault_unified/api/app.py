@@ -40,6 +40,7 @@ def create_app(
     *,
     bootstrap_secret: str | None = None,
     instance_id: str | None = None,
+    native_secret: str | None = None,
 ) -> FastAPI:
     docs_url = None if os.environ.get("VAULT_API_DISABLE_DOCS", "1") == "1" else "/docs"
     secret = _resolve_bootstrap_secret(bootstrap_secret)
@@ -53,6 +54,7 @@ def create_app(
     )
     app.state.bootstrap_secret = secret
     app.state.instance_id = runtime_instance_id
+    app.state.native_secret = native_secret or secrets.token_urlsafe(32)
 
     app.add_middleware(
         CORSMiddleware,
@@ -87,6 +89,8 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/auth/hello"):
+            return JSONResponse({"detail": "Invalid Windows Hello request"}, status_code=422)
         if request.url.path.startswith("/api/entries"):
             return JSONResponse({"detail": "Invalid entry request"}, status_code=422)
         if request.url.path.startswith("/api/browser/"):
@@ -123,6 +127,9 @@ def create_app(
             return JSONResponse({"detail": "Loopback only"}, status_code=403)
         if request.method == "OPTIONS":
             return await call_next(request)
+        if request.url.path.startswith("/api/auth/hello") or request.url.path == "/api/auth/system-state":
+            if not hmac.compare_digest(request.headers.get("x-vault-native", ""), app.state.native_secret):
+                return JSONResponse({"detail": "Native desktop required"}, status_code=403)
         provided = request.headers.get("x-vault-bootstrap", "")
         browser_pair = (
             request.method == "POST"
@@ -204,6 +211,7 @@ def main() -> None:
         raise SystemExit("VAULT_API_PORT must be between 0 and 65535")
 
     secret = _resolve_bootstrap_secret()
+    native_secret = secrets.token_urlsafe(32)
     instance_id = os.environ.get("VAULT_API_INSTANCE_ID", "").strip()
     if not instance_id:
         instance_id = secrets.token_urlsafe(18)
@@ -211,6 +219,7 @@ def main() -> None:
     runtime_app = create_app(
         bootstrap_secret=secret,
         instance_id=instance_id,
+        native_secret=native_secret,
     )
     server_socket = _bind_server_socket(host, requested_port)
     actual_port = int(server_socket.getsockname()[1])
@@ -219,6 +228,7 @@ def main() -> None:
         "host": host,
         "port": actual_port,
         "bootstrap_secret": secret,
+        "native_secret": native_secret,
         "instance_id": instance_id,
     }
     print(

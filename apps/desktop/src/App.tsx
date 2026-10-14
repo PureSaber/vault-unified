@@ -22,7 +22,7 @@ import { useToast } from "./components/Toast";
 import ConfirmDialog from "./components/ConfirmDialog";
 import ImportWizard from "./components/ImportWizard";
 import QuickSearch from "./components/QuickSearch";
-import { desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
+import { cancelHello, desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
 
 type TopPage = "passwords" | "security" | "connections" | "settings";
 type Page = TopPage | "editor" | "conflicts" | "import";
@@ -58,6 +58,7 @@ function AppShell() {
   const deliveredMaintenanceNotices = useRef(new Set<string>());
 
   const lockToUnlock = useCallback(() => {
+    cancelHello();
     lockApp();
     setUnlocked(false);
     setEditEntry(null);

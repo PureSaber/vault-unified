@@ -6,6 +6,7 @@ export interface GenerationOptions {
 }
 export interface GeneratedPassword { id: string; kind: "password" | "passphrase"; created_at: number; origin: string }
 export interface WebsiteRules { match: "exact" | "base_domain"; additional_urls: string[]; excluded_urls: string[] }
+export interface HelloStatus { supported: boolean; ready: boolean; busy: boolean }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -515,6 +516,10 @@ export interface SyncPreview {
 }
 
 export const api = {
+  helloStatus: () => invoke<HelloStatus>("windows_hello_status"),
+  enableHello: () => invoke<HelloStatus>("enable_windows_hello", { token }),
+  disableHello: () => invoke<void>("disable_windows_hello"),
+  unlockHello: () => invoke<{ token: string }>("unlock_windows_hello"),
   payloadFormat: () => request<{ version: number; current_version: number }>("/personal/format"),
   previewPayloadUpgrade: () => request<{ preview_token: string; entry_count: number }>("/personal/format/preview", { method: "POST" }),
   cancelPayloadUpgrade: (preview_token: string) => request("/personal/format/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
