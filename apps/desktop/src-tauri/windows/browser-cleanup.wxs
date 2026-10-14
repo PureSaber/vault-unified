@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="BrowserCleanupMarker" Guid="39cbd8b4-7a64-46c4-babe-8881e3827d4b">
+        <RegistryValue Root="HKCU" Key="Software\puresaber\Vault Unified" Name="BrowserCleanup" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <CustomAction Id="RemoveBrowserConnection" FileKey="Path" ExeCommand="--unregister-browser-host" Execute="immediate" Impersonate="yes" Return="check" />
+    <InstallExecuteSequence>
+      <Custom Action="RemoveBrowserConnection" Before="RemoveFiles">REMOVE="ALL" AND NOT UPGRADINGPRODUCTCODE</Custom>
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

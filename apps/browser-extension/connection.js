@@ -18,13 +18,14 @@ const vaultBrowserConnection = (() => {
       response = await fetch(`${base}/api/browser${path}`, {
         method: "POST", ...options, signal: AbortSignal.timeout(8000), cache: "no-store",
         headers: { "Content-Type": "application/json",
+          "X-Vault-Extension-Version": chrome.runtime.getManifest?.().version || "",
           ...(connection ? { "X-Vault-Browser-Connection": state.connectionKey }
             : state.browserToken ? { "X-Vault-Browser-Token": state.browserToken } : {}), ...options.headers },
       });
     } catch { throw Object.assign(new Error(), { key: "unavailable", code: 0 }); }
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
-      let key = { 423: "locked", 401: "unpaired", 503: "trustUnavailable", 409: "changed" }[response.status] || "requestError";
+      let key = { 423: "locked", 426: "versionMismatch", 401: "unpaired", 503: "trustUnavailable", 409: "changed" }[response.status] || "requestError";
       if (typeof body.detail === "string" && body.detail.includes("username already exists")) key = "duplicate";
       if (typeof body.detail === "string" && body.detail.includes("already has these details")) key = "unchanged";
       throw Object.assign(new Error(), { key, code: response.status });

@@ -48,7 +48,7 @@ def create_app(
 
     app = FastAPI(
         title="Vault Unified API",
-        version="1.3.0",
+        version="1.4.0",
         docs_url=docs_url,
         redoc_url=None if docs_url is None else "/redoc",
     )
@@ -75,6 +75,7 @@ def create_app(
             "X-Vault-Browser-Pairing",
             "X-Vault-Browser-Token",
             "X-Vault-Browser-Connection",
+            "X-Vault-Extension-Version",
         ],
     )
     app.include_router(auth.router, prefix="/api")
@@ -141,6 +142,9 @@ def create_app(
             return JSONResponse({"detail": "Loopback only"}, status_code=403)
         if request.method == "OPTIONS":
             return await call_next(request)
+        extension_version = request.headers.get("x-vault-extension-version")
+        if request.url.path.startswith("/api/browser/") and extension_version and extension_version != app.version:
+            return JSONResponse({"detail": "Update desktop and extension from the same release kit"}, status_code=426)
         if request.url.path.startswith("/api/auth/hello") or request.url.path in {"/api/auth/system-state", "/api/entries/tools/auto-type", "/api/personal/update/prepare"}:
             if not hmac.compare_digest(request.headers.get("x-vault-native", ""), app.state.native_secret):
                 return JSONResponse({"detail": "Native desktop required"}, status_code=403)

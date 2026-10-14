@@ -1,15 +1,14 @@
 param(
     [string]$Version = "",
     [string]$SourceSha = "",
-    [string]$RepoRoot = $PSScriptRoot,
+    [string]$RepoRoot = (Join-Path $PSScriptRoot ".."),
     [switch]$SkipInstallerLifecycle
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $RepoRoot) { $RepoRoot = $env:GITHUB_WORKSPACE }
-$RepoRoot = (Resolve-Path -LiteralPath (Join-Path $RepoRoot "..") -ErrorAction SilentlyContinue).Path ?? (Resolve-Path -LiteralPath $RepoRoot).Path
+$RepoRoot = (Resolve-Path -LiteralPath $RepoRoot).Path
 if (-not (Test-Path -LiteralPath (Join-Path $RepoRoot "pyproject.toml"))) {
-    $RepoRoot = (Resolve-Path -LiteralPath $env:GITHUB_WORKSPACE).Path
+    throw "Invalid repository root"
 }
 Set-Location -LiteralPath $RepoRoot
 $ValidationTempRoot = if ($env:RUNNER_TEMP) {
@@ -83,6 +82,7 @@ function Get-VaultInstallExecutable {
             $installLocation = Convert-RegistryPath $item.InstallLocation
             if ($installLocation) {
                 $candidates += (Join-Path $installLocation "Vault Unified.exe")
+                $candidates += (Join-Path $installLocation "vault-unified-desktop.exe")
             }
 
             $displayIcon = ([string]$item.DisplayIcon).Trim()
@@ -201,34 +201,21 @@ function Wait-ForVaultUninstalled {
     )
 }
 
+function Assert-BrowserBridgeRemoved {
+    foreach ($browser in @("Google\Chrome", "Microsoft\Edge")) {
+        $key = "HKCU:\Software\$browser\NativeMessagingHosts\org.vaultunified.desktop"
+        if (Test-Path -LiteralPath $key) { throw "Uninstall left a browser bridge registration" }
+    }
+}
+
 function Stop-ProcessTree {
     param([int]$ProcessId)
     & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
 }
 
-function Launch-And-StopInstalledApp {
-    param([System.IO.FileInfo]$App, [string]$DataDir)
-    New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
-    $oldDataDir = $env:VAULT_DATA_DIR
-    try {
-        $env:VAULT_DATA_DIR = $DataDir
-        $process = Start-Process -FilePath $App.FullName -PassThru
-        Start-Sleep -Seconds 8
-        if ($process.HasExited) {
-            throw "Installed desktop application exited during launch smoke test with code $($process.ExitCode)"
-        }
-        Stop-ProcessTree -ProcessId $process.Id
-        Start-Sleep -Seconds 2
-    }
-    finally {
-        $env:VAULT_DATA_DIR = $oldDataDir
-    }
-}
-
 function Smoke-PackagedSidecar {
     param([System.IO.FileInfo]$Sidecar)
-    $smokeRoot = Join-Path $ValidationTempRoot "vault-unified-sidecar-smoke"
-    Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+    $smokeRoot = Join-Path $ValidationTempRoot ("vault-unified-sidecar-smoke-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $smokeRoot | Out-Null
     $stdout = Join-Path $smokeRoot "sidecar.stdout.log"
     $stderr = Join-Path $smokeRoot "sidecar.stderr.log"
@@ -245,7 +232,7 @@ function Smoke-PackagedSidecar {
         $env:VAULT_API_PORT = "0"
         $env:VAULT_API_ALLOW_REMOTE = "0"
         $env:VAULT_API_DISABLE_DOCS = "1"
-        $process = Start-Process -FilePath $Sidecar.FullName -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+        $process = Start-Process -WindowStyle Hidden -FilePath $Sidecar.FullName -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
         try {
             $readyLine = $null
             $deadline = [DateTime]::UtcNow.AddSeconds(45)
@@ -367,8 +354,8 @@ function Smoke-PackagedSidecar {
 }
 
 $bundleRoot = Join-Path $RepoRoot "apps\desktop\src-tauri\target\release\bundle"
-$nsisFiles = @(Get-ChildItem -LiteralPath (Join-Path $bundleRoot "nsis") -Filter "*-setup.exe" -File)
-$msiFiles = @(Get-ChildItem -LiteralPath (Join-Path $bundleRoot "msi") -Filter "*.msi" -File)
+$nsisFiles = @(Get-ChildItem -LiteralPath (Join-Path $bundleRoot "nsis") -Filter "*_$($Version)_*-setup.exe" -File)
+$msiFiles = @(Get-ChildItem -LiteralPath (Join-Path $bundleRoot "msi") -Filter "*_$($Version)_*.msi" -File)
 if ($nsisFiles.Count -ne 1 -or $msiFiles.Count -ne 1) {
     throw "Expected exactly one NSIS and one MSI installer; found $($nsisFiles.Count) and $($msiFiles.Count)"
 }
@@ -389,26 +376,69 @@ $msiLifecycleStatus = "not-run-user-deferred"
 if ($SkipInstallerLifecycle) {
     Write-Host "=== NSIS/MSI lifecycle smoke intentionally deferred; no installer was executed ==="
 } else {
+    if ($env:GITHUB_ACTIONS -ne "true" -or -not $env:RUNNER_TEMP) {
+        throw "Installer lifecycle requires a disposable CI worker; use -SkipInstallerLifecycle for local artifact checks."
+    }
+    if (@(Get-VaultUninstallEntries).Count -ne 0) { throw "Disposable worker already has an installation" }
+    $oldRelease = Join-Path $ValidationTempRoot ("vault-old-release-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $oldRelease | Out-Null
+    gh release download v1.3.0 --repo PureSaber/vault-unified --dir $oldRelease --pattern "*-setup.exe" --pattern "*.msi" --pattern "release-manifest-v1.3.0.json"
+    if ($LASTEXITCODE -ne 0) { throw "Could not download the published upgrade source" }
+    $oldManifest = Get-Content (Join-Path $oldRelease "release-manifest-v1.3.0.json") -Raw | ConvertFrom-Json
+    foreach ($record in $oldManifest.assets | Where-Object { $_.name -match '\.(exe|msi)$' }) {
+        $asset = Join-Path $oldRelease ([string]$record.name).Replace(' ', '.')
+        if (-not (Test-Path -LiteralPath $asset)) { $asset = Join-Path $oldRelease ([string]$record.name) }
+        if ((Get-FileHash -Algorithm SHA256 -LiteralPath $asset).Hash.ToLowerInvariant() -ne $record.sha256) { throw "Published v1.3 installer integrity mismatch" }
+    }
+    $journey = Join-Path $RepoRoot "apps/desktop/tests/live/installed-vault-journey.mjs"
+    $nsisData = Join-Path $ValidationTempRoot ("vault-upgrade-nsis-" + [Guid]::NewGuid().ToString("N"))
+    $oldNsis = @(Get-ChildItem -LiteralPath $oldRelease -Filter "*-setup.exe" -File)
+    if ($oldNsis.Count -ne 1) { throw "Expected the published v1.3 NSIS installer" }
+    $oldInstall = Start-Process -WindowStyle Hidden -FilePath $oldNsis[0].FullName -ArgumentList "/S" -PassThru -Wait
+    if ($oldInstall.ExitCode -ne 0) { throw "Old NSIS install failed" }
+    $oldApp = Wait-ForVaultExecutable
+    node $journey $oldApp.FullName $nsisData seed 1.3.0
+    if ($LASTEXITCODE -ne 0) { throw "Could not create v1.3 installed fixture" }
     Write-Host "=== NSIS install / launch / uninstall smoke ==="
-    $nsisInstall = Start-Process -FilePath $nsis.FullName -ArgumentList "/S" -PassThru -Wait
+    $nsisInstall = Start-Process -WindowStyle Hidden -FilePath $nsis.FullName -ArgumentList "/S" -PassThru -Wait
     if ($nsisInstall.ExitCode -ne 0) { throw "NSIS silent install failed with $($nsisInstall.ExitCode)" }
     $nsisApp = Wait-ForVaultExecutable
-    Launch-And-StopInstalledApp -App $nsisApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-nsis-app-data")
+    node $journey $nsisApp.FullName $nsisData reopen $Version initial
+    if ($LASTEXITCODE -ne 0) { throw "NSIS upgrade lost data or failed installed checks" }
+    $repair = Start-Process -WindowStyle Hidden -FilePath $nsis.FullName -ArgumentList "/S" -PassThru -Wait
+    if ($repair.ExitCode -ne 0) { throw "NSIS retry failed" }
+    node $journey $nsisApp.FullName $nsisData reopen $Version restart
+    if ($LASTEXITCODE -ne 0) { throw "NSIS retry did not preserve the generated vault" }
     $uninstaller = Get-ChildItem -LiteralPath $nsisApp.DirectoryName -Filter "uninstall*.exe" -File -ErrorAction SilentlyContinue | Select-Object -First 1
     if (-not $uninstaller) { throw "NSIS uninstaller was not found beside the installed application" }
-    $nsisUninstall = Start-Process -FilePath $uninstaller.FullName -ArgumentList "/S" -PassThru -Wait
+    $nsisUninstall = Start-Process -WindowStyle Hidden -FilePath $uninstaller.FullName -ArgumentList "/S" -PassThru -Wait
     if ($nsisUninstall.ExitCode -ne 0) { throw "NSIS silent uninstall failed with $($nsisUninstall.ExitCode)" }
     Wait-ForVaultUninstalled -InstallDirectory $nsisApp.DirectoryName
+    Assert-BrowserBridgeRemoved
+    if (-not (Test-Path -LiteralPath (Join-Path $nsisData "generated.vault"))) { throw "NSIS uninstall removed vault data" }
     $nsisLifecycleStatus = "passed"
 
+    $msiData = Join-Path $ValidationTempRoot ("vault-upgrade-msi-" + [Guid]::NewGuid().ToString("N"))
+    $oldMsi = @(Get-ChildItem -LiteralPath $oldRelease -Filter "*.msi" -File)
+    if ($oldMsi.Count -ne 1) { throw "Expected the published v1.3 MSI installer" }
+    $oldInstall = Start-Process -WindowStyle Hidden -FilePath msiexec.exe -ArgumentList "/i `"$($oldMsi[0].FullName)`" /qn /norestart" -PassThru -Wait
+    if (@(0, 3010) -notcontains $oldInstall.ExitCode) { throw "Old MSI install failed" }
+    $oldApp = Wait-ForVaultExecutable
+    node $journey $oldApp.FullName $msiData seed 1.3.0
+    if ($LASTEXITCODE -ne 0) { throw "Could not create v1.3 MSI installed fixture" }
     Write-Host "=== MSI install / launch / uninstall smoke ==="
-    $msiInstall = Start-Process -FilePath msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
+    $msiInstall = Start-Process -WindowStyle Hidden -FilePath msiexec.exe -ArgumentList "/i `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
     if (@(0, 3010) -notcontains $msiInstall.ExitCode) { throw "MSI install failed with $($msiInstall.ExitCode)" }
     $msiApp = Wait-ForVaultExecutable
-    Launch-And-StopInstalledApp -App $msiApp -DataDir (Join-Path $ValidationTempRoot "vault-unified-msi-app-data")
-    $msiUninstall = Start-Process -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
+    node $journey $msiApp.FullName $msiData reopen $Version initial
+    if ($LASTEXITCODE -ne 0) { throw "MSI upgrade lost data or failed installed checks" }
+    node $journey $msiApp.FullName $msiData reopen $Version restart
+    if ($LASTEXITCODE -ne 0) { throw "MSI restart did not preserve the generated vault" }
+    $msiUninstall = Start-Process -WindowStyle Hidden -FilePath msiexec.exe -ArgumentList "/x `"$($msi.FullName)`" /qn /norestart" -PassThru -Wait
     if (@(0, 3010) -notcontains $msiUninstall.ExitCode) { throw "MSI uninstall failed with $($msiUninstall.ExitCode)" }
     Wait-ForVaultUninstalled -InstallDirectory $msiApp.DirectoryName
+    Assert-BrowserBridgeRemoved
+    if (-not (Test-Path -LiteralPath (Join-Path $msiData "generated.vault"))) { throw "MSI uninstall removed vault data" }
     $msiLifecycleStatus = "passed"
 }
 
@@ -427,6 +457,15 @@ $assetRecords += [ordered]@{
     sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $extension.FullName).Hash.ToLowerInvariant()
     kind = "browser_extension"
 }
+foreach ($path in @(
+    ($nsis.FullName + ".sig"), ($msi.FullName + ".sig"),
+    (Join-Path $RepoRoot "latest.json"),
+    (Join-Path $RepoRoot "Vault-Unified-Personal-v$Version-Windows-x64.zip"),
+    (Join-Path $RepoRoot "Vault-Unified-Sharing-Service-v$Version.zip")
+)) {
+    $asset = Get-Item -LiteralPath $path
+    $assetRecords += [ordered]@{ name = $asset.Name; bytes = [int64]$asset.Length; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant(); kind = "personal_delivery" }
+}
 $manifest = [ordered]@{
     schema = 1
     version = $Version
@@ -434,15 +473,15 @@ $manifest = [ordered]@{
     source_commit = $SourceSha
     generated_utc = [DateTime]::UtcNow.ToString("o")
     validation = [ordered]@{
-        python_tests = "passed-by-required-job"
-        desktop_build = "passed-by-required-job"
-        rust_tests = "passed-by-required-job"
-        rustsec = "passed-by-required-job"
+        source_checks = "See exact-head CI; not rerun by this installer validator"
         packaged_sidecar_generated_data_smoke = "passed"
         backup_cleanup_preview_confirmed = "passed"
         nsis_install_launch_uninstall = $nsisLifecycleStatus
         msi_install_launch_uninstall = $msiLifecycleStatus
         browser_extension_structure_permissions_and_version = "passed"
+        nsis_v1_3_upgrade_retry_preserved_vault_and_bridge_removal = $nsisLifecycleStatus
+        msi_v1_3_upgrade_restart_preserved_vault_and_bridge_removal = $msiLifecycleStatus
+        installed_chrome_edge_save_fill_change_totp_passkey_reconnect_revoke = $nsisLifecycleStatus
     }
     assets = $assetRecords
 }

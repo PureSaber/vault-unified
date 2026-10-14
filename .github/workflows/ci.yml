@@ -170,7 +170,7 @@ jobs:
   release-desktop:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [python, desktop, ui-journey, rustsec]
-    runs-on: windows-latest
+    runs-on: windows-2022
     permissions:
       contents: write
     steps:
@@ -188,10 +188,15 @@ jobs:
       - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-20
       - name: Build sidecar + Tauri installer
         shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           powershell -ExecutionPolicy Bypass -File scripts/build-desktop-release.ps1
       - name: Validate packaged sidecar and installers
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pwsh -NoProfile -File scripts/validate-desktop-release.ps1
       - name: Upload Release Assets
@@ -204,7 +209,12 @@ jobs:
           files: |
             apps/desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
             apps/desktop/src-tauri/target/release/bundle/msi/*.msi
+            apps/desktop/src-tauri/target/release/bundle/nsis/*.sig
+            apps/desktop/src-tauri/target/release/bundle/msi/*.sig
             Vault-Unified-Browser-Extension-v*.zip
+            Vault-Unified-Sharing-Service-v*.zip
+            Vault-Unified-Personal-v*.zip
+            latest.json
             release-manifest-v*.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

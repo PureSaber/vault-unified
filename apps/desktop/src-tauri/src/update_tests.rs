@@ -145,3 +145,54 @@ fn real_updater_rejects_tamper_wrong_version_missing_version_and_rollback() {
         std::panic::resume_unwind(error);
     }
 }
+
+/// Packaging opt-in: verify both actual installer files through the updater's
+/// HTTP transport and pinned key, without executing either installer locally.
+#[test]
+fn verify_release_artifacts_when_requested() {
+    let Some(root) = std::env::var_os("VAULT_VERIFY_UPDATE_DIR") else { return; };
+    let root = std::path::PathBuf::from(root);
+    let config: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join("apps/desktop/src-tauri/tauri.conf.json")).unwrap()).unwrap();
+    let release: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join("latest.json")).unwrap()).unwrap();
+    let version = release["version"].as_str().unwrap().to_owned();
+    assert_eq!(config["version"].as_str(), Some(version.as_str()));
+    for kind in ["nsis", "msi"] {
+        let platform = &release["platforms"][format!("windows-x86_64-{kind}")];
+        let directory = root.join(format!("apps/desktop/src-tauri/target/release/bundle/{kind}"));
+        let artifact = std::fs::read_dir(directory).unwrap().map(|v| v.unwrap().path()).find(|p| {
+            let name = p.file_name().unwrap().to_string_lossy();
+            name.contains(&format!("_{version}_")) && if kind == "nsis" { name.ends_with("-setup.exe") } else { name.ends_with(".msi") }
+        }).unwrap();
+        let payload = std::fs::read(&artifact).unwrap();
+        assert!(!payload.is_empty());
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let metadata = json!({"version": version, "url": format!("{base}/asset"), "signature": platform["signature"]}).to_string();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let thread_stopped = stopped.clone();
+        let expected = payload.clone();
+        let server = std::thread::spawn(move || {
+            while !thread_stopped.load(Ordering::Acquire) {
+                let Ok((mut stream, _)) = listener.accept() else { std::thread::sleep(Duration::from_millis(5)); continue; };
+                stream.set_nonblocking(false).unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+                let mut request = [0u8; 8192];
+                let count = stream.read(&mut request).unwrap();
+                let body = if String::from_utf8_lossy(&request[..count]).starts_with("GET /asset ") { &payload[..] } else { metadata.as_bytes() };
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+                stream.write_all(body).unwrap();
+            }
+        });
+        let mut context = tauri::test::mock_context(tauri::test::noop_assets());
+        context.config_mut().plugins.0.insert("updater".into(), json!({"pubkey": config["plugins"]["updater"]["pubkey"], "dangerousInsecureTransportProtocol": true, "requireSignedVersion": true}));
+        let app = tauri::test::mock_builder().plugin(tauri_plugin_updater::Builder::new().build()).build(context).unwrap();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| tauri::async_runtime::block_on(async {
+            let update = app.updater_builder().no_proxy().timeout(Duration::from_secs(60)).version_comparator(|_, _| true)
+                .endpoints(vec![format!("{base}/latest.json").parse().unwrap()]).unwrap().build().unwrap().check().await.unwrap().unwrap();
+            assert_eq!(update.download(|_, _| {}, || {}).await.unwrap(), expected);
+        })));
+        stopped.store(true, Ordering::Release); server.join().unwrap();
+        if let Err(error) = result { std::panic::resume_unwind(error); }
+    }
+}

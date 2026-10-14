@@ -30,6 +30,7 @@
     locate();
   }
   function errorText(error) {
+    if (error === "versionMismatch") return text("请从同一安装套件更新桌面和扩展。", "Update the desktop and extension from the same release kit.");
     if (error === "siteDisabled") return text("请在扩展中开启此网站。", "Enable this website in the extension.");
     if (error === "locked") return text("请先解锁桌面密码库，然后重试。", "Unlock the desktop vault, then try again.");
     if (error === "unpaired") return text("请打开扩展完成配对。", "Open the extension to pair this browser.");

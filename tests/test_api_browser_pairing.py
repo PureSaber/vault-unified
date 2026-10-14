@@ -47,6 +47,17 @@ def _desktop_headers(client: TestClient) -> dict[str, str]:
     }
 
 
+def test_extension_version_mismatch_refuses_before_pairing(client: TestClient) -> None:
+    headers = {"Origin": ORIGIN, "X-Vault-Extension-Version": "0.0.0"}
+    response = client.post("/api/browser/pair", json={}, headers=headers)
+    assert response.status_code == 426
+    assert "same release kit" in response.json()["detail"]
+    # An existing temporary-pairing client has no version header. It still goes
+    # through the original authentication boundary, never gaining access.
+    assert client.post("/api/browser/pair", json={}).status_code == 403
+    assert client.get("/api/browser/discovery", headers={"X-Vault-Extension-Version": client.app.version}).status_code == 200
+
+
 def test_extension_pairing_is_one_time_origin_bound_and_lost_on_lock(client: TestClient) -> None:
     headers = _desktop_headers(client)
     entry = client.post(
