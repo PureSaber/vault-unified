@@ -5,7 +5,7 @@ Vault Unified is a local-first password manager. This document describes where d
 ## Default local behavior
 
 - The desktop vault is encrypted on the user's device. A packaged Windows install normally stores it below `%LOCALAPPDATA%\VaultUnified`.
-- Vault passwords, notes, custom secret fields, TOTP keys, recovery codes, and attachment contents are encrypted vault content.
+- Vault passwords, notes, custom secret fields, TOTP keys, recovery codes, attachment contents, generated-password history and Passkey private keys are encrypted vault content.
 - The desktop's bearer session token and per-launch bootstrap secret remain in renderer/process memory. Lock, reload, or exit invalidates them; they are not written to `localStorage` or `sessionStorage`.
 - Secrets for optional external-service connections are stored through Windows Credential Manager. Non-secret connection configuration may be stored under the application's local configuration directory.
 - The project does not include a telemetry, analytics, crash-upload, or user-tracking SDK. A future change to that boundary requires a separate public design and privacy review; it is outside the v1.3 feature freeze.
@@ -16,7 +16,12 @@ Vault Unified does not require an external password service for its core local w
 
 The desktop background service listens only on a system-assigned loopback address. Vault APIs require per-launch authentication or explicitly authorized browser credentials. The browser extension pairs with a short-lived code. Its access token remains in `chrome.storage.session`, and lock, exit or expiry invalidates it. The public discovery endpoint returns only protocol and instance ID.
 
-Post-v1.3 development adds optional persistent browser authorization. A non-exportable ECDSA signing key stays in the extension's IndexedDB; its public key, browser origin, device label and vault binding are protected by Windows Credential Manager. Signed one-time challenges can issue fresh access only after the matching vault is unlocked. Native Messaging adds one extension permission and returns only the public loopback address and process identity. Device revocation denies subsequent use of existing tokens and signatures. See [trusted browser connections](trusted-browser-connections.md).
+The personal edition adds optional persistent browser authorization. A non-exportable ECDSA signing key stays in the extension's IndexedDB; its public key, browser origin, device label and vault binding are protected by Windows Credential Manager. Signed one-time challenges can issue fresh access only after the matching vault is unlocked. Native Messaging adds one extension permission and returns only the public loopback address and process identity. Device revocation denies subsequent use of existing tokens and signatures. See [trusted browser connections](trusted-browser-connections.md).
+
+- **Personal sync:** a chosen folder or WebDAV endpoint receives encrypted change records, including attachments, history and Passkeys. Connection credentials stay in Windows Credential Manager. Hello materials and browser authorization remain local. See [personal sync](personal-computer-sync.md).
+- **Sharing:** a separately selected service stores ciphertext, access rules and membership/identity information. A single-item link carries its decryption key in the URL fragment; family content uses separate shared keys and signed membership. The desktop API remains loopback-only. See [encrypted sharing](encrypted-sharing.md).
+- **Exposure checks:** only when requested, a password hash prefix is sent to Have I Been Pwned's range API; matching happens locally. Passwords and full hashes are not sent. See [password health](password-health.md).
+- **Updates:** manual checks or an explicitly enabled startup preference contact this repository's GitHub release endpoints. Downloads are verified with the pinned updater key; vault content is not sent. See [signed updates](signed-updates.md).
 
 ## Metadata that may be stored
 

@@ -6,7 +6,7 @@ an existing password manager is not required.
 
 ## Everyday setup
 
-1. Create a vault, then configure an encrypted backup in **Safety and recovery**.
+1. Create a vault, then configure an encrypted backup in **Security & recovery**.
    Keep a separate emergency recovery kit and its recovery code in different
    locations. Scheduled backups run while the application is open and unlocked.
 2. Import Chrome or Edge CSV passwords with preview, or add accounts directly.
