@@ -99,6 +99,7 @@ export default function Unlock({ onUnlock }: Props) {
   const [showRecovery, setShowRecovery] = useState(
     () => window.location.hash === RECOVERY_ROUTE_HASH,
   );
+  const [migration, setMigration] = useState(false);
   const [recoveryKitPath, setRecoveryKitPath] = useState("");
   const [recoveryCode, setRecoveryCode] = useState("");
   const [newRecoveryPassword, setNewRecoveryPassword] = useState("");
@@ -350,17 +351,21 @@ export default function Unlock({ onUnlock }: Props) {
           </div>
         )}
 
-        {!showRecovery && !vaultMissing && (
+        {!showRecovery && (
           <div className="button-row" style={{ marginBottom: "var(--space-lg)" }}>
-            <button type="button" className="secondary" onClick={() => { setShowRecovery(true); setError(""); }}>
+            {!vaultMissing && <button type="button" className="secondary" onClick={() => { setMigration(false); setShowRecovery(true); setError(""); }}>
               {copy.recovery}
+            </button>}
+            <button type="button" className="secondary" onClick={() => { setMigration(true); setShowRecovery(true); setError(""); }}>
+              {zh ? "从另一台电脑迁入" : "Bring a vault from another computer"}
             </button>
           </div>
         )}
 
         {showRecovery ? (
           <form onSubmit={handleRecovery} noValidate>
-            <h2>{copy.recoveryTitle}</h2>
+            <h2>{migration ? (zh ? "迁入加密密码库" : "Bring your encrypted vault") : copy.recoveryTitle}</h2>
+            {migration && <p className="field-hint">{zh ? "选择旧电脑创建的恢复包并输入单独保存的恢复码。预览后确认恢复，再使用这里设置的新主密码解锁。浏览器和 Windows Hello 需重新授权。" : "Choose the recovery kit made on your old computer and enter its separately saved code. Preview and confirm recovery, then unlock with the new master password set below. Authorize your browser and Windows Hello again."}</p>}
             <p className="field-hint">{copy.recoveryHint}</p>
             <PathPicker
               id="recovery-kit-path"
@@ -386,9 +391,9 @@ export default function Unlock({ onUnlock }: Props) {
             {error && <div className="error" role="alert">{error}</div>}
             <div className="button-row">
               <button className="primary" type="submit" disabled={loading}>
-                {loading ? copy.recovering : copy.recover}
+                {loading ? copy.recovering : migration ? (zh ? "预览迁入" : "Preview migration") : copy.recover}
               </button>
-              <button className="secondary" type="button" disabled={loading} onClick={() => { setShowRecovery(false); setError(""); }}>
+              <button className="secondary" type="button" disabled={loading} onClick={() => { setShowRecovery(false); setMigration(false); setRecoveryCode(""); setNewRecoveryPassword(""); setConfirmRecoveryPassword(""); setError(""); }}>
                 {copy.back}
               </button>
             </div>
@@ -513,7 +518,7 @@ export default function Unlock({ onUnlock }: Props) {
               </form>
             )}
             <div className="button-row">
-              <button type="button" className="ghost" onClick={() => { setShowRecovery(true); setError(""); }}>
+              <button type="button" className="ghost" onClick={() => { setMigration(false); setShowRecovery(true); setError(""); }}>
                 {copy.recovery}
               </button>
             </div>
@@ -587,9 +592,9 @@ export default function Unlock({ onUnlock }: Props) {
       <ConfirmDialog
         open={recoveryPreview !== null}
         idPrefix="recovery-kit-confirm"
-        title={copy.recoveryTitle}
+        title={migration ? (zh ? "确认迁入密码库" : "Confirm vault migration") : copy.recoveryTitle}
         message={recoveryPreview ? `${new Date(recoveryPreview.kit.modified_at).toLocaleString()} · ${recoveryPreview.kit.path} · ${recoveryPreview.kit.entry_count} ${zh ? "个条目" : "entries"}. ${recoveryPreview.impact}` : ""}
-        confirmLabel={copy.recover}
+        confirmLabel={migration ? (zh ? "确认迁入" : "Confirm migration") : copy.recover}
         cancelLabel={zh ? "取消" : "Cancel"}
         variant="danger"
         onConfirm={() => void applyRecovery()}

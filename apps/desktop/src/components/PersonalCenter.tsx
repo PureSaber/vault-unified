@@ -5,6 +5,7 @@ import { useToast } from "./Toast";
 import ImportWizard from "./ImportWizard";
 import PathPicker from "./PathPicker";
 import ConfirmDialog from "./ConfirmDialog";
+import RecoveryRehearsal from "./RecoveryRehearsal";
 
 const defaults: PersonalSettings = {
   lock_after_seconds: 15 * 60,
@@ -54,6 +55,7 @@ export default function PersonalCenter() {
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
   const [recoveryDestination, setRecoveryDestination] = useState("");
+  const [createdRecoveryPath, setCreatedRecoveryPath] = useState("");
   const [pendingExport, setPendingExport] = useState<"json" | "csv" | null>(null);
   const [destinationResult, setDestinationResult] = useState("");
   const [backupBusy, setBackupBusy] = useState(false);
@@ -123,6 +125,7 @@ export default function PersonalCenter() {
     }
     try {
       const result = await api.createRecoveryKit(recoveryCode, recoveryDestination);
+      setCreatedRecoveryPath(result.path);
       showToast(result.warning || (zh ? `恢复包已创建：${result.path}` : `Recovery kit created: ${result.path}`), result.warning ? "error" : "info");
       setRecoveryCode("");
       setRecoveryConfirm("");
@@ -337,6 +340,8 @@ export default function PersonalCenter() {
             </button>
           </>
         )}
+        {createdRecoveryPath && <p className="path-break">{zh ? "最新恢复包：" : "Latest recovery kit: "}{createdRecoveryPath}</p>}
+        <RecoveryRehearsal suggestedPath={createdRecoveryPath} />
       </section>
 
       <ConfirmDialog
