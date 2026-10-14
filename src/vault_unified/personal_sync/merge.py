@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from vault_unified.personal_data import PERSONAL_METADATA_KEY, MERGED_HISTORY_KEY, MAX_HISTORY_ITEMS, MAX_MERGED_HISTORY_ITEMS
+from vault_unified.generation_history import NAMESPACE as GENERATED_NAMESPACE, retained
 
 _MISSING = object()
 
@@ -70,7 +71,7 @@ def preserve_history(entry):
         metadata[MERGED_HISTORY_KEY] = {"version": 1, "items": items[MAX_HISTORY_ITEMS:]}
 
 
-def reconcile(before: dict | None, current: dict | None, incoming: dict | None, *, entry: bool = True) -> Reconciled:
+def reconcile(before: dict | None, current: dict | None, incoming: dict | None, *, entry: bool = True, namespace: str = "") -> Reconciled:
     conflicts = []
 
     def conflict(base, ours, theirs, path, kind="field"):
@@ -86,6 +87,14 @@ def reconcile(before: dict | None, current: dict | None, incoming: dict | None, 
             united = _history_union(ours, theirs)
             if united is not None:
                 return copy.deepcopy(united)
+        if not entry and namespace == GENERATED_NAMESPACE and path == ("data", "items") and isinstance(ours, list) and isinstance(theirs, list):
+            combined = {}
+            for item in ours + theirs:
+                if not isinstance(item, dict) or not isinstance(item.get("id"), str) or (item["id"] in combined and combined[item["id"]] != item):
+                    break
+                combined[item["id"]] = item
+            else:
+                return retained({"version": 1, "items": copy.deepcopy(list(combined.values()))})["items"]
         # updated_at is bookkeeping, not a conflicting user field.
         if entry and path == ("updated_at",) and isinstance(ours, str) and isinstance(theirs, str):
             return max(ours, theirs)

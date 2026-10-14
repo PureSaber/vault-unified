@@ -1825,3 +1825,14 @@ button.conflict-chip-btn:hover:not(:disabled) {
   box-shadow: var(--shadow-sm);
   font-weight: 600;
 }
+
+.personal-sync-fields { border: 0; padding: 0; margin: var(--space-md) 0; min-width: 0; }
+.personal-sync .status-row dd { overflow-wrap: anywhere; }
+.personal-sync .button-row { flex-wrap: wrap; margin-block: var(--space-md); }
+.personal-sync-devices { margin-block: var(--space-lg); }
+.personal-sync-devices summary { cursor: pointer; font-weight: 600; }
+.personal-sync-choice { border: 1px solid var(--color-border); border-radius: var(--radius-md); margin-block: var(--space-md); padding: var(--space-md); min-width: 0; }
+.personal-sync-option { display: flex; gap: var(--space-sm); align-items: flex-start; padding: var(--space-sm); cursor: pointer; }
+.personal-sync-option input { width: auto; margin-top: 4px; flex-shrink: 0; }
+.personal-sync-option > span { min-width: 0; }
+.personal-sync-value { display: block; overflow-wrap: anywhere; white-space: pre-wrap; margin-top: var(--space-xs); color: var(--color-text-muted); max-height: 200px; overflow-y: auto; }

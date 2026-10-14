@@ -57,7 +57,7 @@ def run(local: LocalVault, store, key: bytes, *, check: Callable[[], None] = lam
     if received != queued or view != objects:
         check()
         local.commit_sync_payload(materialize(payload, view, received), expected_generation=generation)
-    return {"waiting": waiting, "more": more, "downloaded": len(records), "uploaded": len(queued["outbox"]), "conflicts": len(received["conflicts"])}
+    return {"waiting": waiting, "more": more, "downloaded": len(records), "uploaded": len(queued["outbox"]), "conflicts": len(received["conflicts"]), "changed": view != objects}
 
 
 def resolve(local: LocalVault, key: bytes, choices: dict[str, str], *, expected_generation: int) -> None:

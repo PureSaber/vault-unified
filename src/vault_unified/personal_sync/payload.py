@@ -41,6 +41,9 @@ def materialize(payload: dict, objects: dict, state: dict) -> dict:
                 raise ProtocolError("Invalid synchronized vault metadata")
             if key == GENERATED_NAMESPACE:
                 retained(value["data"])
+                if any(not isinstance(item.get("id"), str) or not all(isinstance(item.get(field), str) for field in ("value", "kind", "origin"))
+                       or item["kind"] not in {"password", "passphrase"} for item in value["data"]["items"]):
+                    raise ProtocolError("Invalid synchronized generated-password history")
             metadata[key] = copy.deepcopy(value["data"])
         elif kind == "entry":
             if original.get(object_id) == value:

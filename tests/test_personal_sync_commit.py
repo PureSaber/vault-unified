@@ -1,5 +1,7 @@
 import copy
 import secrets
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
+from threading import Event
 
 import pytest
 
@@ -56,3 +58,32 @@ def test_failed_atomic_sync_keeps_live_memory_entries_and_outbox(tmp_path, monke
     monkeypatch.setattr("vault_unified.local_store.write_encrypted_file", fail)
     with pytest.raises(OSError): vault.commit_sync_payload(candidate, expected_generation=generation)
     assert vault.export_payload() == before and vault.vault_path.read_bytes() == disk and vault.generation == generation
+
+
+def test_legacy_edit_is_not_visible_to_sync_until_its_write_finishes(tmp_path, monkeypatch):
+    vault = local(tmp_path); entry = vault.add(SecretEntry(title="Generated serialized edit"))
+    entered, release = Event(), Event()
+    original = vault._write_payload
+    def delayed(payload):
+        entered.set(); assert release.wait(5)
+        original(payload)
+    monkeypatch.setattr(vault, "_write_payload", delayed)
+    with ThreadPoolExecutor() as pool:
+        edit = pool.submit(vault.update, entry.id, notes="Generated delayed edit")
+        assert entered.wait(5)
+        snapshot = pool.submit(vault.sync_snapshot)
+        try:
+            with pytest.raises(TimeoutError): snapshot.result(timeout=0.1)
+        finally: release.set()
+        edit.result(timeout=5)
+        generation, payload = snapshot.result(timeout=5)
+    assert generation == vault.generation and payload["entries"][entry.id]["notes"] == "Generated delayed edit"
+
+
+def test_failed_legacy_edit_does_not_leave_an_unsaved_value_for_sync_to_upload(tmp_path, monkeypatch):
+    vault = local(tmp_path); entry = vault.add(SecretEntry(title="Generated failed edit"))
+    before, disk = vault.export_payload(), vault.vault_path.read_bytes()
+    def fail(*args, **kwargs): raise OSError("Generated failure")
+    monkeypatch.setattr(vault, "_write_payload", fail)
+    with pytest.raises(OSError): vault.update(entry.id, password=secrets.token_hex(20))
+    assert vault.export_payload() == before and vault.vault_path.read_bytes() == disk

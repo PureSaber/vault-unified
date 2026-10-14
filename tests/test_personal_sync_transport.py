@@ -25,6 +25,9 @@ def generated_webdav():
             return self.path.rsplit("/", 1)[-1]
         def do_MKCOL(self): self.track(); self.reply(201)
         def do_PROPFIND(self):
+            # Consume the XML request before closing the HTTP/1.0 connection;
+            # unread inbound bytes can cause a TCP reset on Windows.
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
             self.track()
             if state["mode"] == "foreign-list":
                 body = b'<d:multistatus xmlns:d="DAV:"><d:response><d:href>https://elsewhere.invalid/record</d:href></d:response></d:multistatus>'

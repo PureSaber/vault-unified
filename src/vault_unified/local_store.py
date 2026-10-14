@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import threading
+from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 
@@ -17,6 +18,22 @@ VAULT_VERSION = 2
 
 class EntryTransactionConflict(ValueError):
     """The editor attempted to commit against a different entry generation."""
+
+
+def _local_mutation(method):
+    """Legacy mutation paths participate in the same in-process transaction lock."""
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self._lock:
+            # Deferred upserts are an implementation detail of import_entries,
+            # whose outer transaction already retains the pre-import snapshot.
+            previous = None if kwargs.get("save") is False else copy.deepcopy(self._entries)
+            try:
+                return method(self, *args, **kwargs)
+            except Exception:
+                if previous is not None: self._entries = previous
+                raise
+    return call
 
 
 class LocalVault:
@@ -411,6 +428,7 @@ class LocalVault:
                 results.append(entry)
         return sorted(results, key=lambda e: e.title.lower())
 
+    @_local_mutation
     def add(self, entry: SecretEntry, *, mark_dirty: bool = True) -> SecretEntry:
         with self._lock:
             entry.source = Source.LOCAL
@@ -422,6 +440,7 @@ class LocalVault:
             self._save()
             return entry
 
+    @_local_mutation
     def upsert(
         self, entry: SecretEntry, *, save: bool = True, from_remote: bool = False
     ) -> tuple[SecretEntry, bool]:
@@ -454,6 +473,7 @@ class LocalVault:
             self._save()
         return entry, is_new
 
+    @_local_mutation
     def update(
         self,
         entry_id: str,
@@ -488,12 +508,14 @@ class LocalVault:
         self._save()
         return entry
 
+    @_local_mutation
     def replace_entry(self, entry: SecretEntry) -> SecretEntry:
         with self._lock:
             self._entries[entry.id] = entry
             self._save()
             return entry
 
+    @_local_mutation
     def mark_synced(self, entry_id: str, remote_updated_at: str = "") -> None:
         entry = self._entries.get(entry_id)
         if not entry:
@@ -501,6 +523,7 @@ class LocalVault:
         entry.mark_synced(remote_updated_at)
         self._save()
 
+    @_local_mutation
     def mark_conflict(self, entry_id: str) -> None:
         entry = self._entries.get(entry_id)
         if not entry:
@@ -508,6 +531,7 @@ class LocalVault:
         entry.sync_status = SyncStatus.CONFLICT
         self._save()
 
+    @_local_mutation
     def delete(self, entry_id: str, *, soft: bool = False) -> bool:
         if entry_id not in self._entries:
             return False
@@ -528,6 +552,7 @@ class LocalVault:
     def purge(self, entry_id: str) -> bool:
         return self.delete(entry_id, soft=False)
 
+    @_local_mutation
     def import_entries(
         self, entries: list[SecretEntry], *, from_remote: bool = True
     ) -> dict[str, int]:

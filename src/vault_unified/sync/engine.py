@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+from functools import wraps
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +35,15 @@ from vault_unified.sync_prefs import load_prefs, save_prefs
 
 class SyncOperationPending(RuntimeError):
     """A prior remote outcome is unknown and must not be retried blindly."""
+
+
+def serialized_vault_operation(method):
+    """Coordinate legacy connector mutations with editor and personal-sync writes."""
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        with self.vault.local._lock:
+            return method(self, *args, **kwargs)
+    return call
 
 
 @dataclass
@@ -98,6 +108,7 @@ class SyncEngine:
                 raise ValueError("Cannot persist a conflict for a missing entry")
             entry.sync_ledger.conflicts[conflict_id] = record.to_dict(reveal=True)
 
+    @serialized_vault_operation
     def _persist_conflicts(self) -> None:
         self._embed_conflicts()
         self.vault.local._save()
@@ -114,6 +125,7 @@ class SyncEngine:
     def save_prefs(self, prefs) -> None:
         save_prefs(self.vault_path, prefs)
 
+    @serialized_vault_operation
     def list_conflicts(self) -> list[ConflictRecord]:
         stale = [
             conflict_id
@@ -347,6 +359,7 @@ class SyncEngine:
             observed += 1
         return observed
 
+    @serialized_vault_operation
     def pull_source(self, source: Source) -> dict[str, int]:
         prefs = self.get_prefs()
         if not prefs.is_source_enabled(source):
@@ -545,6 +558,7 @@ class SyncEngine:
                 self.vault.local.replace_entry(entry)
             raise
 
+    @serialized_vault_operation
     def push_entry(
         self, entry_id: str, targets: list[Source] | None = None
     ) -> dict[str, int]:
@@ -660,6 +674,7 @@ class SyncEngine:
                 self._record_error("delete", source, exc)
         return {"pushed": pushed, "errors": errors}
 
+    @serialized_vault_operation
     def abandon_tombstone_source(self, entry_id: str, source: Source) -> None:
         entry = self.vault.local.get(entry_id)
         if entry is None or entry.sync_ledger.tombstone is None:
@@ -673,6 +688,7 @@ class SyncEngine:
             tombstone.abandoned.append(source.value)
         self.vault.local.replace_entry(entry)
 
+    @serialized_vault_operation
     def purge_tombstone(
         self, entry_id: str, *, now: datetime | None = None
     ) -> None:
@@ -685,6 +701,7 @@ class SyncEngine:
             )
         self.vault.local.purge(entry_id)
 
+    @serialized_vault_operation
     def push_all_dirty(self) -> dict[str, int]:
         total_pushed = 0
         total_errors = 0
@@ -694,6 +711,7 @@ class SyncEngine:
             total_errors += result["errors"]
         return {"pushed": total_pushed, "errors": total_errors}
 
+    @serialized_vault_operation
     def pull_all_enabled(self) -> dict[str, dict[str, int]]:
         result: dict[str, dict[str, int]] = {}
         prefs = self.get_prefs()
@@ -706,6 +724,7 @@ class SyncEngine:
                 self._record_error("pull", source, exc)
         return result
 
+    @serialized_vault_operation
     def sync_bidirectional(self) -> SyncResult:
         result = SyncResult()
         prefs = self.get_prefs()
@@ -729,6 +748,7 @@ class SyncEngine:
         result.conflicts = self.list_conflicts()
         return result
 
+    @serialized_vault_operation
     def resolve_conflict(
         self,
         conflict_id: str,
@@ -806,6 +826,7 @@ class SyncEngine:
             self.push_entry(resolved.id, [record.remote_source])
         return resolved
 
+    @serialized_vault_operation
     def after_local_edit(self, entry_id: str) -> None:
         prefs = self.get_prefs()
         if prefs.auto_push_on_edit and prefs.primary == PrimarySource.LOCAL:

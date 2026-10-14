@@ -99,7 +99,7 @@ def receive(state: dict, objects: dict, records: dict[str, dict]) -> tuple[dict,
                         conflicts = [{"path": [], "kind": "delete", "base": {"present": record["before"] is not None, "value": record["before"]},
                                       "local": {"present": False}, "remote": {"present": True, "value": record["after"]}}]
                     else:
-                        merged = reconcile(record["before"], current, record["after"], entry=object_id.startswith("entry/"))
+                        merged = reconcile(record["before"], current, record["after"], entry=object_id.startswith("entry/"), namespace=object_id.split("/", 1)[1])
                         candidate, conflicts = merged.value, merged.conflicts
                     if candidate is None: view.pop(object_id, None)
                     else: view[object_id] = candidate

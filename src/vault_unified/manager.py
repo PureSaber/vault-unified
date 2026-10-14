@@ -22,7 +22,7 @@ from vault_unified.personal_data import (
     restore_history,
     update_data,
 )
-from vault_unified.sync.engine import SyncEngine, SyncResult
+from vault_unified.sync.engine import SyncEngine, SyncResult, serialized_vault_operation
 from vault_unified.sync.ledger import (
     REMOTE_SYNC_FIELDS,
     Tombstone,
@@ -895,6 +895,7 @@ class MetadataPreservingSyncEngine(SyncEngine):
             max(1, stats["errors"]),
         )
 
+    @serialized_vault_operation
     def execute_explicit(
         self,
         sources: list[Source],

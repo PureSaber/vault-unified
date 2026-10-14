@@ -10,6 +10,12 @@ export interface HelloStatus { supported: boolean; ready: boolean; busy: boolean
 export interface TypeTarget { id: string; title: string; application: string }
 export interface PasswordHealthItem { id: string; title: string; username: string; updated_at: string; change_url: string; weak: boolean; reused: boolean; reuse_count: number; score: number | null }
 export interface PasswordHealthReport { checked_at: string; total: number; weak: number; reused: number; unscored: number; entries: PasswordHealthItem[] }
+export interface PersonalSyncSetup { provider: "folder" | "webdav"; mode: "create" | "join"; location: string; label: string; automatic: boolean; code: string; username: string; password: string }
+export interface PersonalSyncPreview { preview_token: string; items: Array<{ id: string; title: string; action: "add" | "update" | "remove" }>; total: number; conflicts: number; local_entries: number; result_entries: number; provider: string; location: string; automatic: boolean }
+export interface PersonalSyncStatus { connected: boolean; reconnect?: boolean; upgrade_required?: boolean; generation: number; provider?: string; location?: string; label?: string; automatic?: boolean; disabled?: boolean; pending?: number; outbox?: number; conflicts?: number; pending_deletions?: number; devices?: Array<{ id: string; label: string; current: boolean }>; busy?: boolean; error?: string; last_success?: number; waiting?: number; more?: boolean }
+export interface PersonalSyncResult { skipped?: boolean; busy?: boolean; waiting?: number; more?: boolean; downloaded?: number; uploaded?: number; conflicts?: number; changed?: boolean }
+export interface PersonalSyncChoice { id: string; object: string; title: string; path: string[]; kind: string; device: string; local: { present: boolean; value: string; state?: string; truncated?: boolean }; remote: { present: boolean; value: string; state?: string; truncated?: boolean } }
+export interface PersonalSyncConflicts { generation: number; items: PersonalSyncChoice[] }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -527,6 +533,17 @@ export interface SyncPreview {
 }
 
 export const api = {
+  personalSyncStatus: () => request<PersonalSyncStatus>("/personal-sync/status"),
+  previewPersonalSync: (setup: PersonalSyncSetup) => request<PersonalSyncPreview>("/personal-sync/preview", { method: "POST", body: JSON.stringify(setup) }),
+  cancelPersonalSync: (preview_token: string) => request("/personal-sync/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
+  connectPersonalSync: (preview_token: string) => request<{ connected: boolean; backup_path: string }>("/personal-sync/connect", { method: "POST", body: JSON.stringify({ preview_token, confirm: true }) }),
+  runPersonalSync: (automatic = false, signal?: AbortSignal) => request<PersonalSyncResult>("/personal-sync/run", { method: "POST", body: JSON.stringify({ automatic }), signal }),
+  updatePersonalSync: (automatic: boolean, label: string) => request<PersonalSyncStatus>("/personal-sync/settings", { method: "PUT", body: JSON.stringify({ automatic, label }) }),
+  personalSyncCode: () => request<{ code: string }>("/personal-sync/code", { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  copyPersonalSyncCode: () => request("/personal-sync/code/copy", { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  disconnectPersonalSync: () => request<{ disconnected: boolean; cleanup_pending: boolean }>("/personal-sync/disconnect", { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  personalSyncConflicts: (reveal = false) => request<PersonalSyncConflicts>(`/personal-sync/conflicts?reveal=${reveal}`),
+  resolvePersonalSync: (generation: number, choices: Record<string, "local" | "remote">) => request("/personal-sync/resolve", { method: "POST", body: JSON.stringify({ generation, choices, confirm: true }) }),
   passwordHealth: () => request<PasswordHealthReport>("/security/password-health"),
   checkExposure: (entryId: string, confirmNetwork: boolean, signal?: AbortSignal) => request<{ entry_id: string; count: number; matching_entry_ids: string[] }>("/security/exposure", { method: "POST", body: JSON.stringify({ entry_id: entryId, confirm_network: confirmNetwork }), signal }),
   captureTypeTarget: () => invoke<TypeTarget>("capture_type_target"),
