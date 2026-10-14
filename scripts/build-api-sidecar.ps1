@@ -55,7 +55,8 @@ $Collect = @(
     "dotenv",
     "click",
     "rich",
-    "tldextract"
+    "tldextract",
+    "zxcvbn"
 )
 
 $PyInstallerArgs = @(

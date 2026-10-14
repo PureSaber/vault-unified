@@ -8,6 +8,8 @@ export interface GeneratedPassword { id: string; kind: "password" | "passphrase"
 export interface WebsiteRules { match: "exact" | "base_domain"; additional_urls: string[]; excluded_urls: string[] }
 export interface HelloStatus { supported: boolean; ready: boolean; busy: boolean }
 export interface TypeTarget { id: string; title: string; application: string }
+export interface PasswordHealthItem { id: string; title: string; username: string; updated_at: string; change_url: string; weak: boolean; reused: boolean; reuse_count: number; score: number | null }
+export interface PasswordHealthReport { checked_at: string; total: number; weak: number; reused: number; unscored: number; entries: PasswordHealthItem[] }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -517,6 +519,8 @@ export interface SyncPreview {
 }
 
 export const api = {
+  passwordHealth: () => request<PasswordHealthReport>("/security/password-health"),
+  checkExposure: (entryId: string, confirmNetwork: boolean, signal?: AbortSignal) => request<{ entry_id: string; count: number; matching_entry_ids: string[] }>("/security/exposure", { method: "POST", body: JSON.stringify({ entry_id: entryId, confirm_network: confirmNetwork }), signal }),
   captureTypeTarget: () => invoke<TypeTarget>("capture_type_target"),
   startAutoType: (targetId: string, entryId: string, sequence: string, delayMs: number) => invoke<void>("start_auto_type", { targetId, entryId, token, sequence, delayMs }),
   cancelAutoType: () => invoke<void>("cancel_auto_type"),
