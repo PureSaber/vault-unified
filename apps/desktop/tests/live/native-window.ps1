@@ -1,4 +1,4 @@
-param([int]$TargetProcessId, [ValidateSet('state', 'close', 'shortcut')] [string]$Action = 'state')
+param([int]$TargetProcessId, [ValidateSet('state', 'close', 'shortcut', 'session-lock', 'session-unlock', 'suspend', 'resume')] [string]$Action = 'state')
 $ErrorActionPreference = 'Stop'
 Add-Type -TypeDefinition @'
 using System;
@@ -54,4 +54,13 @@ $window = [GeneratedWindow]::Find($TargetProcessId)
 if ($window -eq [IntPtr]::Zero) { throw 'Generated application window was not found for this process' }
 if ($Action -eq 'close') { [GeneratedWindow]::PostMessage($window, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null }
 if ($Action -eq 'shortcut') { [GeneratedWindow]::Shortcut() }
+if ($Action -in @('session-lock', 'session-unlock')) {
+    $code = if ($Action -eq 'session-lock') { 7 } else { 8 }
+    $session = (Get-Process -Id $TargetProcessId).SessionId
+    [GeneratedWindow]::PostMessage($window, 0x02b1, [IntPtr]$code, [IntPtr]$session) | Out-Null
+}
+if ($Action -in @('suspend', 'resume')) {
+    $code = if ($Action -eq 'suspend') { 4 } else { 18 }
+    [GeneratedWindow]::PostMessage($window, 0x0218, [IntPtr]$code, [IntPtr]::Zero) | Out-Null
+}
 @{ visible = [GeneratedWindow]::IsWindowVisible($window) } | ConvertTo-Json -Compress

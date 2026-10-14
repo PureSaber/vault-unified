@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
+from threading import RLock
 
 from vault_unified.config import get_vault_path
 from vault_unified.crypto import decrypt_payload
@@ -41,8 +42,31 @@ class VaultSession:
 class SessionManager:
     def __init__(self) -> None:
         self._sessions: dict[str, VaultSession] = {}
+        self._guard = RLock()
+        self._epoch = 0
+        self._system_epoch = 0
+        self._system_blocked = False
 
-    def _register(self, vault: UnifiedVault) -> tuple[str, UnifiedVault]:
+    def begin_unlock(self) -> int:
+        with self._guard:
+            if self._system_blocked:
+                raise PermissionError("Windows session is locked or suspended")
+            return self._epoch
+
+    @property
+    def system_epoch(self) -> int:
+        with self._guard:
+            return self._system_epoch
+
+    def set_system_blocked(self, blocked: bool) -> list[str]:
+        with self._guard:
+            self._system_blocked = blocked
+            self._system_epoch += 1
+            tokens = list(self._sessions)
+            self.lock_all()
+            return tokens
+
+    def _register(self, vault: UnifiedVault, *, expected_epoch: int) -> tuple[str, UnifiedVault]:
         from vault_unified.generation_history import prune
         prune(vault.local)
         token = str(uuid4())
@@ -54,12 +78,15 @@ class SessionManager:
                 container.header.vault_id,
                 container.header.dek_id,
             )
-        self._sessions[token] = VaultSession(
-            token=token,
-            vault=vault,
-            last_active=time.time(),
-            browser_binding=binding,
-        )
+        with self._guard:
+            if self._system_blocked or expected_epoch != self._epoch:
+                raise PermissionError("Unlock was cancelled by a lock event")
+            self._sessions[token] = VaultSession(
+                token=token,
+                vault=vault,
+                last_active=time.time(),
+                browser_binding=binding,
+            )
         return token, vault
 
     @staticmethod
@@ -76,6 +103,7 @@ class SessionManager:
         vault_path: Path | None = None,
         remember: bool = False,
     ) -> tuple[str, UnifiedVault]:
+        epoch = self.begin_unlock()
         path = vault_path or get_vault_path()
         require_clean_storage(path)
         if not path.exists():
@@ -98,7 +126,7 @@ class SessionManager:
             if not isinstance(credential, str):
                 raise ValueError("Enter the master password before enabling device unlock")
             self._remember(path, credential)
-        return self._register(vault)
+        return self._register(vault, expected_epoch=epoch)
 
     def create_v3(
         self,
@@ -108,6 +136,7 @@ class SessionManager:
         vault_path: Path | None = None,
         remember: bool = False,
     ) -> tuple[str, UnifiedVault]:
+        epoch = self.begin_unlock()
         if password != confirm_password:
             raise ValueError("Master password confirmation does not match")
         path = vault_path or get_vault_path()
@@ -118,7 +147,7 @@ class SessionManager:
         vault = UnifiedVault(path, password)
         if remember:
             self._remember(path, password)
-        return self._register(vault)
+        return self._register(vault, expected_epoch=epoch)
 
     def restore(
         self,
@@ -129,6 +158,7 @@ class SessionManager:
         remember: bool = False,
         expected_source_sha256: str | None = None,
     ) -> tuple[str, UnifiedVault]:
+        epoch = self.begin_unlock()
         source = Path(backup_path).expanduser().resolve()
         target = (vault_path or get_vault_path()).expanduser().resolve()
         require_clean_storage(target)
@@ -155,21 +185,23 @@ class SessionManager:
         vault = UnifiedVault(target, password)
         if remember:
             self._remember(target, password)
-        return self._register(vault)
+        return self._register(vault, expected_epoch=epoch)
 
     def get(self, token: str, *, touch: bool = True) -> UnifiedVault:
-        session = self._sessions.get(token)
-        if not session or session.expired():
-            if session:
-                del self._sessions[token]
-            raise PermissionError("Session expired or invalid")
-        if touch:
-            session.touch()
-        return session.vault
+        with self._guard:
+            session = self._sessions.get(token)
+            if not session or session.expired():
+                if session:
+                    del self._sessions[token]
+                raise PermissionError("Session expired or invalid")
+            if touch:
+                session.touch()
+            return session.vault
 
     def browser_binding(self, token: str) -> tuple[str, str, str] | None:
-        self.get(token, touch=False)
-        return self._sessions[token].browser_binding
+        with self._guard:
+            self.get(token, touch=False)
+            return self._sessions[token].browser_binding
 
     def browser_session(self, binding: tuple[str, str, str]) -> str:
         """Find an already-unlocked vault; never unlock or extend idle time."""
@@ -179,10 +211,14 @@ class SessionManager:
         raise PermissionError("Desktop vault is locked")
 
     def lock(self, token: str) -> None:
-        self._sessions.pop(token, None)
+        with self._guard:
+            if self._sessions.pop(token, None):
+                self._epoch += 1
 
     def lock_all(self) -> None:
-        self._sessions.clear()
+        with self._guard:
+            self._epoch += 1
+            self._sessions.clear()
 
     def is_unlocked(self, token: str) -> bool:
         session = self._sessions.get(token)

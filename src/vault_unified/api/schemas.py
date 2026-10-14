@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, StrictBool, field_validator
+
+
+class SystemSessionStateIn(BaseModel):
+    blocked: StrictBool
 
 
 class UnlockRequest(BaseModel):

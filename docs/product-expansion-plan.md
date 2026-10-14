@@ -16,14 +16,14 @@ than replaced with a simulated completion claim.
 |---|---|---|
 | 1 | Chrome / Edge import: source guidance, format detection, faithful fields, duplicate review, invalid rows, cancel, apply, undo, password-page entry point | Merged in PR #58 / `6cf4237`; CI run 37187313246 passed; source feature, not yet released |
 | 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Merged PR #59 / `6518339`; full CI run 38497981145 passed, including actual native restart journey; source feature, not yet released |
-| 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Implemented on `codex/browser-inline-fill`; explicit site permissions, isolated picker, stepwise fields and extension-owned frame consent; integration pending |
+| 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Merged PR #69 / `db7977c`; exact-head CI 38516082343 passed, including actual extension stepwise/dynamic forms, OTP and cross-origin consent |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Merged PR #68 / `db88b8e`; exact-head CI 38514736044 passed, including actual Windows global-shortcut/tray/exit/restart checks |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Merged PR #65 / `67b2db3`; exact-head CI 38507719041 passed, including native extension TOTP filling |
 | 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Merged PR #66 / `4c5f73c`; exact-head CI 38508845006 passed, including native extension restart recovery |
 | 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
-| 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
+| 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | OS lock/suspend implemented on `codex/windows-session-lock`, native notification and API/renderer checks passed; integration pending. Hello key operations and biometric acceptance remain |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Merged PR #67 / `2e37952`; exact-head CI 38510146700 passed, including offline suffix boundaries and native extension extra-URL filling |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
