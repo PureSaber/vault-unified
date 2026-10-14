@@ -122,7 +122,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
     restore: zh ? "恢复到密码库" : "Restore to vault", purge: zh ? "永久删除" : "Delete permanently",
     favorite: zh ? "收藏" : "Favorite", unfavorite: zh ? "取消收藏" : "Unfavorite", tag: zh ? "添加标签" : "Add tags",
   })[action];
-  const typeLabel = (type: Entry["entry_type"]) => ({ login: zh ? "账号" : "Login", secure_note: zh ? "安全笔记" : "Secure note", card: zh ? "卡片" : "Card", identity: zh ? "身份信息" : "Identity", ssh_key: zh ? "SSH 密钥" : "SSH key", recovery_code: zh ? "恢复码" : "Recovery codes" })[type];
+  const typeLabel = (type: Entry["entry_type"]) => ({ login: zh ? "账号" : "Login", secure_note: zh ? "安全笔记" : "Secure note", card: zh ? "卡片" : "Card", identity: zh ? "身份信息" : "Identity", ssh_key: zh ? "SSH 密钥" : "SSH key", recovery_code: zh ? "恢复码" : "Recovery codes", software_license: zh ? "软件许可证" : "Software license", api_credential: zh ? "API 凭据" : "API credential" })[type];
   async function organize(action: OrganizationAction, ids = selected, immediate = false) {
     if (!ids.length || busy) return;
     setBusy(true);
@@ -321,8 +321,8 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
                   )}
                 </button>
                 <div className="entry-actions">
-                  <button type="button" className="primary" onClick={() => handleCopy(entry.id)}>
-                    {t("list.copyPass")}
+                  <button type="button" className="primary" onClick={() => entry.entry_type === "recovery_code" ? onEdit(entry) : void handleCopy(entry.id)}>
+                    {entry.entry_type === "recovery_code" ? (zh ? "查看恢复码" : "View recovery codes") : ["software_license", "api_credential"].includes(entry.entry_type) ? (zh ? "复制密钥" : "Copy key") : t("list.copyPass")}
                   </button>
                   <details className="entry-more">
                     <summary>{t("list.moreActions")}</summary>

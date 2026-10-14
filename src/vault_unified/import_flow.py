@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from vault_unified.models import SecretEntry, Source
 from vault_unified.personal_data import PERSONAL_METADATA_KEY, data_for, record_history, set_data
+from vault_unified.template_data import template_for, set_template
 from vault_unified.sync.preview import canonical_digest
 from vault_unified.transfer import (
     JSON_SCHEMA,
@@ -42,6 +43,7 @@ SUPPORTED_FIELDS = frozenset(
         "custom_fields",
         "totp_secret",
         "attachments",
+        "template_data",
     }
 )
 
@@ -214,6 +216,7 @@ def secure_entry_fingerprint(entry: SecretEntry) -> str:
             ),
             "totp_secret": "".join(personal["totp_secret"].split()).upper(),
             "attachments": _attachment_fingerprints(entry),
+            "template_data": template_for(entry),
         }
     )
 
@@ -331,7 +334,7 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
         if (
             not isinstance(raw, dict)
             or raw.get("schema") != JSON_SCHEMA
-            or raw.get("version") != JSON_VERSION
+            or type(raw.get("version")) is not int or raw.get("version") not in {1, JSON_VERSION}
             or not isinstance(raw.get("entries"), list)
         ):
             raise ImportFlowError("Transfer JSON has an unsupported schema")
@@ -373,6 +376,10 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
                     # Keep this as an item-level validation problem so one bad
                     # row cannot hide the remaining safe preview results.
                     custom_fields = {"invalid_csv_json": True}
+                try:
+                    template_data = json.loads(row["template_data"]) if row.get("template_data") else None
+                except json.JSONDecodeError:
+                    template_data = {"invalid_csv_json": True}
                 value: dict[str, Any] = {
                     "title": row.get("title", ""),
                     "username": row.get("username", ""),
@@ -383,6 +390,7 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
                     "entry_type": row.get("entry_type") or "login",
                     "custom_fields": custom_fields,
                     "totp_secret": row.get("totp_secret", ""),
+                    "template_data": template_data,
                     "attachments": [],
                 }
                 unknown = [name for name in row if name not in SUPPORTED_FIELDS and row.get(name)]
@@ -614,6 +622,8 @@ def prepare_apply(
             personal = data_for(imported)
             personal["history"] = history
             set_data(candidate, personal)
+            if item.row.entry.template_data is not None:
+                set_template(candidate, template_for(imported))
         candidate.mark_dirty()
         candidates.append(candidate)
         updated_ids.append(candidate.id)

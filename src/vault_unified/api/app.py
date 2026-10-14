@@ -87,6 +87,8 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/entries"):
+            return JSONResponse({"detail": "Invalid entry request"}, status_code=422)
         if request.url.path.startswith("/api/browser/"):
             return JSONResponse({"detail": "Invalid browser request"}, status_code=422)
         if request.url.path.startswith("/api/transfer/import/"):

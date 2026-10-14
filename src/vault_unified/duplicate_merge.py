@@ -8,12 +8,13 @@ from uuid import uuid4
 
 from vault_unified.models import SecretEntry
 from vault_unified.organization import is_fillable, prepare_action
+from vault_unified.template_data import template_for, set_template
 from vault_unified.personal_data import (
     MAX_MERGED_HISTORY_ITEMS, MERGED_HISTORY_KEY, all_history,
     data_for, set_data, snapshot,
 )
 
-MERGE_FIELDS = frozenset({"title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret"})
+MERGE_FIELDS = frozenset({"title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret", "template_data"})
 
 
 def duplicate_key(entry: SecretEntry) -> tuple[str, str] | None:
@@ -54,7 +55,9 @@ def prepare_merge(target: SecretEntry, source: SecretEntry, choices: dict[str, s
     other = data_for(source)
     for field, side in choices.items():
         if side == "source":
-            if field in {"custom_fields", "totp_secret"}:
+            if field == "template_data":
+                set_template(candidate, template_for(source))
+            elif field in {"custom_fields", "totp_secret"}:
                 personal[field] = copy.deepcopy(other[field])
             else:
                 setattr(candidate, field, copy.deepcopy(getattr(source, field)))

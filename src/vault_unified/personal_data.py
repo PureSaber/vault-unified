@@ -15,11 +15,12 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
+from vault_unified.template_data import TEMPLATE_KEY, template_for, set_template
 
 
 PERSONAL_METADATA_KEY = "vault_unified:personal"
 PERSONAL_SCHEMA_VERSION = 1
-ENTRY_TYPES = frozenset({"login", "secure_note", "card", "identity", "ssh_key", "recovery_code"})
+ENTRY_TYPES = frozenset({"login", "secure_note", "card", "identity", "ssh_key", "recovery_code", "software_license", "api_credential"})
 MAX_CUSTOM_FIELDS = 32
 MAX_CUSTOM_FIELD_LABEL = 120
 MAX_CUSTOM_FIELD_VALUE = 16_384
@@ -255,6 +256,7 @@ def snapshot(entry: Any) -> dict[str, Any]:
         "custom_fields": copy.deepcopy(value["custom_fields"]),
         "totp_secret": value["totp_secret"],
         "attachment_ids": [item["id"] for item in value["attachments"]],
+        **({"template_data": template_for(entry)} if TEMPLATE_KEY in entry.source_metadata else {}),
     }
 
 
@@ -285,6 +287,8 @@ def list_history(entry: Any, *, reveal: bool = False) -> list[dict[str, Any]]:
         if not reveal:
             snapshot_value["password"] = ""
             snapshot_value["notes"] = ""
+            if "template_data" in snapshot_value:
+                snapshot_value["template_data"] = {}
             snapshot_value["totp_secret"] = ""
             snapshot_value["custom_fields"] = [
                 {**field, "value": ""} for field in snapshot_value["custom_fields"]
@@ -306,6 +310,7 @@ def restore_history(entry: Any, history_id: str) -> None:
     entry.url = snap["url"]
     entry.notes = snap["notes"]
     entry.tags = list(snap["tags"])
+    set_template(entry, snap.get("template_data", {}))
     current["entry_type"] = snap["entry_type"]
     current["custom_fields"] = copy.deepcopy(snap["custom_fields"])
     current["totp_secret"] = snap["totp_secret"]
@@ -325,6 +330,7 @@ def public_data(entry: Any, *, reveal: bool) -> dict[str, Any]:
         "has_totp_secret": bool(value["totp_secret"]),
         "attachments": [attachment_public(item) for item in value["attachments"]],
         "history_count": len(all_history(entry)),
+        "template_data": template_for(entry) if reveal else {},
     }
 
 
@@ -339,4 +345,6 @@ def merge_personal_metadata(existing: dict[str, Any] | None, incoming: dict[str,
         result[ORGANIZATION_KEY] = copy.deepcopy(existing[ORGANIZATION_KEY])
     if MERGED_HISTORY_KEY in (existing or {}):
         result[MERGED_HISTORY_KEY] = copy.deepcopy(existing[MERGED_HISTORY_KEY])
+    if TEMPLATE_KEY in (existing or {}):
+        result[TEMPLATE_KEY] = copy.deepcopy(existing[TEMPLATE_KEY])
     return result

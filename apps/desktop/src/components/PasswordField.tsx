@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useI18n } from "../i18n";
 
@@ -23,6 +23,14 @@ export default function PasswordField({
 }: Props) {
   const { t } = useI18n();
   const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    if (!visible) return;
+    const hide = () => setVisible(false);
+    const timer = window.setTimeout(hide, 30_000);
+    window.addEventListener("blur", hide);
+    document.addEventListener("visibilitychange", hide);
+    return () => { window.clearTimeout(timer); window.removeEventListener("blur", hide); document.removeEventListener("visibilitychange", hide); };
+  }, [visible]);
 
   return (
     <div className="field">

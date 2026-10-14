@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, type Attachment, type Entry } from "../api/client";
+import { api, type Attachment, type Entry, type TemplateData } from "../api/client";
+import CredentialTemplateFields from "../components/CredentialTemplateFields";
 import HistoryReview, { type HistoryField } from "../components/HistoryReview";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
@@ -25,12 +26,13 @@ type Draft = {
   entryType: EntryType;
   customFields: CustomField[];
   totpSecret: string;
+  templateData: TemplateData;
   attachments: Attachment[];
   pendingAttachments: PendingAttachment[];
   restoreHistoryId: string | null;
 };
 
-const SUPPORTED_NEW_TYPES: EntryType[] = ["login", "secure_note"];
+const SUPPORTED_NEW_TYPES: EntryType[] = ["login", "secure_note", "recovery_code", "software_license", "api_credential"];
 
 const copy = {
   zh: {
@@ -47,7 +49,7 @@ const copy = {
     card: "卡片（兼容）",
     identity: "身份信息（兼容）",
     sshKey: "SSH 密钥（兼容）",
-    recoveryCode: "恢复代码（兼容）",
+    recoveryCode: "恢复码",
     compatibilityHint: "这是由旧版本或导入保留的兼容条目。原类型和现有字段会原样保留；在专用表单完成前，不能新建此类型。",
     website: "网站地址",
     more: "更多选项",
@@ -107,7 +109,7 @@ const copy = {
     card: "Card (compatibility)",
     identity: "Identity (compatibility)",
     sshKey: "SSH key (compatibility)",
-    recoveryCode: "Recovery code (compatibility)",
+    recoveryCode: "Recovery codes",
     compatibilityHint: "This compatibility entry was retained from an earlier version or import. Its original type and fields remain intact; this type cannot be newly created until a dedicated form exists.",
     website: "Website address",
     more: "More options",
@@ -170,6 +172,7 @@ function emptyDraft(): Draft {
     entryType: "login",
     customFields: [],
     totpSecret: "",
+    templateData: {},
     attachments: [],
     pendingAttachments: [],
     restoreHistoryId: null,
@@ -187,6 +190,7 @@ function draftFromEntry(entry: Entry): Draft {
     entryType: entry.entry_type || "login",
     customFields: (entry.custom_fields || []).map((field) => ({ ...field, clientId: clientId() })),
     totpSecret: entry.totp_secret || "",
+    templateData: structuredClone(entry.template_data || {}),
     attachments: [...(entry.attachments || [])],
     pendingAttachments: [],
     restoreHistoryId: null,
@@ -204,6 +208,7 @@ function fingerprint(draft: Draft): string {
     entryType: draft.entryType,
     customFields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })),
     totpSecret: draft.totpSecret,
+    templateData: draft.templateData,
     attachmentIds: draft.attachments.map((item) => item.id),
     pendingAttachments: draft.pendingAttachments.map(({ clientId: id, file }) => ({
       id,
@@ -258,6 +263,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   const [original, setOriginal] = useState<Draft>(initial);
   const [draft, setDraft] = useState<Draft>(initial);
   const [loading, setLoading] = useState(isEdit);
+  const [personalReady, setPersonalReady] = useState(false);
   const [history, setHistory] = useState<Array<{ id: string; saved_at: string }>>([]);
   const [historyToRestore, setHistoryToRestore] = useState<string | null>(null);
   const [genLength, setGenLength] = useState(20);
@@ -273,7 +279,10 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   const dirty = fingerprint(draft) !== fingerprint(original);
   const isSecureNote = draft.entryType === "secure_note";
+  const isTemplate = ["recovery_code", "software_license", "api_credential"].includes(draft.entryType);
   const isCompatibility = !SUPPORTED_NEW_TYPES.includes(draft.entryType);
+
+  useEffect(() => { void api.payloadFormat().then(format => setPersonalReady(format.version >= 3)).catch(() => {}); }, []);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -352,11 +361,14 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
       identity: text.identity,
       ssh_key: text.sshKey,
       recovery_code: text.recoveryCode,
+      software_license: locale === "zh" ? "软件许可证" : "Software license",
+      api_credential: locale === "zh" ? "API 凭据" : "API credential",
     };
     return labels[type];
   }
 
   function heading(): string {
+    if (isTemplate) return `${locale === "zh" ? (isEdit ? "编辑" : "添加") : (isEdit ? "Edit " : "Add ")}${entryTypeLabel(draft.entryType)}`;
     if (!isEdit) return isSecureNote ? text.addNote : text.addLogin;
     if (isCompatibility) return text.editCompatibility;
     return isSecureNote ? text.editNote : text.editLogin;
@@ -414,6 +426,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         notes: draft.notes,
         tags: draft.tags,
         entry_type: draft.entryType,
+        template_data: draft.templateData,
         custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })),
         totp_secret: draft.totpSecret,
         add_attachments: addAttachments,
@@ -451,7 +464,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   function previewHistoryRestore(previous: Entry, fields: HistoryField[]) {
     const restored = draftFromEntry(previous);
-    const mapping = { title: "title", username: "username", password: "password", url: "url", notes: "notes", tags: "tags", entry_type: "entryType", custom_fields: "customFields", totp_secret: "totpSecret" } as const;
+    const mapping = { title: "title", username: "username", password: "password", url: "url", notes: "notes", tags: "tags", entry_type: "entryType", custom_fields: "customFields", totp_secret: "totpSecret", template_data: "templateData" } as const;
     setDraft(current => ({ ...current, ...Object.fromEntries(fields.map(field => [mapping[field], restored[mapping[field]]])), restoreHistoryId: historyToRestore }));
     setShowMore(false);
     showToast(text.loadedDraft);
@@ -472,7 +485,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
               value={draft.entryType}
               onChange={(event) => patchDraft({ entryType: event.target.value as EntryType })}
             >
-              {SUPPORTED_NEW_TYPES.map((type) => <option key={type} value={type}>{entryTypeLabel(type)}</option>)}
+              {SUPPORTED_NEW_TYPES.filter(type => personalReady || ["login", "secure_note"].includes(type)).map((type) => <option key={type} value={type}>{entryTypeLabel(type)}</option>)}
             </select>
           </div>
         )}
@@ -487,7 +500,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         )}
 
         <div className="field">
-          <label className="field-label" htmlFor="entry-title">{isSecureNote ? text.noteTitle : text.websiteName}</label>
+          <label className="field-label" htmlFor="entry-title">{isSecureNote ? text.noteTitle : isTemplate ? (locale === "zh" ? "名称" : "Name") : text.websiteName}</label>
           <input id="entry-title" value={draft.title} onChange={(event) => patchDraft({ title: event.target.value })} required placeholder={t("form.titlePlaceholder")} />
         </div>
 
@@ -497,14 +510,16 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
               <label className="field-label" htmlFor="entry-username">{t("form.username")}</label>
               <input id="entry-username" value={draft.username} onChange={(event) => patchDraft({ username: event.target.value })} placeholder={t("form.usernamePlaceholder")} autoComplete="off" />
             </div>
-            <PasswordField
+            {(draft.entryType !== "recovery_code" || Boolean(draft.password || original.password)) && <PasswordField
               id="entry-password"
-              label={t("form.password")}
+              label={draft.entryType === "software_license" ? (locale === "zh" ? "许可证密钥" : "License key") : draft.entryType === "api_credential" ? (locale === "zh" ? "API 令牌或密钥" : "API token or key") : t("form.password")}
               value={draft.password}
               onChange={(password) => patchDraft({ password })}
-              hint={t("form.passwordHint")}
-              action={<button type="button" className="primary" onClick={handleGenerate}>{t("form.generate")}</button>}
-            />
+              hint={isTemplate ? undefined : t("form.passwordHint")}
+              required={draft.entryType === "software_license" || draft.entryType === "api_credential"}
+              action={draft.entryType === "login" ? <button type="button" className="primary" onClick={handleGenerate}>{t("form.generate")}</button> : undefined}
+            />}
+            {draft.entryType === "login" && <>
             <button
               type="button"
               className="ghost compact-disclosure"
@@ -523,12 +538,15 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
                 <label className="checkbox-field"><input type="checkbox" checked={genSymbols} onChange={(event) => setGenSymbols(event.target.checked)} /><span>{t("form.genSymbols")}</span></label>
               </div>
             )}
+            </>}
             <div className="field">
               <label className="field-label" htmlFor="entry-url">{text.website}</label>
               <input id="entry-url" type="url" value={draft.url} onChange={(event) => patchDraft({ url: event.target.value })} placeholder="https://" />
             </div>
           </>
         )}
+
+        {(isTemplate || Object.values(draft.templateData).some(value => Array.isArray(value) ? value.length : Boolean(value))) && <CredentialTemplateFields type={draft.entryType} value={draft.templateData} onChange={templateData => patchDraft({ templateData })} saved={entry ? { ...entry, template_data: original.templateData } : null} />}
 
         <div className="field">
           <label className="field-label" htmlFor="entry-notes">{t("form.notes")}</label>
@@ -684,7 +702,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         </div>
       </form>
       {entry && historyToRestore && <HistoryReview entryId={entry.id} historyId={historyToRestore}
-        current={{ title: draft.title, username: draft.username, password: draft.password, url: draft.url, notes: draft.notes, tags: draft.tags, entry_type: draft.entryType, custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })), totp_secret: draft.totpSecret }}
+        current={{ title: draft.title, username: draft.username, password: draft.password, url: draft.url, notes: draft.notes, tags: draft.tags, entry_type: draft.entryType, custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })), totp_secret: draft.totpSecret, template_data: draft.templateData }}
         onRestore={previewHistoryRestore} onCancel={() => setHistoryToRestore(null)} />}
     </div>
   );

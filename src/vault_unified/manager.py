@@ -1110,6 +1110,7 @@ class UnifiedVault:
         add_attachments: list[dict[str, str]],
         remove_attachment_ids: list[str],
         restore_history_id: str | None,
+        template_data: dict[str, Any] | None = None,
     ) -> SecretEntry:
         """Commit the complete editor draft with one encrypted vault write."""
 
@@ -1150,6 +1151,14 @@ class UnifiedVault:
             custom_fields=custom_fields,
             totp_secret=totp_secret,
         )
+
+        from vault_unified.template_data import NEW_ENTRY_TYPES, set_template, template_for
+        if template_data is not None:
+            set_template(candidate, template_data)
+        if entry_type in NEW_ENTRY_TYPES and not password.strip():
+            raise PersonalDataError("A license key or API token is required")
+        if entry_type == "recovery_code" and not (template_for(candidate).get("recovery_codes") or password or notes):
+            raise PersonalDataError("Add at least one recovery code")
 
         for attachment_id in remove_attachment_ids:
             get_attachment(candidate, attachment_id)
