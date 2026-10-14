@@ -294,6 +294,7 @@ export default function PersonalCenter() {
           <button className="secondary" type="button" onClick={() => setPendingExport("json")}>JSON</button>
           <button className="secondary" type="button" onClick={() => setPendingExport("csv")}>CSV</button>
         </div>
+        <p className="field-hint">{zh ? "明文导出只包含正常密码库中的条目。需要保留收藏、归档、回收站及全部历史时，请使用加密备份或恢复包。" : "Plaintext export includes active vault entries. Use an encrypted backup or recovery kit to retain favorites, archive, trash and all history."}</p>
         <ImportWizard />
       </section>
 

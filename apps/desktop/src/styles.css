@@ -448,6 +448,15 @@ textarea:focus-visible {
   line-height: 1.5;
 }
 
+.confirm-dialog[aria-labelledby="organization-title"] {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 2 * var(--space-xl));
+}
+#organization-message { min-height: 0; overflow: auto; overflow-wrap: anywhere; white-space: pre-line; }
+.confirm-dialog[aria-labelledby="organization-title"] > .confirm-title,
+.confirm-dialog[aria-labelledby="organization-title"] > .confirm-actions { flex-shrink: 0; }
+
 .confirm-actions {
   margin-top: 0;
   justify-content: flex-end;
@@ -920,8 +929,13 @@ button.icon-btn-lg {
 
 .list-toolbar input {
   flex: 1;
+  min-width: 0;
   margin: 0;
 }
+
+.list-toolbar select { flex: 0 1 12rem; width: 12rem; min-width: 7rem; margin: 0; }
+.organization-favorite-filter { display: flex; align-items: center; gap: var(--space-sm); }
+.organization-favorite-filter input { width: auto; margin: 0; }
 
 .entry-list {
   list-style: none;
@@ -946,6 +960,13 @@ button.icon-btn-lg {
 
 .entry-row:last-child {
   border-bottom: none;
+}
+
+.entry-row-selectable { grid-template-columns: auto minmax(0, 1fr) auto; }
+.entry-row-selectable > input[type="checkbox"] { width: 18px; height: 18px; margin: 0; }
+@media (max-width: 680px) {
+  .entry-row.entry-row-selectable { grid-template-columns: auto minmax(0, 1fr); }
+  .entry-row-selectable > .entry-actions { grid-column: 2; }
 }
 
 .entry-row:hover {

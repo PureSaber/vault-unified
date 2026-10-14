@@ -6,7 +6,7 @@ import type { Page } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
-export async function startGeneratedSidecar(page: Page) {
+export async function startGeneratedSidecar(page: Page, options: { oldPayload?: boolean } = {}) {
   const root = resolve(process.cwd(), "../..");
   const directory = await mkdtemp(join(tmpdir(), "vault-renderer-generated-"));
   let child: ChildProcess | undefined;
@@ -24,7 +24,7 @@ export async function startGeneratedSidecar(page: Page) {
   };
   try {
     child = spawn(join(root, process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python"),
-      ["-m", "vault_unified.api.app"], {
+      options.oldPayload ? ["-c", "import os; from pathlib import Path; from vault_unified.v3_crypto import create_v3_file; create_v3_file(Path(os.environ['VAULT_FILE']), os.environ['UI_TEST_MASTER_PASSWORD'], {'version': 2, 'entries': {}}); from vault_unified.api.app import main; main()"] : ["-m", "vault_unified.api.app"], {
         cwd: directory, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
         env: {
           ...process.env, PYTHONPATH: join(root, "src"), PYTHONUNBUFFERED: "1",
