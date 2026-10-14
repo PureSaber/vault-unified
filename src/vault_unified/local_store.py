@@ -5,9 +5,9 @@ import threading
 from pathlib import Path
 from typing import Any, Callable
 
-from vault_unified.crypto import read_encrypted_file, write_encrypted_file
+from vault_unified.crypto import read_encrypted_snapshot, write_encrypted_file
 from vault_unified.models import SecretEntry, Source, SyncStatus
-from vault_unified.storage import require_clean_storage
+from vault_unified.storage import require_clean_storage, ConcurrentStorageChangeError
 from vault_unified.v3_crypto import V3Credential
 from vault_unified.sync.ledger import Tombstone
 from vault_unified.sync.preview import canonical_digest
@@ -31,6 +31,7 @@ class LocalVault:
         self._payload_version = VAULT_VERSION
         self._metadata: dict[str, Any] = {}
         self._generation = 0
+        self._disk_revision: tuple = ()
         self._lock = threading.RLock()
         require_clean_storage(vault_path)
         if vault_path.exists():
@@ -52,7 +53,7 @@ class LocalVault:
         return entry_data
 
     def _load(self) -> None:
-        data = read_encrypted_file(self.vault_path, self.credential)
+        data, self._disk_revision = read_encrypted_snapshot(self.vault_path, self.credential)
         version = data.get("version", 1)
         if type(version) is not int or version not in {1, 2, 3}:
             raise ValueError("Unsupported vault payload version")
@@ -100,7 +101,7 @@ class LocalVault:
             if candidate != self._metadata.get(namespace):
                 metadata = {**self._metadata, namespace: candidate}
                 payload = {**self._payload(self._entries), "metadata": metadata}
-                write_encrypted_file(self.vault_path, self.credential, payload)
+                self._write_payload(payload)
                 self._metadata = copy.deepcopy(metadata)
                 self._generation += 1
             return copy.deepcopy(candidate)
@@ -109,13 +110,48 @@ class LocalVault:
     def payload_version(self) -> int:
         return self._payload_version
 
+    def _write_payload(self, payload: dict) -> None:
+        try:
+            self._disk_revision = write_encrypted_file(self.vault_path, self.credential, payload, expected_revision=self._disk_revision)
+        except ConcurrentStorageChangeError:
+            raise EntryTransactionConflict("Vault changed on disk; unlock again before saving") from None
+
+    def sync_snapshot(self) -> tuple[int, dict]:
+        with self._lock:
+            return self._generation, self.export_payload()
+
+    def commit_sync_payload(self, payload: dict, *, expected_generation: int) -> None:
+        """Commit replicated entries and encrypted outbox/state in one write."""
+        from vault_unified.v3_crypto import validate_v3_payload
+        from vault_unified.personal_data import data_for, all_history
+        from vault_unified.website_rules import require_website_payload
+        from vault_unified.template_data import require_template_payload
+        candidate = copy.deepcopy(payload)
+        validate_v3_payload(candidate)
+        if candidate["version"] != 3:
+            raise ValueError("Upgrade the vault before enabling full synchronization")
+        entries = {key: SecretEntry.from_dict(value) for key, value in candidate["entries"].items()}
+        for key, entry in entries.items():
+            if key != entry.id:
+                raise ValueError("Synchronized entry identity mismatch")
+            data_for(entry); all_history(entry)
+        with self._lock:
+            if self._payload_version != 3 or self._generation != expected_generation:
+                raise EntryTransactionConflict("Vault changed during synchronization; retry")
+            require_website_payload(self, list(entries.values()))
+            require_template_payload(self, list(entries.values()))
+            self._write_payload(candidate)
+            self._entries = entries
+            self._metadata = candidate["metadata"]
+            self._generation += 1
+
     def _save_entries(self, entries: dict[str, SecretEntry]) -> None:
         from vault_unified.website_rules import require_website_payload
         require_website_payload(self, list(entries.values()))
         from vault_unified.template_data import require_template_payload
         require_template_payload(self, list(entries.values()))
         payload = self._payload(entries)
-        write_encrypted_file(self.vault_path, self.credential, payload)
+        self._write_payload(payload)
         self._generation += 1
 
     def _save(self) -> None:
@@ -294,6 +330,8 @@ class LocalVault:
             )
             self._payload_version = 3
             self._metadata = {}
+            from vault_unified.vault_format import container_revision
+            self._disk_revision = container_revision(parse_vault_container(candidate))
             self._generation += 1
             _advance_anchor_after_write(self.vault_path, self.credential)
             return backup.path

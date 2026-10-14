@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -434,6 +435,15 @@ def parse_vault_container(blob: bytes) -> VaultContainer:
         raw_header=raw_header,
         ciphertext=ciphertext,
     )
+
+
+def container_revision(container: VaultContainer) -> tuple:
+    """Identity of the exact loaded generation, kept only in process memory."""
+    if isinstance(container, V3Container):
+        header = container.header
+        # Device-slot enrollment changes key_generation without editing content.
+        return (3, header.vault_id, header.dek_id, header.generation, header.payload_nonce)
+    return (1, hashlib.sha256(container.blob).hexdigest())
 
 
 def inspect_vault_format_file(path: Path) -> VaultContainer:
