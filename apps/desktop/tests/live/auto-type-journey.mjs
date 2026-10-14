@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-export async function exerciseAutoType({ page, root, entryId, username, password, token }) {
+export async function exerciseAutoType({ page, root, entryId, username, password, token, focusMain }) {
   const target = spawn('powershell.exe', ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-File', join(root, 'apps/desktop/tests/live/auto-type-target.ps1')], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   let pending, error = false;
   const assert = (condition, message) => { if (!condition) throw new Error(message); };
@@ -18,13 +18,20 @@ export async function exerciseAutoType({ page, root, entryId, username, password
   }
   async function capture(mode = 'focus') {
     const capturing = page.evaluate(() => window.__TAURI_INTERNALS__.invoke('capture_type_target'));
-    await new Promise(resolve => setTimeout(resolve, 350));
-    assert((await response(mode)).focused, 'Generated target did not acquire foreground focus');
+    // Keep only this generated window selected while the native picker counts
+    // down. CI's runner shell may otherwise reclaim foreground during startup.
+    let finished = false;
+    const settled = capturing.finally(() => { finished = true; });
+    while (!finished) {
+      assert((await response(mode)).focused, 'Generated target did not acquire foreground focus');
+      await Promise.race([settled, new Promise(resolve => setTimeout(resolve, 150))]);
+    }
     const selected = await capturing;
     assert(selected.title === 'Vault generated auto-type target' && selected.application.toLowerCase() === 'powershell.exe', `Auto-type capture must bind only the isolated generated target (title=${selected.title === 'Vault generated auto-type target'}, application=${selected.application.toLowerCase() === 'powershell.exe'})`);
     return selected.id;
   }
   async function type(id, delayMs = 20) {
+    await focusMain(); // The user confirms in the foreground vault window.
     return page.evaluate(async ({ id, entryId, delayMs, token }) => {
       try { await window.__TAURI_INTERNALS__.invoke('start_auto_type', { targetId: id, entryId, token, sequence: 'login', delayMs }); return 'typed'; }
       catch (reason) { return String(reason); }
@@ -33,9 +40,15 @@ export async function exerciseAutoType({ page, root, entryId, username, password
   try {
     await response();
     let id = await capture();
-    assert(await type(id) === 'typed', 'Native application typing failed');
-    let state = await response('read');
-    assert(state.username === username && state.password === password && state.submissions === 0 && !state.other, 'Native literal Unicode/Tab typing or no-submit contract failed');
+    const typed = await type(id);
+    assert(typed === 'typed', `Native application typing failed (${typed})`);
+    let state;
+    for (let attempt = 0; attempt < 30; attempt++) {
+      state = await response('read');
+      if (state.username === username && state.password === password) break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert(state.username === username && state.password === password && state.submissions === 0 && !state.other, `Native literal Unicode/Tab typing or no-submit contract failed (username=${state.username === username}, password=${state.password === password}, submitted=${state.submissions !== 0}, diverted=${Boolean(state.other)})`);
     assert(await type(id) === 'type_target', 'Target selection must be one-use');
     id = await capture('divert');
     assert(await type(id, 70) === 'type_focus', 'Focus change must stop native typing');

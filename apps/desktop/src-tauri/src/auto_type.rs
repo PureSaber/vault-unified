@@ -140,6 +140,9 @@ pub async fn start_auto_type(
         {
             return Err("type_target".into());
         }
+        if !platform::main_focused(&window) {
+            return Err("type_cancelled".into());
+        }
         let mut values = crate::native_api::request(
             &app,
             "POST",
@@ -152,16 +155,16 @@ pub async fn start_auto_type(
         let username = take_string(&mut values, "username")?;
         let password = take_string(&mut values, "password")?;
         validate(&sequence, &username, &password, delay_ms)?;
-        if state.generation.load(Ordering::SeqCst) != generation {
+        if state.generation.load(Ordering::SeqCst) != generation || !platform::main_focused(&window)
+        {
             return Err("type_cancelled".into());
         }
-        window.hide().map_err(|_| "type_unavailable")?;
+        window.minimize().map_err(|_| "type_unavailable")?;
         let result =
             platform::type_values(&target, &username, &password, &sequence, delay_ms, || {
                 state.generation.load(Ordering::SeqCst) == generation
             });
-        // Do not steal focus from the application after typing or a user focus change.
-        let _ = window.show();
+        // Remain in the taskbar. Restoring now can steal queued destination input.
         result
     })
     .await
@@ -210,6 +213,11 @@ mod platform {
                 CloseHandle(self.process as _);
             }
         }
+    }
+    pub fn main_focused(window: &WebviewWindow) -> bool {
+        window
+            .hwnd()
+            .is_ok_and(|handle| unsafe { GetForegroundWindow() } == handle.0 as HWND)
     }
     thread_local! { static TARGET: Cell<isize> = const { Cell::new(0) }; static CHANGED: Cell<bool> = const { Cell::new(false) }; }
     unsafe extern "system" fn foreground(
@@ -416,6 +424,9 @@ mod platform {
 }
 #[cfg(not(windows))]
 mod platform {
+    pub fn main_focused(_: &tauri::WebviewWindow) -> bool {
+        false
+    }
     pub struct Target {
         pub title: String,
         pub application: String,

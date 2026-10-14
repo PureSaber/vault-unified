@@ -72,7 +72,10 @@ try {
   const extraToken = (await (await unlockRequest()).json()).token;
   step = 'native application auto-type';
   const entries = await (await fetch(`${runtime.base_url}/entries`, { headers: { ...apiHeaders, Authorization: `Bearer ${extraToken}` } })).json();
-  await exerciseAutoType({ page, root, entryId: entries[0].id, username, password, token: extraToken });
+  await exerciseAutoType({ page, root, entryId: entries[0].id, username, password, token: extraToken, focusMain: async () => {
+    native('shortcut');
+    await page.getByRole('dialog', { name: 'Quick search', exact: true }).getByRole('button', { name: 'Close', exact: true }).click();
+  } });
   step = 'native Windows session and suspend notifications';
   await page.getByRole('button', { name: 'Add password', exact: true }).click();
   await page.getByLabel('Website or app name', { exact: true }).fill('Generated draft cleared by Windows lock');

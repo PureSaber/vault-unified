@@ -11,7 +11,8 @@ Choose **Choose window (3 seconds) / 选择窗口（3 秒）**. Vault Unified hi
 switch to the application and click the first field within three seconds. The
 vault returns showing the selected window title and executable name. Check them,
 then **Confirm and start typing / 确认并开始输入**. Check the completed fields in the
-application and submit the login yourself. Input is literal: `{ENTER}` in a
+application and submit the login yourself. The vault stays minimized; return
+through its taskbar button, tray or shortcut. Input is literal: `{ENTER}` in a
 credential is text, not a command.
 
 ![Generated destination selection](screenshots/auto-type-zh.png)
@@ -33,6 +34,9 @@ hook also records transient departures, so switching away and back does not
 resume the remaining sequence. The native worker owns the hook's message loop.
 Each Unicode character uses one SendInput group; only the chosen Tab is added.
 Clipboard contents are never changed and Enter is never injected.
+Confirmation requires the vault window to be foreground, including after the
+credential fetch. It stays minimized after typing, so restoring the vault cannot
+steal the destination's queued input. Window lifecycle stays within Tauri.
 
 The native worker fetches saved fields over the native-only loopback endpoint
 after confirmation, using the current vault session. It accepts only exact entry
