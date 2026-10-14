@@ -27,6 +27,8 @@ MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_BYTES = 1_048_576
 MAX_TOTAL_ATTACHMENT_BYTES = 5 * MAX_ATTACHMENT_BYTES
 MAX_HISTORY_ITEMS = 20
+MERGED_HISTORY_KEY = "vault_unified:merged_history"
+MAX_MERGED_HISTORY_ITEMS = 10_000
 
 
 class PersonalDataError(ValueError):
@@ -107,10 +109,10 @@ def _normalize_attachment(value: Any) -> dict[str, Any]:
     }
 
 
-def _normalize_history(value: Any) -> list[dict[str, Any]]:
+def _normalize_history(value: Any, maximum: int = MAX_HISTORY_ITEMS) -> list[dict[str, Any]]:
     if value in (None, []):
         return []
-    if not isinstance(value, list) or len(value) > MAX_HISTORY_ITEMS:
+    if not isinstance(value, list) or len(value) > maximum:
         raise PersonalDataError("history has too many items")
     result: list[dict[str, Any]] = []
     for item in value:
@@ -266,12 +268,23 @@ def record_history(entry: Any) -> None:
     set_data(entry, value)
 
 
+def all_history(entry: Any) -> list[dict[str, Any]]:
+    """Keep merged versions outside the ordinary rolling edit history."""
+    merged = getattr(entry, "source_metadata", {}).get(MERGED_HISTORY_KEY, {"version": 1, "items": []})
+    if not isinstance(merged, dict) or set(merged) != {"version", "items"} or merged["version"] != 1:
+        raise PersonalDataError("merged history has an unsupported schema")
+    items = data_for(entry)["history"] + _normalize_history(merged["items"], MAX_MERGED_HISTORY_ITEMS)
+    unique = {item["id"]: item for item in reversed(items)}
+    return sorted(unique.values(), key=lambda item: item["saved_at"], reverse=True)
+
+
 def list_history(entry: Any, *, reveal: bool = False) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
-    for item in data_for(entry)["history"]:
+    for item in all_history(entry):
         snapshot_value = copy.deepcopy(item["snapshot"])
         if not reveal:
             snapshot_value["password"] = ""
+            snapshot_value["notes"] = ""
             snapshot_value["totp_secret"] = ""
             snapshot_value["custom_fields"] = [
                 {**field, "value": ""} for field in snapshot_value["custom_fields"]
@@ -281,8 +294,7 @@ def list_history(entry: Any, *, reveal: bool = False) -> list[dict[str, Any]]:
 
 
 def restore_history(entry: Any, history_id: str) -> None:
-    value = data_for(entry)
-    selected = next((item for item in value["history"] if item["id"] == history_id), None)
+    selected = next((item for item in all_history(entry) if item["id"] == history_id), None)
     if selected is None:
         raise KeyError("history version not found")
     record_history(entry)
@@ -312,7 +324,7 @@ def public_data(entry: Any, *, reveal: bool) -> dict[str, Any]:
         "totp_secret": value["totp_secret"] if reveal else "",
         "has_totp_secret": bool(value["totp_secret"]),
         "attachments": [attachment_public(item) for item in value["attachments"]],
-        "history_count": len(value["history"]),
+        "history_count": len(all_history(entry)),
     }
 
 
@@ -325,4 +337,6 @@ def merge_personal_metadata(existing: dict[str, Any] | None, incoming: dict[str,
     from vault_unified.organization import ORGANIZATION_KEY
     if ORGANIZATION_KEY in (existing or {}):
         result[ORGANIZATION_KEY] = copy.deepcopy(existing[ORGANIZATION_KEY])
+    if MERGED_HISTORY_KEY in (existing or {}):
+        result[MERGED_HISTORY_KEY] = copy.deepcopy(existing[MERGED_HISTORY_KEY])
     return result

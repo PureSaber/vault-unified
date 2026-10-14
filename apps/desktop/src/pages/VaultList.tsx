@@ -4,6 +4,7 @@ import { useI18n } from "../i18n";
 import { useToast } from "../components/Toast";
 import LoadingSkeleton from "../components/LoadingSkeleton";
 import ConfirmDialog from "../components/ConfirmDialog";
+import DuplicateMerge from "../components/DuplicateMerge";
 
 interface Props {
   onAdd: () => void;
@@ -24,6 +25,9 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   const [state, setState] = useState("active");
   const [personalReady, setPersonalReady] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
+  const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
+  const [mergeIds, setMergeIds] = useState<[string, string] | null>(null);
   const [tag, setTag] = useState("");
   const [entryType, setEntryType] = useState("");
   const [sort, setSort] = useState("title");
@@ -38,8 +42,8 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   const debounceRef = useRef<number | null>(null);
   const requestSequence = useRef(0);
   const revealTimers = useRef(new Map<string, number>());
-  const criteriaRef = useRef({ query, state });
-  criteriaRef.current = { query, state };
+  const criteriaRef = useRef({ query, state, duplicatesOnly });
+  criteriaRef.current = { query, state, duplicatesOnly };
 
   async function load() {
     const sequence = ++requestSequence.current;
@@ -47,9 +51,10 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
     try {
       setError("");
       setLoading(true);
-      const nextEntries = await api.listEntries(criteria.query.trim() || undefined, criteria.state);
-      if (sequence !== requestSequence.current || criteria.query !== criteriaRef.current.query || criteria.state !== criteriaRef.current.state) return;
+      const [nextEntries, duplicates] = await Promise.all([api.listEntries(criteria.query.trim() || undefined, criteria.state), criteria.duplicatesOnly ? api.duplicateGroups() : Promise.resolve(null)]);
+      if (sequence !== requestSequence.current || criteria.query !== criteriaRef.current.query || criteria.state !== criteriaRef.current.state || criteria.duplicatesOnly !== criteriaRef.current.duplicatesOnly) return;
       setEntries(nextEntries);
+      setDuplicateIds(duplicates?.groups.flat() || []);
       setSelected([]);
     } catch (err) {
       if (sequence !== requestSequence.current) return;
@@ -83,7 +88,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [query, state]);
+  }, [query, state, duplicatesOnly]);
 
   useEffect(() => {
     const handleBlur = () => hideAllPasswords();
@@ -103,14 +108,14 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   const filtered = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return entries.filter((entry) =>
-      (!favoritesOnly || entry.favorite) && (!tag || entry.tags.includes(tag)) && (!entryType || entry.entry_type === entryType) &&
+      (!duplicatesOnly || duplicateIds.includes(entry.id)) && (!favoritesOnly || entry.favorite) && (!tag || entry.tags.includes(tag)) && (!entryType || entry.entry_type === entryType) &&
       [entry.title, entry.username, entry.url, ...(entry.tags || [])]
         .join(" ")
         .toLowerCase()
         .includes(normalized),
     ).sort((a, b) => sort === "updated" ? b.updated_at.localeCompare(a.updated_at) : sort === "created" ? b.created_at.localeCompare(a.created_at) : a.title.localeCompare(b.title));
-  }, [entries, query, favoritesOnly, tag, entryType, sort]);
-  const hasFilters = Boolean(query || favoritesOnly || tag || entryType || state !== "active");
+  }, [entries, query, favoritesOnly, duplicatesOnly, duplicateIds, tag, entryType, sort]);
+  const hasFilters = Boolean(query || favoritesOnly || duplicatesOnly || tag || entryType || state !== "active");
 
   const actionLabel = (action: OrganizationAction) => ({
     trash: zh ? "移到回收站" : "Move to trash", archive: zh ? "归档" : "Archive",
@@ -201,6 +206,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
 
   return (
     <div>
+      {mergeIds && <DuplicateMerge ids={mergeIds} onCancel={() => setMergeIds(null)} onMerged={() => { setMergeIds(null); hideAllPasswords(); void load(); showToast(zh ? "账号已合并，被合并条目可在回收站恢复" : "Accounts merged; the second account can be restored from trash"); }} />}
       <ConfirmDialog open={organizationPlan !== null} idPrefix="organization"
         title={organizationPlan ? actionLabel(organizationPlan.change.action) : ""}
         message={organizationPlan ? `${zh ? "选中条目" : "Selected entries"}: ${organizationPlan.preview.entries.map(entry => entry.title).join("、")}\n${organizationPlan.change.action === "trash" ? (zh ? "回收站保留 30 天，到期自动清理；期间可恢复。" : "Trash keeps items for 30 days, then removes them automatically. Restore them during this period.") : organizationPlan.change.action === "purge" ? (zh ? "将从回收站永久删除这些条目。" : "These items will be permanently removed from trash.") : ""}` : ""}
@@ -240,7 +246,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
           onChange={(event) => setQuery(event.target.value)}
           aria-label={t("list.searchAria")}
         />
-        {personalReady && <select aria-label={zh ? "条目位置" : "Entry location"} value={state} onChange={event => { hideAllPasswords(); ++requestSequence.current; setEntries([]); setSelected([]); setLoading(true); setState(event.target.value); }}>
+        {personalReady && <select aria-label={zh ? "条目位置" : "Entry location"} value={state} onChange={event => { hideAllPasswords(); ++requestSequence.current; setEntries([]); setSelected([]); setDuplicatesOnly(false); setLoading(true); setState(event.target.value); }}>
           <option value="active">{zh ? "密码库" : "Vault"}</option>
           <option value="archived">{zh ? "归档" : "Archived"}</option>
           <option value="trash">{zh ? "回收站" : "Trash"}</option>
@@ -251,12 +257,14 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
         <summary>{zh ? "筛选与批量整理" : "Filters and bulk organization"}{selected.length ? ` (${selected.length})` : ""}</summary>
         <div className="button-row">
           <label className="organization-favorite-filter"><input type="checkbox" checked={favoritesOnly} onChange={event => setFavoritesOnly(event.target.checked)} />{zh ? "仅收藏" : "Favorites only"}</label>
+          {state === "active" && <label className="organization-favorite-filter"><input type="checkbox" checked={duplicatesOnly} onChange={event => { setSelected([]); setDuplicatesOnly(event.target.checked); }} />{zh ? "仅重复账号" : "Duplicates only"}</label>}
           <label>{zh ? "标签" : "Tag"}<select value={tag} onChange={event => setTag(event.target.value)}><option value="">{zh ? "全部标签" : "All tags"}</option>{[...new Set(entries.flatMap(entry => entry.tags))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
           <label>{zh ? "类型" : "Type"}<select value={entryType} onChange={event => setEntryType(event.target.value)}><option value="">{zh ? "全部类型" : "All types"}</option>{[...new Set(entries.map(entry => entry.entry_type))].sort().map(value => <option key={value} value={value}>{typeLabel(value)}</option>)}</select></label>
           <label>{zh ? "排序" : "Sort"}<select value={sort} onChange={event => setSort(event.target.value)}><option value="title">{zh ? "名称" : "Name"}</option><option value="updated">{zh ? "最近修改" : "Recently changed"}</option><option value="created">{zh ? "最近添加" : "Recently added"}</option></select></label>
         </div>
         <div className="button-row">
           <button type="button" className="secondary" onClick={() => setSelected(selected.length ? [] : filtered.slice(0, 500).map(entry => entry.id))}>{selected.length ? (zh ? "取消选择" : "Clear selection") : (zh ? "选择当前列表" : "Select current list")}</button>
+          {state === "active" && <button type="button" className="secondary" disabled={selected.length !== 2 || busy} onClick={() => { hideAllPasswords(); setMergeIds([selected[0], selected[1]]); }}>{zh ? "比较并合并" : "Compare and merge"}</button>}
           {(state === "trash" ? ["restore", "purge"] as OrganizationAction[] : state === "archived" ? ["restore", "trash"] as OrganizationAction[] : ["archive", "trash"] as OrganizationAction[]).map(action => <button key={action} type="button" className={action === "purge" ? "danger" : "secondary"} disabled={!selected.length || busy} onClick={() => void organize(action)}>{actionLabel(action)}</button>)}
           <input aria-label={zh ? "批量添加的标签" : "Tags to add"} placeholder={zh ? "用逗号分隔标签" : "Comma-separated tags"} value={bulkTags} onChange={event => setBulkTags(event.target.value)} />
           <button type="button" className="secondary" disabled={!selected.length || !bulkTags.trim() || busy} onClick={() => void organize("tag")}>{actionLabel("tag")}</button>
