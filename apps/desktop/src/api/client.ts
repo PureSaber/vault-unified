@@ -223,6 +223,13 @@ export interface BrowserPairing {
   message: string;
 }
 
+export interface BrowserDevice {
+  id: string;
+  name: string;
+  origin: string;
+  created_at: string;
+}
+
 export interface IntegrationField {
   key: string;
   label: string;
@@ -712,6 +719,8 @@ export const api = {
   },
   cancelBrowserPairing: () =>
     request<{ cancelled: boolean }>("/browser/pairing/cancel", { method: "POST" }),
+  browserDevices: () => request<{ available: boolean; devices: BrowserDevice[] }>("/browser/devices"),
+  revokeBrowserDevice: (id: string) => request<{ revoked: boolean }>(`/browser/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
   savePrefs: (prefs: Partial<SyncPrefs>) =>
     request<SyncPrefs>("/sync/preferences", {

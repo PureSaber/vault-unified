@@ -7,10 +7,15 @@
   <form id="pair-form" hidden autocomplete="off">
     <label><span data-i18n="address">Local address</span><input id="sidecar-url" type="url" placeholder="http://127.0.0.1:12345" required></label>
     <label><span data-i18n="code">One-time pairing code</span><input id="pairing-code" type="password" required autocomplete="off"></label>
-    <label class="check"><input id="remember" type="checkbox" checked><span data-i18n="remember">Reconnect after unlocking while both apps stay open (up to 12 hours).</span></label>
+    <label class="check"><input id="remember" type="checkbox" checked><span data-i18n="remember">Authorize this browser to reconnect after restarting.</span></label>
+    <label><span data-i18n="deviceName">Browser name</span><input id="device-name" maxlength="64" value="My browser" autocomplete="off"></label>
     <button type="submit" data-i18n="pair">Pair this browser</button>
   </form>
   <button id="retry" type="button" hidden data-i18n="retry">I've unlocked — reconnect</button>
+  <form id="retry-address-form" hidden autocomplete="off">
+    <label><span data-i18n="newAddress">If the desktop address changed, enter its new local address</span><input id="retry-address" type="url" required></label>
+    <button type="submit" class="secondary" data-i18n="updateAddress">Update address and reconnect</button>
+  </form>
   <section id="accounts" hidden aria-labelledby="site">
     <h2 id="site"></h2><div id="matches"></div>
     <button id="keep-open" type="button" class="secondary" data-i18n="keepOpen">Open a window for registration / password changes</button>
@@ -38,5 +43,5 @@
     <button id="cancel-save" type="button" class="secondary" data-i18n="cancel">Cancel</button>
   </form>
   <button id="forget" type="button" class="secondary" hidden data-i18n="forget">Forget pairing</button>
-</main><script src="fill.js"></script><script src="popup.js"></script></body>
+</main><script src="fill.js"></script><script src="identity.js"></script><script src="popup.js"></script></body>
 </html>

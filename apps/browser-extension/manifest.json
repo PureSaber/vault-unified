@@ -7,6 +7,6 @@
     "default_title": "Vault Unified Fill",
     "default_popup": "popup.html"
   },
-  "permissions": ["activeTab", "scripting", "storage", "tabs"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs", "nativeMessaging"],
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"]
 }

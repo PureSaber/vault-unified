@@ -25,11 +25,17 @@ time makes the old token unusable.
 
 ## Account saving in development builds
 
-The development source includes account saving and optional same-run reconnection;
+The development source includes account saving and optional persistent authorization;
 the published v1.3.0 desktop does not provide these endpoints. Use a matching
-desktop build. For v3 vaults, a remembered connection can obtain fresh access after
-you unlock. Restarting either app, cancelling pairing, or 12 hours requires pairing
-again. No access or reconnection credential is stored persistently.
+desktop build. For v3 vaults, name and authorize the browser when pairing. It can
+obtain fresh access after you unlock, including after either app restarts. A
+non-exportable signing identity is stored in the extension's IndexedDB; access
+tokens stay session-only. Revoke authorized browsers in desktop Connections.
+Uncheck authorization for temporary pairing instead.
+
+The matching desktop configures Native Messaging after first pairing so the
+extension can find its current address. This channel returns public connection
+information only. Browser policy may disable it; manual pairing remains available.
 
 Choose **Read login from this page** or **Add manually**, review the account and
 website, then confirm saving. Updates retain the previous password in history and

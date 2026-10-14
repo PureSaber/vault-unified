@@ -14,8 +14,8 @@ than replaced with a simulated completion claim.
 
 | # | Outcome and acceptance scope | Status / evidence |
 |---|---|---|
-| 1 | Chrome / Edge import: source guidance, format detection, faithful fields, duplicate review, invalid rows, cancel, apply, undo, password-page entry point | Implemented; local verification passed; integration CI pending |
-| 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Pending |
+| 1 | Chrome / Edge import: source guidance, format detection, faithful fields, duplicate review, invalid rows, cancel, apply, undo, password-page entry point | Merged in PR #58 / `6cf4237`; CI run 37187313246 passed; source feature, not yet released |
+| 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Implemented on `codex/browser-trusted-devices`; local backend, Windows credentials and real native/extension/API restart checks passed; integration CI pending |
 | 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Pending |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Pending |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Pending |
@@ -73,3 +73,30 @@ already exist there; they are not a replacement for rows 2, 3, or 8.
 - Generated preview screenshot and accepted-format/rollback details are in
   [browser-password-import.md](browser-password-import.md). Native installer and
   independent human acceptance remain part of later delivery/final acceptance.
+
+### Trusted browser increment
+
+- Device identity is an extension-scoped non-exportable signing key; desktop
+  public identities use the existing approved Windows Credential Manager.
+  Access tokens remain session-only, and proofs only access already-unlocked
+  matching vaults. Revocation also invalidates outstanding access tokens.
+- Native Messaging returns only the live loopback address and instance ID. The
+  desktop registers exact Chrome/Edge origins on pairing. No vault format change,
+  port scanning, persistent bearer tokens or new backup/hash manifests were added.
+- Local full Python suite: 345 passed. Following final storage/CI edits, all 24
+  trust/discovery/workflow cases passed. Rust unit tests: 3 passed; native debug
+  executable built. Python dependency audit: no known vulnerabilities.
+- Full UI suite: 48 passed; after adding storage-error recovery and refining
+  reconnect UI, all 20 focused extension journeys passed. Artifact scan removed
+  zero files. The generated device-list screenshot was visually inspected.
+- The actual Chromium extension, Windows credential store, native executable
+  and isolated API passed a restart with changed port, locked-state denial,
+  private-key export refusal, real credential filling, manual address fallback
+  with native discovery disabled, and desktop revocation. No real browser profile
+  or production native-host registry key was used. This journey is included in CI.
+- Self-review added bounded native reads, separated persistent device revocation
+  from temporary session cancellation, and preserved retry/manual-address paths
+  when device storage or native discovery is unavailable.
+- See [trusted-browser-connections.md](trusted-browser-connections.md) for trust,
+  rollback and test boundaries. Installed application lifecycle, native-host
+  removal during uninstall and new release delivery remain tracked in row 12.

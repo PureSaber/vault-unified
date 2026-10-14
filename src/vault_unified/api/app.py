@@ -14,6 +14,7 @@ from fastapi.exception_handlers import request_validation_exception_handler
 
 from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer
 from vault_unified.env import load_env
+from vault_unified import browser_discovery
 
 load_env()
 
@@ -98,6 +99,10 @@ def create_app(
             "instance_id": runtime_instance_id,
         }
 
+    @app.get("/api/browser/discovery", include_in_schema=False)
+    def public_browser_discovery() -> dict:
+        return {"protocol": 1, "instance_id": runtime_instance_id}
+
     @app.middleware("http")
     async def sidecar_security_guard(request: Request, call_next):
         client = request.client.host if request.client else ""
@@ -127,7 +132,12 @@ def create_app(
             and request.url.path in {"/api/browser/resume", "/api/browser/disconnect"}
             and bool(request.headers.get("x-vault-browser-connection"))
         )
-        if browser_pair or browser_token or browser_connection:
+        browser_proof = (
+            request.method == "POST"
+            and request.url.path in {"/api/browser/device/challenge", "/api/browser/device/prove"}
+        )
+        discovery = request.method == "GET" and request.url.path == "/api/browser/discovery"
+        if browser_pair or browser_token or browser_connection or browser_proof or discovery:
             return await call_next(request)
         if not provided or not hmac.compare_digest(provided, secret):
             return JSONResponse(
@@ -211,7 +221,12 @@ def main() -> None:
         access_log=False,
     )
     server = uvicorn.Server(config)
-    server.run(sockets=[server_socket])
+    try:
+        if host == "127.0.0.1":
+            browser_discovery.publish(actual_port, instance_id)
+        server.run(sockets=[server_socket])
+    finally:
+        browser_discovery.clear(instance_id)
 
 
 if __name__ == "__main__":

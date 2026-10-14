@@ -17,7 +17,12 @@ let checking = false;
 const messages = {
   language: ["语言", "Language"], address: ["本机地址", "Local address"],
   code: ["一次性配对码", "One-time pairing code"], pair: ["配对此浏览器", "Pair this browser"],
-  remember: ["两端保持运行时，解锁后可恢复连接（最长 12 小时）。", "Reconnect after unlocking while both apps stay open (up to 12 hours)."],
+  remember: ["授权此浏览器在重启后恢复连接（仍需解锁保险库）。", "Authorize this browser to reconnect after restarting (vault must be unlocked)."],
+  deviceName: ["浏览器名称", "Browser name"],
+  trustUnavailable: ["无法保存设备授权。请检查 Windows 凭据管理器，或取消勾选长期授权后重试。", "Could not save device authorization. Check Windows Credential Manager, or uncheck authorization and pair for this session."],
+  identityUnavailable: ["浏览器身份存储不可用。可取消长期授权，仅为本次会话配对。", "Browser identity storage is unavailable. Uncheck authorization to pair for this session only."],
+  newAddress: ["若桌面端地址已改变，请填写新的本机地址", "If the desktop address changed, enter its new local address"],
+  updateAddress: ["更新地址并重新连接", "Update address and reconnect"],
   retry: ["已解锁，重新连接", "I've unlocked — reconnect"],
   keepOpen: ["用独立窗口完成注册／改密", "Open a window for registration / password changes"],
   capture: ["读取当前页面的账号", "Read login from this page"], add: ["手动添加", "Add manually"],
@@ -109,6 +114,7 @@ async function request(path, options = {}, connection = false) {
   if (!response.ok) {
     let key = response.status === 423 ? "locked" : "requestError";
     if (response.status === 401) key = "unpaired";
+    if (response.status === 503) key = "trustUnavailable";
     if (response.status === 409) key = "changed";
     if (typeof body.detail === "string" && body.detail.includes("username already exists")) key = "duplicate";
     if (typeof body.detail === "string" && body.detail.includes("already has these details")) key = "unchanged";
@@ -136,14 +142,16 @@ async function authFailure(error) {
   matches = [];
   renderMatches();
   el("accounts").hidden = true;
-  const remembered = Boolean(currentState?.connectionKey);
-  if (!currentState?.browserToken) currentState = null;
+  const remembered = Boolean(currentState?.connectionKey || currentState?.deviceId);
+  if (!currentState?.browserToken && !remembered) currentState = null;
   if (error.code === 401 && !remembered) {
     await chrome.storage.session.remove(stateKey);
     currentState = null;
   }
   el("pair-form").hidden = Boolean(currentState);
   el("retry").hidden = !currentState;
+  el("retry-address-form").hidden = !currentState?.deviceId;
+  if (currentState) el("retry-address").value = currentState.sidecarUrl;
   el("forget").hidden = !currentState;
   setStatus(remembered && error.code === 401 ? "locked" : error.key || "requestError", true);
 }
@@ -153,7 +161,7 @@ async function action(work) {
   document.querySelectorAll("button,input,select").forEach((node) => { node.disabled = true; });
   try { await work(); }
   catch (error) {
-    if ([0, 401, 423].includes(error.code)) await authFailure(error);
+    if ([0, 401, 423, 503].includes(error.code)) await authFailure(error);
     else setStatus(error.key || "requestError", true);
   } finally {
     busy = false;
@@ -230,13 +238,15 @@ async function showMatches(successKey) {
   const tab = await selectedTab();
   if (!tab?.id || !/^https?:\/\//.test(tab.url || "")) { setStatus("validPage", true); return; }
   currentTab = tab;
+  await discoverDesktop();
   const path = `/matches?url=${encodeURIComponent(new URL(tab.url).origin)}`;
   let result;
+  if (currentState.deviceId && !currentState.browserToken) await resumeTrusted();
   try { result = await request(path, { body: "{}" }); }
   catch (error) {
-    if (error.code !== 401 || !currentState?.connectionKey) throw error;
+    if (error.code !== 401 || !(currentState?.connectionKey || currentState?.deviceId)) throw error;
     try {
-      const resumed = await request("/resume", { body: "{}" }, true);
+      const resumed = currentState.deviceId ? await trustedProof("resume") : await request("/resume", { body: "{}" }, true);
       if (stamp !== epoch) return;
       currentState.browserToken = resumed.browser_token;
       await chrome.storage.session.set({ [stateKey]: currentState });
@@ -244,6 +254,7 @@ async function showMatches(successKey) {
     } catch (resumeError) {
       if (resumeError.code === 401) {
         await chrome.storage.session.remove(stateKey);
+        if (currentState?.deviceId) await vaultBrowserIdentity.remove();
         currentState = null;
       }
       throw resumeError;
@@ -256,8 +267,49 @@ async function showMatches(successKey) {
   el("accounts").hidden = false;
   el("pair-form").hidden = true;
   el("retry").hidden = true;
+  el("retry-address-form").hidden = true;
   el("forget").hidden = false;
   setStatus(successKey || (matches.length ? "choose" : "noMatches"));
+}
+async function trustedProof(action) {
+  const identity = await vaultBrowserIdentity.read();
+  if (!identity || identity.deviceId !== currentState.deviceId) {
+    throw Object.assign(new Error(), { key: "unpaired", code: 401 });
+  }
+  const challenge = await request("/device/challenge", { body: JSON.stringify({ device_id: identity.deviceId, action }) });
+  const signature = await vaultBrowserIdentity.sign(identity, challenge, action);
+  return request("/device/prove", { body: JSON.stringify({ device_id: identity.deviceId, action,
+    challenge_id: challenge.challenge_id, signature }) });
+}
+async function resumeTrusted() {
+  try {
+    const resumed = await trustedProof("resume");
+    currentState.browserToken = resumed.browser_token;
+    await chrome.storage.session.set({ [stateKey]: currentState });
+  } catch (error) {
+    if (error.code === 401) {
+      await chrome.storage.session.remove(stateKey);
+      await vaultBrowserIdentity.remove();
+      currentState = null;
+    }
+    throw error;
+  }
+}
+async function discoverDesktop() {
+  if (!chrome.runtime.sendNativeMessage || !currentState) return;
+  try {
+    const response = await chrome.runtime.sendNativeMessage("org.vaultunified.desktop", { type: "discover", protocol: 1 });
+    if (response?.protocol !== 1 || !response.base_url) return;
+    const address = normalizeAddress(response.base_url);
+    if (address !== currentState.sidecarUrl) {
+      currentState.sidecarUrl = address;
+      delete currentState.browserToken;
+      if (currentState.deviceId) {
+        const identity = await vaultBrowserIdentity.read();
+        if (identity?.deviceId === currentState.deviceId) await vaultBrowserIdentity.save(identity, identity.deviceId, address);
+      }
+    }
+  } catch { /* Manual address is retained when native messaging is unavailable. */ }
 }
 function openDraft(entry) {
   clearDraft();
@@ -296,15 +348,36 @@ el("pair-form").addEventListener("submit", (event) => {
     setStatus("pairing");
     const pairingCode = el("pairing-code").value.trim();
     el("pairing-code").value = "";
+    const identity = el("remember").checked ? await vaultBrowserIdentity.create() : null;
     const body = await request("/pair", { headers: { "X-Vault-Browser-Pairing": pairingCode },
-      body: JSON.stringify({ remember_connection: el("remember").checked }) });
+      body: JSON.stringify({ remember_connection: el("remember").checked,
+        ...(identity ? { public_key: identity.publicKey, device_name: el("device-name").value.trim() || "Browser" } : {}) }) });
+    if (identity && body.device_id) await vaultBrowserIdentity.save(identity, body.device_id, sidecarUrl);
     currentState = { sidecarUrl, browserToken: body.browser_token,
+      ...(body.device_id ? { deviceId: body.device_id } : {}),
       ...(body.connection_key ? { connectionKey: body.connection_key } : {}) };
     await chrome.storage.session.set({ [stateKey]: currentState });
     await showMatches();
   });
 });
 el("retry").addEventListener("click", () => void action(() => showMatches()));
+el("retry-address-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  void action(async () => {
+    if (!currentState?.deviceId) return;
+    let address;
+    try { address = normalizeAddress(el("retry-address").value); }
+    catch { throw Object.assign(new Error(), { key: "addressError" }); }
+    currentState.sidecarUrl = address;
+    delete currentState.browserToken;
+    if (currentState.deviceId) {
+      const identity = await vaultBrowserIdentity.read();
+      if (identity?.deviceId === currentState.deviceId) await vaultBrowserIdentity.save(identity, identity.deviceId, address);
+    }
+    await chrome.storage.session.set({ [stateKey]: currentState });
+    await showMatches();
+  });
+});
 el("keep-open").addEventListener("click", () => void action(async () => {
   const tab = await samePage();
   await chrome.windows.create({
@@ -394,7 +467,11 @@ el("cancel-save").addEventListener("click", () => void action(async () => {
 el("forget").addEventListener("click", () => void action(async () => {
   epoch += 1;
   clearDraft();
-  if (currentState?.browserToken) {
+  if (currentState?.deviceId) {
+    try { await trustedProof("revoke"); }
+    catch (error) { if (error.code !== 401) { setStatus("forgetFailed", true); return; } }
+    await vaultBrowserIdentity.remove();
+  } else if (currentState?.browserToken) {
     try { await request("/disconnect", { body: "{}" }, Boolean(currentState.connectionKey)); }
     catch (error) { if (error.code !== 401) { setStatus("forgetFailed", true); return; } }
   }
@@ -404,6 +481,7 @@ el("forget").addEventListener("click", () => void action(async () => {
   renderMatches();
   el("accounts").hidden = true;
   el("retry").hidden = true;
+  el("retry-address-form").hidden = true;
   el("forget").hidden = true;
   el("pair-form").hidden = false;
   setStatus("forgotten");
@@ -428,6 +506,17 @@ localize();
 void action(async () => {
   const result = await chrome.storage.session.get(stateKey);
   currentState = result[stateKey] || null;
+  if (!currentState) {
+    try {
+      const identity = await vaultBrowserIdentity.read();
+      if (identity) currentState = { deviceId: identity.deviceId, sidecarUrl: normalizeAddress(identity.sidecarUrl) };
+    } catch {
+      el("remember").checked = false;
+      el("pair-form").hidden = false;
+      setStatus("identityUnavailable", true);
+      return;
+    }
+  }
   if (!currentState) {
     el("pair-form").hidden = false;
     setStatus("pairHint");

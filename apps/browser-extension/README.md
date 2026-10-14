@@ -1,6 +1,6 @@
 # Vault Unified browser extension
 
-The source branch adds reviewed account saving and same-run reconnection. These
+The source branch adds reviewed account saving and persistent device authorization. These
 features are not in the published v1.3.0 installers; run the matching desktop/API
 source when testing this branch.
 
@@ -19,12 +19,18 @@ secret, master password, or copied vault data.
 4. Open the extension popup, paste the shown local address and pairing code,
    then pair within five minutes.
 
-Access tokens and optional reconnection credentials use `chrome.storage.session`
-only. Lock invalidates access tokens. With a v3 vault and "Reconnect" enabled,
-unlock the same vault and choose reconnect without entering a new code. The
-connection expires after 12 hours, when either app restarts, or when pairing is
-cancelled/regenerated. Legacy vaults require pairing again after lock. The desktop
-can revoke remembered connections from Connections even after a lock/unlock.
+Access tokens use `chrome.storage.session` only and expire after at most 12 hours.
+Lock invalidates access. For v3 vaults, optional authorization stores a
+non-exportable signing key in the extension's IndexedDB and its public identity
+in Windows Credential Manager. Unlock the same vault and reconnect after app or
+browser restarts without entering another code. Desktop Connections lists and
+revokes devices. Forget pairing also revokes the identity while locked.
+
+After the first authorized pairing, Native Messaging discovers the desktop's
+current loopback address without receiving any authentication material. This
+requires the matching desktop executable; a Python-only API retains manual
+address entry. Legacy vaults and unchecked authorization use session pairing.
+The extension never opens or unlocks the desktop automatically.
 
 The extension receives login titles and usernames for the displayed site's host,
 scheme and port (a leading `www.` is normalized). Other subdomains do not match.

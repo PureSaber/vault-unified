@@ -38,6 +38,7 @@ async function loadPopup(
     initialState?: { sidecarUrl: string; browserToken: string; connectionKey?: string } | null;
     matches?: Array<{ id: string; title: string; username: string }>;
     matchesError?: string;
+    matchesStatus?: number;
     injectedReason?: string;
     resumeLocked?: boolean;
     saveConflict?: boolean;
@@ -141,7 +142,7 @@ async function loadPopup(
         if (url.includes("/api/browser/matches")) {
           if (config.matchesError) {
             return new Response(JSON.stringify({ detail: config.matchesError }), {
-              status: 401,
+              status: config.matchesStatus || 401,
               headers: { "content-type": "application/json" },
             });
           }
@@ -166,12 +167,16 @@ async function loadPopup(
     Object.defineProperty(window, "close", { configurable: true, value: () => {} });
   }, { ...options, browserToken: testData.bearerToken, entryPassword: testData.entryPassword });
   await page.addScriptTag({ content: fillScript });
+  // These renderer tests exercise session-only behavior. Cryptographic identity
+  // and persistence are tested in the actual extension/API restart journey.
+  await page.addScriptTag({ content: "const vaultBrowserIdentity = { read: async () => null, remove: async () => {}, create: async () => ({ publicKey: 'generated-public-key' }) };" });
   await page.addScriptTag({ content: popupScript });
   await expect(page.locator("#language")).toBeEnabled();
 }
 
 test("pairs only into session storage and reports no matching login", async ({ page }) => {
   await loadPopup(page);
+  await page.locator("#remember").uncheck();
   await page.locator("#sidecar-url").fill("http://127.0.0.1:43129/api/");
   await page.locator("#pairing-code").fill(testData.bootstrapSecret);
   await page.getByRole("button", { name: "Pair this browser" }).click();
@@ -218,6 +223,16 @@ test("removes session pairing immediately when the desktop reports locked", asyn
   }).__extensionMock);
   expect(state.session).toEqual({});
   expect(state.calls.sessionRemove).toBe(1);
+});
+
+test("device storage failure clears account UI and keeps a retry path", async ({ page }) => {
+  await loadPopup(page, {
+    initialState: { sidecarUrl: "http://127.0.0.1:43129", browserToken: testData.bearerToken, connectionKey: "generated-connection" },
+    matchesError: "Browser device storage is unavailable", matchesStatus: 503,
+  });
+  await expect(page.locator("#accounts")).toBeHidden();
+  await expect(page.locator("#retry")).toBeVisible();
+  await expect(page.locator("#status")).toContainText("Windows Credential Manager");
 });
 
 test("shows an explicit warning instead of success for an ambiguous page", async ({ page }) => {

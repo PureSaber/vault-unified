@@ -8,7 +8,7 @@ test("canonicalizes the packaged runtime API base for browser pairing", () => {
   expect(browserPairingOrigin("http://127.0.0.1:54907/api")).toBe("http://127.0.0.1:54907");
 });
 
-test("guides installation and makes desktop pairing copyable, expiring, renewable, and cancellable", async ({ page, context }) => {
+test("guides installation and makes desktop pairing copyable, expiring, renewable, and cancellable", async ({ page, context }, testInfo) => {
   const sidecar = new MockAuthenticatedSidecar();
   await sidecar.install(page);
   await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
@@ -44,4 +44,13 @@ test("guides installation and makes desktop pairing copyable, expiring, renewabl
 
   const accessibility = await new AxeBuilder({ page }).analyze();
   expect(accessibility.violations.filter((item) => ["critical", "serious"].includes(item.impact || ""))).toEqual([]);
+  await card.screenshot({ path: testInfo.outputPath("trusted-browser-devices.png") });
+
+  await card.getByRole("button", { name: "Revoke Generated Chrome" }).click();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  expect(sidecar.browserRevocations).toBe(0);
+  await card.getByRole("button", { name: "Revoke Generated Chrome" }).click();
+  await page.getByRole("button", { name: "Revoke authorization", exact: true }).click();
+  await expect(card.getByText("No persistently authorized browsers yet.")).toBeVisible();
+  expect(sidecar.browserRevocations).toBe(1);
 });

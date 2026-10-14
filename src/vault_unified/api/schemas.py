@@ -63,6 +63,18 @@ class BrowserFillIn(BaseModel):
 
 class BrowserPairIn(BaseModel):
     remember_connection: bool = False
+    public_key: str | None = Field(default=None, min_length=1, max_length=256)
+    device_name: str = Field(default="Browser", min_length=1, max_length=64)
+
+
+class BrowserChallengeIn(BaseModel):
+    device_id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    action: Literal["resume", "revoke"] = "resume"
+
+
+class BrowserProofIn(BrowserChallengeIn):
+    challenge_id: str = Field(min_length=32, max_length=128)
+    signature: str = Field(min_length=1, max_length=128, repr=False)
 
 
 class BrowserSaveIn(BaseModel):
