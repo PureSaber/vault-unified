@@ -16,7 +16,7 @@ from cryptography.exceptions import InvalidTag, UnsupportedAlgorithm
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.argon2 import Argon2id
 
-from vault_unified.storage import atomic_write_bytes, require_clean_storage
+from vault_unified.storage import atomic_write_bytes, require_clean_storage, ConcurrentStorageChangeError
 from vault_unified.vault_format import (
     MAX_VAULT_BYTES,
     V3_MAGIC,
@@ -29,6 +29,7 @@ from vault_unified.vault_format import (
     V3Header,
     VaultFormatError,
     parse_vault_container,
+    container_revision,
 )
 
 
@@ -935,13 +936,15 @@ def create_v3_file(path: Path, password: str, payload: dict) -> None:
     )
 
 
-def update_v3_file(path: Path, credential: V3Credential, payload: dict) -> None:
+def update_v3_file(path: Path, credential: V3Credential, payload: dict, *, expected_revision: tuple | None = None) -> tuple:
     path = Path(path)
     require_clean_storage(path)
     source = path.read_bytes()
     container = parse_vault_container(source)
     if not isinstance(container, V3Container):
         raise V3CryptoError("Refusing V3 update for a legacy file")
+    if expected_revision is not None and container_revision(container) != expected_revision:
+        raise ConcurrentStorageChangeError("Vault changed after it was loaded")
     frame = update_v3_container(credential, payload, container)
     atomic_write_bytes(
         path,
@@ -950,6 +953,7 @@ def update_v3_file(path: Path, credential: V3Credential, payload: dict) -> None:
         expected_old_sha256=hashlib.sha256(source).hexdigest(),
     )
     _advance_anchor_after_write(path, credential)
+    return container_revision(parse_vault_container(frame))
 
 
 def rotate_v3_password_file(path: Path, old_password: str, new_password: str) -> None:

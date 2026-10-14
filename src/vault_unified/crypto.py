@@ -19,11 +19,13 @@ from vault_unified.storage import (
     inspect_recovery,
     recover_atomic_file,
     require_clean_storage,
+    ConcurrentStorageChangeError,
 )
 from vault_unified.vault_format import (
     V3Container,
     inspect_vault_format_file,
     parse_vault_container,
+    container_revision,
 )
 
 # Interactive local vault KDF (must stay stable — params are not stored in blob).
@@ -72,11 +74,10 @@ def decrypt_payload(credential: V3Credential, blob: bytes) -> dict:
     return json.loads(plaintext.decode("utf-8"))
 
 
-def write_encrypted_file(path: Path, credential: V3Credential, payload: dict) -> None:
+def write_encrypted_file(path: Path, credential: V3Credential, payload: dict, *, expected_revision: tuple | None = None) -> tuple:
     require_clean_storage(path)
     if path.exists() and isinstance(inspect_vault_format_file(path), V3Container):
-        update_v3_file(path, credential, payload)
-        return
+        return update_v3_file(path, credential, payload, expected_revision=expected_revision)
     if payload.get("version") == 3 and "entries" in payload:
         raise ValueError("Personal payload schema 3 requires a framed V3 vault")
     if not isinstance(credential, str):
@@ -87,10 +88,21 @@ def write_encrypted_file(path: Path, credential: V3Credential, payload: dict) ->
         if decrypt_payload(credential, candidate) != payload:
             raise ValueError("Encrypted write did not round-trip")
 
-    atomic_write_bytes(path, blob, validator=validate)
+    if expected_revision is not None:
+        current = container_revision(parse_vault_container(path.read_bytes())) if path.exists() else ()
+        if current != expected_revision:
+            raise ConcurrentStorageChangeError("Vault changed after it was loaded")
+    atomic_write_bytes(path, blob, validator=validate,
+                       expected_old_sha256=expected_revision[1] if expected_revision else None,
+                       must_not_exist=expected_revision == ())
+    return container_revision(parse_vault_container(blob))
 
 
 def read_encrypted_file(path: Path, credential: V3Credential) -> dict:
+    return read_encrypted_snapshot(path, credential)[0]
+
+
+def read_encrypted_snapshot(path: Path, credential: V3Credential) -> tuple[dict, tuple]:
     require_clean_storage(path)
     blob = path.read_bytes()
     payload = decrypt_payload(credential, blob)
@@ -101,7 +113,7 @@ def read_encrypted_file(path: Path, credential: V3Credential) -> dict:
         from vault_unified.device_keyring import verify_and_advance_rollback_anchor
 
         verify_and_advance_rollback_anchor(path, credential=credential)
-    return payload
+    return payload, container_revision(container)
 
 
 def inspect_encrypted_file_recovery(path: Path, credential: V3Credential) -> list[RecoveryPlan]:
