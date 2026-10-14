@@ -240,8 +240,10 @@ def browser_matches(
 @router.post("/fill")
 def browser_fill(
     body: BrowserFillIn,
+    response: Response,
     vault=Depends(_vault_for_browser),
 ) -> dict:
+    response.headers["Cache-Control"] = "no-store"
     try:
         allowed = {item["id"] for item in matches_for_url(vault, body.url)}
         if body.entry_id not in allowed:
@@ -249,6 +251,10 @@ def browser_fill(
         entry = vault.resolve(body.entry_id)
     except (KeyError, ValueError, BrowserPairingError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if body.field == "username":
+        return {"username": entry.username}
+    if body.field == "password":
+        return {"password": entry.password}
     return {"username": entry.username, "password": entry.password}
 
 

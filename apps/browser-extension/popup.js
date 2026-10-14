@@ -92,39 +92,12 @@ function localize() {
   if (preview) renderPreview();
 }
 function normalizeAddress(value) {
-  const url = new URL(value.trim());
-  const path = url.pathname.replace(/\/+$/, "");
-  if (url.protocol !== "http:" || !["127.0.0.1", "localhost"].includes(url.hostname)
-      || url.username || url.password || url.search || url.hash || (path && path !== "/api")) {
-    throw Object.assign(new Error(), { key: "addressError" });
-  }
-  return url.origin;
+  return vaultBrowserConnection.normalizeAddress(value);
 }
 async function request(path, options = {}, connection = false) {
-  const state = currentState;
   const stamp = epoch;
-  let response;
-  try {
-    response = await fetch(`${state.sidecarUrl}/api/browser${path}`, {
-      method: "POST", ...options, signal: AbortSignal.timeout(8000),
-      headers: { "Content-Type": "application/json",
-        ...(connection ? { "X-Vault-Browser-Connection": state.connectionKey }
-          : state.browserToken ? { "X-Vault-Browser-Token": state.browserToken } : {}), ...options.headers },
-    });
-  } catch {
-    throw Object.assign(new Error(), { key: "unavailable", code: 0 });
-  }
-  const body = await response.json().catch(() => ({}));
+  const body = await vaultBrowserConnection.post(currentState, path, options, connection);
   if (stamp !== epoch) throw Object.assign(new Error(), { key: "locked", code: 423 });
-  if (!response.ok) {
-    let key = response.status === 423 ? "locked" : "requestError";
-    if (response.status === 401) key = "unpaired";
-    if (response.status === 503) key = "trustUnavailable";
-    if (response.status === 409) key = "changed";
-    if (typeof body.detail === "string" && body.detail.includes("username already exists")) key = "duplicate";
-    if (typeof body.detail === "string" && body.detail.includes("already has these details")) key = "unchanged";
-    throw Object.assign(new Error(), { key, code: response.status });
-  }
   return body;
 }
 function clearDraft() {
@@ -298,14 +271,10 @@ async function showMatches(successKey) {
   setStatus(successKey || (matches.length ? "choose" : "noMatches"));
 }
 async function trustedProof(action) {
-  const identity = await vaultBrowserIdentity.read();
-  if (!identity || identity.deviceId !== currentState.deviceId) {
-    throw Object.assign(new Error(), { key: "unpaired", code: 401 });
-  }
-  const challenge = await request("/device/challenge", { body: JSON.stringify({ device_id: identity.deviceId, action }) });
-  const signature = await vaultBrowserIdentity.sign(identity, challenge, action);
-  return request("/device/prove", { body: JSON.stringify({ device_id: identity.deviceId, action,
-    challenge_id: challenge.challenge_id, signature }) });
+  const stamp = epoch;
+  const result = await vaultBrowserConnection.prove(currentState, action);
+  if (stamp !== epoch) throw Object.assign(new Error(), { key: "locked", code: 423 });
+  return result;
 }
 async function resumeTrusted() {
   try {
@@ -322,20 +291,7 @@ async function resumeTrusted() {
   }
 }
 async function discoverDesktop() {
-  if (!chrome.runtime.sendNativeMessage || !currentState) return;
-  try {
-    const response = await chrome.runtime.sendNativeMessage("org.vaultunified.desktop", { type: "discover", protocol: 1 });
-    if (response?.protocol !== 1 || !response.base_url) return;
-    const address = normalizeAddress(response.base_url);
-    if (address !== currentState.sidecarUrl) {
-      currentState.sidecarUrl = address;
-      delete currentState.browserToken;
-      if (currentState.deviceId) {
-        const identity = await vaultBrowserIdentity.read();
-        if (identity?.deviceId === currentState.deviceId) await vaultBrowserIdentity.save(identity, identity.deviceId, address);
-      }
-    }
-  } catch { /* Manual address is retained when native messaging is unavailable. */ }
+  await vaultBrowserConnection.discover(currentState);
 }
 function openDraft(entry) {
   clearDraft();
