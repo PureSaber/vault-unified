@@ -18,7 +18,7 @@ than replaced with a simulated completion claim.
 | 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Merged PR #59 / `6518339`; full CI run 38497981145 passed, including actual native restart journey; source feature, not yet released |
 | 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Pending |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Pending |
-| 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Pending |
+| 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Implemented on `codex/totp-workflow`; RFC vectors, renderer QR/rollover and actual native extension restart/fill passed; integration pending |
 | 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Pending |
@@ -30,7 +30,7 @@ than replaced with a simulated completion claim.
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Pending |
-| 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Implemented on `codex/credential-templates`; relevant backend and real English/Chinese renderer journeys passed; integration pending |
+| 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Merged PR #64 / `57aeb90`; exact-head CI 38505943098 passed, including all 57 renderer journeys |
 | 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Pending |
 | 19 | Browser passkey creation and sign-in, storage, recovery and migration lifecycle | Pending |
 | 20 | Encrypted single-item sharing with expiry/access limits/revocation, then household shared-vault workflow and permissions | Pending |
@@ -177,8 +177,27 @@ Defaults and scope:
   passed. Fifteen renderer journeys passed, including English/Chinese templates,
   used-code persistence, discard, existing editors, accessibility and artifact
   scan. Screenshot inspected; TypeScript/build and secret scan passed.
-- Exact-head full CI is required before integration. See
+- Exact-head full CI 38505943098 passed; merged PR #64 / `57aeb90`. See
   [credential-templates.md](credential-templates.md).
+
+### Verification codes
+
+- RFC 6238 SHA-1/256/512, six/eight digits and standard otpauth URIs share one
+  local implementation. QR images decode locally; draft setup requires Save.
+  Current codes refresh at expiry and hide after blur or thirty seconds. Copy
+  uses the existing conditional clipboard clearing, bounded by code expiry.
+- Browser tokens can request a code only for an active matching login. Exact host,
+  scheme and port matching now also excludes implicit www aliases. The extension
+  receives no authenticator key; explicit code filling checks the destination and
+  expiry, accepts one unambiguous OTP field, and never submits the form.
+- All 33 focused Python cases and 27 renderer journeys passed. The final focused
+  renderer check additionally passed keyboard QR selection and live two-second
+  rollover. Accessibility/artifact scanning passed; masked screenshot inspected.
+  Actual native executable, Windows credential store, restarted API and Chromium
+  extension passed reconnection and real code filling in isolated test profiles.
+- Python audit and repository secret scan passed. npm audit passed after updating
+  the transitive source-map-js dependency to 1.2.2. Full exact-head CI precedes
+  integration. See [totp-verification-codes.md](totp-verification-codes.md).
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

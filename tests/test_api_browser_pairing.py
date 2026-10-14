@@ -56,7 +56,7 @@ def test_extension_pairing_is_one_time_origin_bound_and_lost_on_lock(client: Tes
             "title": "Example",
             "username": "person@example.test",
             "password": "secret-value",
-            "url": "https://www.example.test/login",
+            "url": "https://example.test/login",
         },
     )
     assert entry.status_code == 200

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from vault_unified.personal_data import data_for
+from vault_unified.totp import current_totp
 
 from vault_unified.api.deps import get_token
 from vault_unified.api.schemas import (
@@ -237,3 +239,16 @@ def browser_fill(
     except (KeyError, ValueError, BrowserPairingError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"username": entry.username, "password": entry.password}
+
+
+@router.post("/totp")
+def browser_totp(body: BrowserFillIn, response: Response, vault=Depends(_vault_for_browser)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        allowed = {item["id"] for item in matches_for_url(vault, body.url)}
+        if body.entry_id not in allowed:
+            raise ValueError()
+        result = current_totp(data_for(vault.resolve(body.entry_id))["totp_secret"])
+    except (KeyError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="No matching account with a valid authenticator key") from exc
+    return {key: result[key] for key in ("code", "expires_at", "remaining_seconds")}

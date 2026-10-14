@@ -36,7 +36,7 @@ async function loadPopup(
   page: Page,
   options: {
     initialState?: { sidecarUrl: string; browserToken: string; connectionKey?: string } | null;
-    matches?: Array<{ id: string; title: string; username: string }>;
+    matches?: Array<{ id: string; title: string; username: string; has_totp?: boolean }>;
     matchesError?: string;
     matchesStatus?: number;
     injectedReason?: string;
@@ -121,6 +121,7 @@ async function loadPopup(
         }
         if (url.endsWith("/disconnect")) return json({ disconnected: true });
         if (url.endsWith("/generate")) return json({ password: config.entryPassword });
+        if (url.endsWith("/totp")) return json({ code: "123456", remaining_seconds: 25, expires_at: Date.now() / 1000 + 25 });
         if (url.endsWith("/save/preview")) {
           calls.previews += 1;
           const draft = JSON.parse(String(init?.body));
@@ -173,6 +174,17 @@ async function loadPopup(
   await page.addScriptTag({ content: popupScript });
   await expect(page.locator("#language")).toBeEnabled();
 }
+
+test("requests a verification code only after the explicit account action", async ({ page }) => {
+  await loadPopup(page, { initialState: { sidecarUrl: "http://127.0.0.1:43129", browserToken: testData.bearerToken }, matches: [{ id: "generated-otp", title: "Generated OTP", username: "generated", has_totp: true }], injectedReason: "otp-filled" });
+  await expect(page.getByRole("button", { name: "Fill verification code Generated OTP", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Fill verification code Generated OTP", exact: true }).click();
+  await expect(page.getByText("Verification code filled.", { exact: true })).toBeVisible();
+  const calls = await page.evaluate(() => (window as unknown as { __extensionMock: ExtensionMockState }).__extensionMock.calls);
+  expect(calls.requests.filter(url => url.endsWith("/totp"))).toHaveLength(1);
+  expect(calls.requests.some(url => url.endsWith("/fill"))).toBe(false);
+  expect(calls.local + calls.sync).toBe(0);
+});
 
 test("pairs only into session storage and reports no matching login", async ({ page }) => {
   await loadPopup(page);

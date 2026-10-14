@@ -86,7 +86,7 @@ try {
   // production Chrome/Edge host keys or uses the owner's browser profile.
   const popupPath = join(isolated, 'extension/popup.js');
   await writeFile(popupPath, (await readFile(popupPath, 'utf8')).replace('org.vaultunified.desktop', host));
-  site = createServer((_req, response) => response.end('<!doctype html><input autocomplete="username"><input type="password" autocomplete="current-password">'));
+  site = createServer((_req, response) => response.end('<!doctype html><input autocomplete="username"><input type="password" autocomplete="current-password"><input autocomplete="one-time-code">'));
   await new Promise((accept) => site.listen(0, '127.0.0.1', accept));
   const first = await startApi();
   token = (await api('/auth/create', { password: master, confirm_password: master })).token;
@@ -96,7 +96,8 @@ try {
   const discovered = await browser.popup.evaluate((name) => chrome.runtime.sendNativeMessage(name, { type: 'discover', protocol: 1 }), host);
   assert(Object.keys(discovered).sort().join() === 'base_url,instance_id,protocol', 'Discovery returned unexpected fields');
   assert(discovered.instance_id === first.instance_id, 'Native host did not find the running API');
-  await api('/entries', { title: 'Generated restart account', username: 'generated-user', password, url: browser.siteUrl });
+  // Public RFC test key; the vault/master/browser credentials are generated above.
+  const generatedEntry = await api('/entries', { title: 'Generated restart account', username: 'generated-user', password, url: browser.siteUrl, totp_secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' });
   const pairing = await api('/browser/pairing-code');
   await browser.popup.locator('#sidecar-url').fill(apiUrl);
   await browser.popup.locator('#pairing-code').fill(pairing.pairing_code);
@@ -134,6 +135,12 @@ try {
   await browser.popup.locator('button.match').click();
   await browser.website.waitForFunction(() => document.querySelector('[type=password]').value.length > 0);
   assert(await browser.website.locator('[type=password]').inputValue() === password, 'Restarted browser failed real filling');
+  step = 'actual verification code fill after restart';
+  const beforeCode = await api(`/entries/${generatedEntry.id}/totp`, null, 'GET');
+  await browser.popup.getByRole('button', { name: 'Fill verification code Generated restart account', exact: true }).click();
+  await browser.website.waitForFunction(() => /^\d{6}$/.test(document.querySelector('[autocomplete="one-time-code"]').value));
+  const afterCode = await api(`/entries/${generatedEntry.id}/totp`, null, 'GET');
+  assert([beforeCode.code, afterCode.code].includes(await browser.website.locator('[autocomplete="one-time-code"]').inputValue()), 'Actual extension filled an incorrect verification code');
   step = 'manual address fallback when native discovery is unavailable';
   const manifest = join(isolated, 'bridge/native-host.json');
   const disabledManifest = join(isolated, 'bridge/native-host.disabled.json');
@@ -166,7 +173,7 @@ try {
   console.log(JSON.stringify({ result: 'passed', actual_native_executable: true, actual_windows_credentials: true,
     actual_chromium_extension: true, actual_api_restart: true, changed_port_discovered: true,
     private_key_export_denied: true, stale_instance_rejected: true, locked_access_denied: true, manual_address_fallback: true,
-    desktop_revocation: true, real_credentials_used: false }));
+    desktop_revocation: true, real_totp_fill: true, real_credentials_used: false }));
 } catch (error) {
   console.error(`Generated trust restart check failed at ${step}: ${String(error.message).split('\n')[0]}`);
   process.exitCode = 1;

@@ -15,6 +15,10 @@ let busy = false;
 let checking = false;
 
 const messages = {
+  fillOtp: ["填入验证码", "Fill verification code"],
+  otpFilled: ["已填入验证码。", "Verification code filled."],
+  otpAmbiguous: ["未找到唯一的验证码输入框，可从桌面端复制后粘贴。", "No single verification-code field was found. Copy the code from the desktop."],
+  otpExpired: ["验证码已过期，请重新填充。", "The verification code expired. Fill again."],
   language: ["语言", "Language"], address: ["本机地址", "Local address"],
   code: ["一次性配对码", "One-time pairing code"], pair: ["配对此浏览器", "Pair this browser"],
   remember: ["授权此浏览器在重启后恢复连接（仍需解锁保险库）。", "Authorize this browser to reconnect after restarting (vault must be unlocked)."],
@@ -193,6 +197,10 @@ async function inject(func, values) {
   return result[0]?.result || { reason: "no-password-field" };
 }
 function outcome(result) {
+  if (result.reason?.startsWith("otp-")) {
+    setStatus({ "otp-filled": "otpFilled", "otp-expired": "otpExpired" }[result.reason] || "otpAmbiguous", result.reason !== "otp-filled");
+    return;
+  }
   const keys = { filled: "filled", "new-filled": "newFilled", "page-changed": "pageChanged",
     "ambiguous-password-fields": "ambiguous", "new-password-flow": "newFlow",
     iframe: "iframe", "shadow-dom": "shadow", "empty-password": "empty" };
@@ -204,6 +212,16 @@ async function fillMatch(entry) {
   const values = await request("/fill", { body: JSON.stringify({ entry_id: entry.id, url: new URL(currentTab.url).origin }) });
   if (stamp !== epoch) return;
   outcome(await inject(vaultUnifiedFillInputs, values));
+}
+async function fillOtp(entry) {
+  const stamp = epoch;
+  await samePage();
+  const started = Date.now();
+  const value = await request("/totp", { body: JSON.stringify({ entry_id: entry.id, url: new URL(currentTab.url).origin }) });
+  if (stamp !== epoch) return;
+  const validForMs = value.remaining_seconds * 1000 - (Date.now() - started);
+  if (validForMs <= 0) { setStatus("otpExpired", true); return; }
+  outcome(await inject(vaultUnifiedFillInputs, { otp: value.code, expiresAt: Date.now() + validForMs }));
 }
 function renderMatches() {
   el("matches").replaceChildren();
@@ -227,6 +245,13 @@ function renderMatches() {
     update.setAttribute("aria-label", `${t("update")} ${entry.title} ${entry.username}`);
     update.addEventListener("click", () => openDraft(entry));
     row.append(button, update);
+    if (entry.has_totp) {
+      const otp = document.createElement("button");
+      otp.type = "button"; otp.className = "secondary"; otp.textContent = t("fillOtp");
+      otp.setAttribute("aria-label", `${t("fillOtp")} ${entry.title}`);
+      otp.addEventListener("click", () => void action(() => fillOtp(entry)));
+      row.append(otp);
+    }
     el("matches").append(row);
     el("save-target").append(new Option(`${entry.title} · ${entry.username || t("noUser")}`, entry.id));
   }
