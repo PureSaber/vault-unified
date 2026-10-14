@@ -5,6 +5,7 @@ import { useToast } from "../components/Toast";
 import LoadingSkeleton from "../components/LoadingSkeleton";
 import ConfirmDialog from "../components/ConfirmDialog";
 import DuplicateMerge from "../components/DuplicateMerge";
+import GenerationHistory from "../components/GenerationHistory";
 
 interface Props {
   onAdd: () => void;
@@ -24,6 +25,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   const zh = locale === "zh";
   const [state, setState] = useState("active");
   const [personalReady, setPersonalReady] = useState(false);
+  const [showGenerationHistory, setShowGenerationHistory] = useState(false);
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [duplicatesOnly, setDuplicatesOnly] = useState(false);
   const [duplicateIds, setDuplicateIds] = useState<string[]>([]);
@@ -224,11 +226,13 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
       />
 
       <div className="page-heading-row">
+        {showGenerationHistory && <GenerationHistory onClose={() => setShowGenerationHistory(false)} />}
         <div>
           <h2>{t("list.title")}</h2>
           <p className="field-hint">{t("list.subtitle")}</p>
         </div>
         <div className="button-row">
+        {personalReady && <button className="secondary" type="button" onClick={() => setShowGenerationHistory(true)}>{zh ? "生成密码历史" : "Generated password history"}</button>}
         <button className="secondary" type="button" onClick={onImport}>
           {locale === "zh" ? "从浏览器导入" : "Import from browser"}
         </button>

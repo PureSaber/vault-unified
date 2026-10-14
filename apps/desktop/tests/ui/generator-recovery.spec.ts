@@ -1,0 +1,60 @@
+import AxeBuilder from "@axe-core/playwright";
+import { expect, test } from "./journey-test";
+import { startGeneratedSidecar } from "./live-sidecar";
+import { testData } from "./test-data";
+
+test.use({ trace: "off", screenshot: "off" });
+
+for (const locale of ["en", "zh"] as const) test(`generated passwords survive discard and unlock, and recover into a draft (${locale})`, async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const zh = locale === "zh";
+  const sidecar = await startGeneratedSidecar(page);
+  try {
+    await page.addInitScript(value => localStorage.setItem("vault_locale", value), locale);
+    await page.goto("/");
+    await page.getByLabel(zh ? "主密码" : "Master password", { exact: true }).fill(testData.masterPassword);
+    await page.getByLabel(zh ? "再次输入主密码" : "Confirm master password", { exact: true }).fill(testData.masterPassword);
+    await page.getByRole("button", { name: zh ? "创建并解锁" : "Create and unlock", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "添加密码" : "Add password", exact: true }).click();
+    await page.getByLabel(zh ? "网站地址" : "Website address", { exact: true }).fill("https://generated.invalid/signup?private=discard");
+    await page.getByRole("button", { name: zh ? "密码生成高级选项" : "Password generator advanced options", exact: true }).click();
+    await page.getByLabel(zh ? "生成方式" : "Generate as", { exact: true }).selectOption("passphrase");
+    await page.getByLabel(zh ? "分隔符" : "Separator", { exact: true }).selectOption(" ");
+    const password = page.getByLabel(zh ? "密码" : "Password", { exact: true });
+    await page.getByRole("button", { name: zh ? "生成密码" : "Generate password", exact: true }).click();
+    await expect.poll(async () => (await password.inputValue()).split(" ").length).toBe(6);
+    const phrase = await password.inputValue();
+    await page.getByRole("button", { name: zh ? "取消" : "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "放弃更改" : "Discard changes", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "立即锁定" : "Lock now", exact: true }).click();
+    await page.getByLabel(zh ? "主密码" : "Master password", { exact: true }).fill(testData.masterPassword);
+    await page.getByRole("button", { name: zh ? "解锁" : "Unlock", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "生成密码历史" : "Generated password history", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: zh ? "生成密码历史" : "Generated password history", exact: true });
+    await expect(dialog.getByText("https://generated.invalid", { exact: true })).toBeVisible();
+    await expect(dialog.getByText(zh ? "已隐藏" : "Hidden", { exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: zh ? "显示" : "Show", exact: true }).click();
+    await expect.poll(async () => (await dialog.locator("pre").textContent()) === phrase).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect(dialog.getByText(zh ? "已隐藏" : "Hidden", { exact: true })).toBeVisible();
+    const quality = await new AxeBuilder({ page }).analyze();
+    expect(quality.violations.filter(item => ["serious", "critical"].includes(item.impact || "")).map(item => item.id)).toEqual([]);
+    await dialog.screenshot({ path: testInfo.outputPath(`generator-history-${locale}.png`) });
+    await dialog.getByRole("button", { name: zh ? "关闭" : "Close", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "添加密码" : "Add password", exact: true }).click();
+    await page.getByLabel(zh ? "网站或应用名称" : "Website or app name", { exact: true }).fill("Generated recovered password");
+    await page.getByRole("button", { name: zh ? "找回生成的密码" : "Recover a generated password", exact: true }).click();
+    await dialog.getByRole("button", { name: zh ? "载入密码草稿" : "Use in password draft", exact: true }).click();
+    await expect.poll(async () => await password.inputValue() === phrase).toBe(true);
+    await page.getByRole("button", { name: zh ? "保存" : "Save", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "打开 Generated recovered password" : "Open Generated recovered password", exact: true }).click();
+    await expect.poll(async () => await password.inputValue() === phrase).toBe(true);
+    await page.getByRole("button", { name: zh ? "密码生成高级选项" : "Password generator advanced options", exact: true }).click();
+    await page.getByLabel(zh ? "包含符号" : "Include symbols", { exact: true }).uncheck();
+    await page.getByLabel(zh ? "排除这些字符" : "Excluded characters", { exact: true }).fill("O0Il1");
+    await page.getByRole("button", { name: zh ? "生成密码" : "Generate password", exact: true }).click();
+    await expect.poll(async () => { const value = await password.inputValue(); return value !== phrase && value.length === 20 && !/[O0Il1]/.test(value); }).toBe(true);
+    await page.getByRole("button", { name: zh ? "取消" : "Cancel", exact: true }).click();
+    await page.getByRole("button", { name: zh ? "放弃更改" : "Discard changes", exact: true }).click();
+  } finally { await sidecar.stop(); }
+});

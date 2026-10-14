@@ -18,10 +18,10 @@ than replaced with a simulated completion claim.
 | 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Merged PR #59 / `6518339`; full CI run 38497981145 passed, including actual native restart journey; source feature, not yet released |
 | 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Pending |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Pending |
-| 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Implemented on `codex/totp-workflow`; RFC vectors, renderer QR/rollover and actual native extension restart/fill passed; integration pending |
+| 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Merged PR #65 / `67b2db3`; exact-head CI 38507719041 passed, including native extension TOTP filling |
 | 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
-| 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Pending |
+| 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Implemented on `codex/generator-recovery`; real renderer discard/unlock/recovery and native extension restart recovery passed; integration pending |
 | 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Pending |
@@ -196,8 +196,30 @@ Defaults and scope:
   Actual native executable, Windows credential store, restarted API and Chromium
   extension passed reconnection and real code filling in isolated test profiles.
 - Python audit and repository secret scan passed. npm audit passed after updating
-  the transitive source-map-js dependency to 1.2.2. Full exact-head CI precedes
-  integration. See [totp-verification-codes.md](totp-verification-codes.md).
+  the transitive source-map-js dependency to 1.2.2. Exact-head CI 38507719041 passed;
+  merged PR #65 / `67b2db3`. See [totp-verification-codes.md](totp-verification-codes.md).
+
+### Generated password recovery
+
+- Desktop and extension generation retain the value in encrypted schema-3
+  metadata before returning it. The latest 100 records expire after 30 days;
+  opening the vault and subsequent generation prune expired active-vault data.
+  Legacy vaults keep the basic generator until the existing format upgrade.
+- History shows timestamp, type and website origin without revealing passwords.
+  Explicit reveal/copy/load-draft actions support recovery after discarded drafts
+  and restart. Website paths, queries and credentials are not retained.
+- EFF's 7,776-word list is bundled for offline passphrases with six words by
+  default. Enabled character groups and allow/exclude controls validate impossible
+  restrictions before generation. No small custom dictionary or external request.
+- Eight new backend cases and eighteen existing entry/payload cases passed,
+  covering encrypted restart, retention, idempotent retry, concurrent writes and
+  write failure. Twenty-five existing renderer journeys passed; the new English
+  test initially read before its asynchronous draft load completed. Waiting for
+  that actual result fixed the test; both real English/Chinese journeys passed,
+  including accessibility and artifact scanning. Masked screenshot inspected.
+- Actual native executable/API restart and Chromium extension proved a cancelled
+  browser-generated password remains recoverable. Required full CI precedes merge.
+  See [generated-password-recovery.md](generated-password-recovery.md).
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

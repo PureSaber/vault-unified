@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from vault_unified.crypto import read_encrypted_file, write_encrypted_file
 from vault_unified.models import SecretEntry, Source, SyncStatus
@@ -86,6 +86,24 @@ class LocalVault:
         """Snapshot all encrypted data, including vault-wide personal metadata."""
         with self._lock:
             return copy.deepcopy(self._payload(self._entries))
+
+    def metadata_value(self, namespace: str) -> Any:
+        with self._lock:
+            return copy.deepcopy(self._metadata.get(namespace))
+
+    def update_metadata(self, namespace: str, transform: Callable[[Any], Any]) -> Any:
+        """Commit one encrypted metadata change using the existing vault writer."""
+        with self._lock:
+            if self._payload_version != 3:
+                raise ValueError("Upgrade the vault format before using generated-password history")
+            candidate = transform(copy.deepcopy(self._metadata.get(namespace)))
+            if candidate != self._metadata.get(namespace):
+                metadata = {**self._metadata, namespace: candidate}
+                payload = {**self._payload(self._entries), "metadata": metadata}
+                write_encrypted_file(self.vault_path, self.credential, payload)
+                self._metadata = copy.deepcopy(metadata)
+                self._generation += 1
+            return copy.deepcopy(candidate)
 
     @property
     def payload_version(self) -> int:

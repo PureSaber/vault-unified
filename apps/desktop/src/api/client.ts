@@ -1,5 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 
+export interface GenerationOptions {
+  kind: "password" | "passphrase"; length: number; symbols: boolean; digits: boolean;
+  upper: boolean; lower: boolean; allowed: string; excluded: string; words: number; separator: "-" | " " | "." | "_";
+}
+export interface GeneratedPassword { id: string; kind: "password" | "passphrase"; created_at: number; origin: string }
+
 interface ApiRuntimeConfig {
   base_url: string;
   bootstrap_secret: string;
@@ -577,6 +583,10 @@ export const api = {
     request<{ password: string }>(
       `/entries/tools/generate?length=${length}&symbols=${symbols}`
     ),
+  generateSaved: (options: GenerationOptions, url: string, request_id: string) => request<{ password: string; history_saved: boolean }>("/entries/tools/generate", { method: "POST", body: JSON.stringify({ ...options, url, request_id }) }),
+  generationHistory: () => request<{ items: GeneratedPassword[] }>("/entries/tools/generation/history"),
+  generationValue: (id: string) => request<{ password: string }>(`/entries/tools/generation/history/${encodeURIComponent(id)}`),
+  copyGeneration: (id: string) => request(`/entries/tools/generation/history/${encodeURIComponent(id)}/copy`, { method: "POST" }),
   integrations: () => request<Integration[]>("/integrations"),
   saveIntegration: (
     source: string,

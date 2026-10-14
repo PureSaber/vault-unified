@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import copy
-from uuid import uuid4
+from uuid import UUID, uuid4
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -17,6 +17,7 @@ from vault_unified.api.schemas import (
 )
 from vault_unified.clipboard import copy_to_clipboard
 from vault_unified.generator import generate_password
+from vault_unified.generation_history import generate_saved, list_generated, get_generated
 from vault_unified.local_store import EntryTransactionConflict
 from vault_unified.manager import UnifiedVault
 from vault_unified.models import SecretEntry, Source
@@ -130,13 +131,62 @@ def _commit(vault: UnifiedVault, body: EntryTransactionIn) -> SecretEntry:
 
 @router.get("/tools/generate")
 def generate(
+    response: Response,
     length: int = Query(default=20, ge=8, le=128),
     symbols: bool = Query(default=True),
     vault: UnifiedVault = Depends(get_vault),
 ) -> dict:
-    _ = vault
+    response.headers["Cache-Control"] = "no-store"
     pwd = generate_password(length, symbols=symbols)
     return {"password": pwd}
+
+
+class GenerationIn(BaseModel):
+    kind: Literal["password", "passphrase"] = "password"
+    length: int = Field(default=20, ge=8, le=128)
+    symbols: bool = True
+    digits: bool = True
+    upper: bool = True
+    lower: bool = True
+    allowed: str = Field(default="", max_length=128)
+    excluded: str = Field(default="", max_length=128)
+    words: int = Field(default=6, ge=6, le=12)
+    separator: Literal["-", " ", ".", "_"] = "-"
+    url: str = Field(default="", max_length=2048)
+    request_id: UUID | None = None
+
+
+@router.post("/tools/generate")
+def generate_with_history(body: GenerationIn, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return generate_saved(vault.local, **body.model_dump(mode="json"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Generated password was not saved; try again") from exc
+
+
+@router.get("/tools/generation/history")
+def generation_history(response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    return {"items": list_generated(vault.local)}
+
+
+@router.get("/tools/generation/history/{record_id}")
+def generation_value(record_id: str, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return {"password": get_generated(vault.local, record_id)["value"]}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Generated password expired or was not found") from exc
+
+
+@router.post("/tools/generation/history/{record_id}/copy")
+def copy_generation(record_id: str, response: Response, vault: UnifiedVault = Depends(get_vault)) -> dict:
+    value = generation_value(record_id, response, vault)["password"]
+    copy_to_clipboard(value, clear_after=45)
+    return {"copied": True, "clears_in_seconds": 45}
 
 
 @router.get("", response_model=list[EntryOut])

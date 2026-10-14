@@ -784,6 +784,8 @@ button.icon-btn-lg {
 .generator-options .checkbox-field {
   margin-bottom: 0;
 }
+.generator-options .generator-wide { flex-basis: 100%; }
+.generated-secret { overflow-wrap: anywhere; white-space: pre-wrap; }
 
 .more-options-heading {
   align-items: flex-start;

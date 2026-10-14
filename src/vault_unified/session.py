@@ -43,6 +43,8 @@ class SessionManager:
         self._sessions: dict[str, VaultSession] = {}
 
     def _register(self, vault: UnifiedVault) -> tuple[str, UnifiedVault]:
+        from vault_unified.generation_history import prune
+        prune(vault.local)
         token = str(uuid4())
         container = inspect_vault_format_file(vault.vault_path)
         binding = None

@@ -112,6 +112,14 @@ try {
   });
   assert(identityCheck.exportDenied, 'Browser private key was extractable');
   assert(identityCheck.keys.join() === 'deviceId,privateKey,publicKey,sidecarUrl', 'Unexpected persistent identity contents');
+  step = 'recoverable extension generation before restart';
+  await browser.popup.locator('#add').click();
+  await browser.popup.locator('#generate').click();
+  await browser.popup.waitForFunction(() => document.querySelector('#save-password').value.length === 24);
+  const generatedPassword = await browser.popup.locator('#save-password').inputValue();
+  await browser.popup.locator('#cancel-save').click();
+  const historyBefore = await api('/entries/tools/generation/history', null, 'GET');
+  assert(historyBefore.items.length === 1 && !JSON.stringify(historyBefore).includes(generatedPassword), 'Generated history was not safely retained');
   await context.close(); context = null;
   await stopApi();
   const nativeRequest = Buffer.from(JSON.stringify({ type: 'discover', protocol: 1 }));
@@ -129,6 +137,8 @@ try {
   await browser.popup.locator('#retry').waitFor();
   assert(await browser.popup.locator('#accounts').isHidden(), 'Locked vault exposed accounts after restart');
   token = (await api('/auth/unlock', { password: master })).token;
+  const recovered = await api(`/entries/tools/generation/history/${historyBefore.items[0].id}`, null, 'GET');
+  assert(recovered.password === generatedPassword, 'Extension-generated password was not recoverable after restart');
   await browser.popup.locator('#retry').click();
   await browser.popup.locator('#accounts').waitFor();
   assert(await browser.popup.locator('#pair-form').isHidden(), 'Restart required a new pairing code');
@@ -173,7 +183,7 @@ try {
   console.log(JSON.stringify({ result: 'passed', actual_native_executable: true, actual_windows_credentials: true,
     actual_chromium_extension: true, actual_api_restart: true, changed_port_discovered: true,
     private_key_export_denied: true, stale_instance_rejected: true, locked_access_denied: true, manual_address_fallback: true,
-    desktop_revocation: true, real_totp_fill: true, real_credentials_used: false }));
+    desktop_revocation: true, real_totp_fill: true, generated_password_recovered: true, real_credentials_used: false }));
 } catch (error) {
   console.error(`Generated trust restart check failed at ${step}: ${String(error.message).split('\n')[0]}`);
   process.exitCode = 1;

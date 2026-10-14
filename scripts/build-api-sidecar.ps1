@@ -70,6 +70,7 @@ $PyInstallerArgs = @(
 foreach ($mod in $Collect) {
     $PyInstallerArgs += @("--collect-submodules", $mod)
 }
+$PyInstallerArgs += @("--collect-data", "vault_unified")
 $PyInstallerArgs += $Entry
 
 Write-Host "Running PyInstaller ..."
