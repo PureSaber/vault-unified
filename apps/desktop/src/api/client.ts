@@ -7,6 +7,7 @@ export interface GenerationOptions {
 export interface GeneratedPassword { id: string; kind: "password" | "passphrase"; created_at: number; origin: string }
 export interface WebsiteRules { match: "exact" | "base_domain"; additional_urls: string[]; excluded_urls: string[] }
 export interface HelloStatus { supported: boolean; ready: boolean; busy: boolean }
+export interface TypeTarget { id: string; title: string; application: string }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -516,6 +517,9 @@ export interface SyncPreview {
 }
 
 export const api = {
+  captureTypeTarget: () => invoke<TypeTarget>("capture_type_target"),
+  startAutoType: (targetId: string, entryId: string, sequence: string, delayMs: number) => invoke<void>("start_auto_type", { targetId, entryId, token, sequence, delayMs }),
+  cancelAutoType: () => invoke<void>("cancel_auto_type"),
   helloStatus: () => invoke<HelloStatus>("windows_hello_status"),
   enableHello: () => invoke<HelloStatus>("enable_windows_hello", { token }),
   disableHello: () => invoke<void>("disable_windows_hello"),

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type Entry } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
+import AutoTypeButton from "./AutoTypeButton";
 
 export default function QuickSearch({ onClose, onOpen }: { onClose: () => void; onOpen: (entry: Entry) => void }) {
   const { locale } = useI18n();
@@ -65,6 +66,7 @@ export default function QuickSearch({ onClose, onOpen }: { onClose: () => void; 
       <button className="primary" type="button" disabled={!current?.has_password || copying || loading} onClick={() => void copy("password")}>{zh ? "复制密码" : "Copy password"}</button>
       <button className="secondary" type="button" disabled={!current?.username || copying || loading} onClick={() => void copy("username")}>{zh ? "复制用户名" : "Copy username"}</button>
       <button className="secondary" type="button" disabled={!current || loading} onClick={() => current && onOpen(current)}>{zh ? "打开条目" : "Open entry"}</button>
+      <AutoTypeButton entry={current} disabled={loading || copying} />
       <button className="secondary" type="button" onClick={onClose}>{zh ? "关闭" : "Close"}</button>
     </div>
   </dialog>;

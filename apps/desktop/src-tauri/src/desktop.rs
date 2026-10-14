@@ -187,6 +187,7 @@ pub fn setup(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 "search" => quick_search(app),
                 "lock" => {
                     crate::hello::cancel_pending(app);
+                    crate::auto_type::cancel_pending(app);
                     show_main(app);
                     let _ = app.emit_to("main", "desktop-lock-requested", ());
                 }

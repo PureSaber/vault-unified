@@ -7,6 +7,7 @@ use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::Manager;
+mod auto_type;
 mod desktop;
 mod hello;
 mod native_api;
@@ -552,7 +553,10 @@ pub fn run() {
             hello::enable_windows_hello,
             hello::unlock_windows_hello,
             hello::disable_windows_hello,
-            hello::cancel_windows_hello
+            hello::cancel_windows_hello,
+            auto_type::capture_type_target,
+            auto_type::start_auto_type,
+            auto_type::cancel_auto_type
         ])
         .setup(|app| {
             desktop::setup(app.handle())?;
@@ -566,6 +570,7 @@ pub fn run() {
             });
             system_lock::setup(app.handle())?;
             app.manage(hello::HelloState::default());
+            app.manage(auto_type::AutoTypeState::default());
             Ok(())
         })
         .build(tauri::generate_context!())

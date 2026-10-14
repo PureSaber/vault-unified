@@ -67,6 +67,7 @@ mod windows {
         };
         if let Some(event) = event {
             crate::hello::cancel_pending(&observer.app);
+            crate::auto_type::cancel_pending(&observer.app);
             // Clear visible secrets immediately, without a draft confirmation dialog.
             let _ = observer.app.emit("desktop-system-locked", ());
             let (acknowledge, received) = channel();

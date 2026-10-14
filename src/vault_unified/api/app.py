@@ -127,7 +127,7 @@ def create_app(
             return JSONResponse({"detail": "Loopback only"}, status_code=403)
         if request.method == "OPTIONS":
             return await call_next(request)
-        if request.url.path.startswith("/api/auth/hello") or request.url.path == "/api/auth/system-state":
+        if request.url.path.startswith("/api/auth/hello") or request.url.path in {"/api/auth/system-state", "/api/entries/tools/auto-type"}:
             if not hmac.compare_digest(request.headers.get("x-vault-native", ""), app.state.native_secret):
                 return JSONResponse({"detail": "Native desktop required"}, status_code=403)
         provided = request.headers.get("x-vault-bootstrap", "")

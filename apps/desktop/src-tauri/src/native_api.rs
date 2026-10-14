@@ -47,6 +47,7 @@ fn call(
                 "/auth/hello",
                 "/auth/lock",
                 "/auth/system-state",
+                "/entries/tools/auto-type",
             ]
             .contains(&path)
         {

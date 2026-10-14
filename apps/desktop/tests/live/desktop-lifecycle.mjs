@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { dirname, basename, resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
+import { exerciseAutoType } from './auto-type-journey.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const isolated = await mkdtemp(join(tmpdir(), 'vault-desktop-generated-'));
@@ -51,6 +52,8 @@ try {
   await page.getByRole('button', { name: 'Create and unlock', exact: true }).click();
   await page.getByRole('button', { name: 'Add password', exact: true }).click();
   await page.getByLabel('Website or app name', { exact: true }).fill('Generated native account');
+  const username = 'generated{ENTER}中文';
+  await page.getByLabel('Username', { exact: true }).fill(username);
   await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'More options', exact: true }).click();
   await page.getByLabel('Choose authenticator QR image', { exact: true }).setInputFiles(join(root, 'apps/desktop/tests/ui/fixtures/totp-rfc-test.png'));
@@ -67,6 +70,10 @@ try {
   assert((await fetch(`${runtime.base_url}/auth/hello/prepare`, { method: 'POST', headers: apiHeaders, body: '{}' })).status === 403, 'Renderer bootstrap cannot authorize Hello enrollment');
   const unlockRequest = () => fetch(`${runtime.base_url}/auth/unlock`, { method: 'POST', headers: apiHeaders, body: JSON.stringify({ password: master }) });
   const extraToken = (await (await unlockRequest()).json()).token;
+  step = 'native application auto-type';
+  const entries = await (await fetch(`${runtime.base_url}/entries`, { headers: { ...apiHeaders, Authorization: `Bearer ${extraToken}` } })).json();
+  await exerciseAutoType({ page, root, entryId: entries[0].id, username, password, token: extraToken });
+  step = 'native Windows session and suspend notifications';
   await page.getByRole('button', { name: 'Add password', exact: true }).click();
   await page.getByLabel('Website or app name', { exact: true }).fill('Generated draft cleared by Windows lock');
   native('session-lock');
