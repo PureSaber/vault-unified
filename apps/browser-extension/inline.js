@@ -25,7 +25,7 @@
     host.style.cssText = "all:initial!important;position:fixed!important;display:block!important;z-index:2147483647!important;";
     shadow = host.attachShadow({ mode: "closed" });
     const sheet = new CSSStyleSheet();
-    sheet.replaceSync(`:host{color-scheme:light dark} *{box-sizing:border-box} .panel{width:min(340px,calc(100vw - 16px));max-height:360px;overflow:auto;background:#151b24;color:#e7ecf3;border:1px solid #62738b;border-radius:8px;padding:10px;font:14px/1.5 system-ui;box-shadow:0 3px 14px #0006} button{font:14px/1.5 system-ui;background:#243044;color:#e7ecf3;border:1px solid #62738b;border-radius:5px;padding:8px;cursor:pointer} button:focus-visible{outline:3px solid #69b6ff;outline-offset:1px} button:disabled{opacity:.6;cursor:wait} .badge{width:32px;height:28px;padding:1px;font-weight:bold} .account{display:block;width:100%;margin:6px 0;text-align:left} strong,small{display:block;overflow-wrap:anywhere} small{color:#c5d0de} p{margin:4px 0 8px;overflow-wrap:anywhere} .footer{margin-top:8px}`);
+    sheet.replaceSync(`:host{color-scheme:light dark} *{box-sizing:border-box} .panel{width:min(340px,calc(100vw - 16px));max-height:min(360px,calc(100vh - 16px));overflow:auto;background:#151b24;color:#e7ecf3;border:1px solid #62738b;border-radius:8px;padding:10px;font:14px/1.5 system-ui;box-shadow:0 3px 14px #0006} button{font:14px/1.5 system-ui;background:#243044;color:#e7ecf3;border:1px solid #62738b;border-radius:5px;padding:8px;cursor:pointer} button:focus-visible{outline:3px solid #69b6ff;outline-offset:1px} button:disabled{opacity:.6;cursor:wait} .badge{width:32px;height:28px;padding:1px;font-weight:bold} .account{display:block;width:100%;margin:6px 0;text-align:left} strong,small{display:block;overflow-wrap:anywhere} small{color:#c5d0de} p{margin:4px 0 8px;overflow-wrap:anywhere} .footer{margin-top:8px}`);
     shadow.adoptedStyleSheets = [sheet]; document.documentElement.append(host);
     locate();
   }
@@ -56,12 +56,15 @@
     const fields = [selection.username, selection.password, selection.otp].filter(Boolean);
     if (!fields.every(input => visible(input) && input.form === selection.form) || target !== selection.target) return { filled: false };
     if (selection.password && kind(selection.password) !== "password") return { filled: false };
-    if (selection.otp && (!/^\d{6}(\d{2})?$/.test(message.values.otp || "") || Date.now() >= message.values.expiresAt)) return { filled: false };
+    if (selection.otp && (!/^\d{6}(\d{2})?$/.test(message.values.otp || "") || Date.now() >= message.values.expiresAt
+        || (selection.otp.maxLength > 0 && selection.otp.maxLength < message.values.otp.length))) return { filled: false };
     const values = message.values;
     if (selection.password && !values.password) return { filled: false };
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
     // Validate every chosen element before changing any value. Never submit.
     for (const field of ["username", "password", "otp"]) if (selection[field] && typeof values[field] === "string") {
+      if (version !== selection.version || target !== selection.target || !visible(selection[field])
+          || (field === "password" && kind(selection[field]) !== "password")) return { filled: false };
       setter.call(selection[field], values[field]);
       selection[field].dispatchEvent(new Event("input", { bubbles: true, composed: true }));
       selection[field].dispatchEvent(new Event("change", { bubbles: true, composed: true }));
@@ -73,7 +76,7 @@
     if (!selection) { status.textContent = errorText("targetChanged"); return; }
     const stamp = version;
     const nonce = crypto.randomUUID();
-    pending = { ...selection, target, nonce, expires: Date.now() + 60_000 };
+    pending = { ...selection, target, nonce, version, expires: Date.now() + 60_000 };
     buttons.forEach(button => { button.disabled = true; });
     clearTimeout(timer); timer = setTimeout(close, 60_000);
     try {
@@ -113,7 +116,7 @@
       panel.addEventListener("keydown", event => {
         if (!event.isTrusted || !["ArrowDown", "ArrowUp"].includes(event.key) || !buttons.length) return;
         event.preventDefault(); const index = buttons.indexOf(shadow.activeElement);
-        buttons[(index + (event.key === "ArrowDown" ? 1 : buttons.length - 1) + buttons.length) % buttons.length].focus();
+        buttons[index < 0 ? (event.key === "ArrowDown" ? 0 : buttons.length - 1) : (index + (event.key === "ArrowDown" ? 1 : buttons.length - 1)) % buttons.length].focus();
       });
       buttons[0]?.focus(); locate();
     } catch { if (stamp === version) status.textContent = errorText(); }

@@ -43,5 +43,12 @@
     <button id="cancel-save" type="button" class="secondary" data-i18n="cancel">Cancel</button>
   </form>
   <button id="forget" type="button" class="secondary" hidden data-i18n="forget">Forget pairing</button>
-</main><script src="fill.js"></script><script src="identity.js"></script><script src="connection.js"></script><script src="popup.js"></script></body>
+  <details id="inline-controls" hidden><summary id="inline-heading">Choose accounts inside fields</summary>
+    <p id="inline-hint"></p><label><span id="inline-site-label">Website or embedded website address</span><input id="inline-site" type="url" autocomplete="off"></label>
+    <p id="inline-status" role="status"></p>
+    <div class="button-row"><button id="inline-enable-site" type="button">Enable this website</button><button id="inline-disable-site" type="button" class="secondary">Disable this website</button></div>
+    <button id="inline-enable-all" type="button" class="secondary">Allow all websites</button>
+    <button id="inline-disable-all" type="button" class="secondary">Disable all suggestions and revoke permissions</button>
+  </details>
+</main><script src="fill.js"></script><script src="identity.js"></script><script src="connection.js"></script><script src="popup.js"></script><script src="inline-settings.js"></script></body>
 </html>

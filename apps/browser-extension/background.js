@@ -4,6 +4,7 @@ const inlineKey = "vaultUnifiedInlinePreferences";
 const scriptId = "vault-unified-inline";
 const pendingFrames = new Map();
 const selections = new Map();
+let scriptUpdates = Promise.resolve();
 const fail = key => { throw Object.assign(new Error(), { key }); };
 function originOf(value) {
   const url = new URL(value);
@@ -36,7 +37,7 @@ async function frameContext(sender) {
 }
 async function stillCurrent(context) {
   const tab = await chrome.tabs.get(context.tabId);
-  if (originOf(tab.url) !== context.topOrigin || !await allowed(context.origin)) fail("pageChanged");
+  if (!tab.active || originOf(tab.url) !== context.topOrigin || !await allowed(context.origin)) fail("pageChanged");
   const result = await chrome.scripting.executeScript({ target: { tabId: context.tabId, documentIds: [context.documentId] }, func: () => location.origin });
   if (result.length !== 1 || result[0].result !== context.origin) fail("pageChanged");
 }
@@ -55,7 +56,8 @@ async function fill(context, message) {
     return { filled: true };
   } finally { if (values.password) values.password = ""; if (values.otp) values.otp = ""; }
 }
-async function synchronizeScripts() {
+function synchronizeScripts() { scriptUpdates = scriptUpdates.catch(() => {}).then(updateScripts); return scriptUpdates; }
+async function updateScripts() {
   const settings = await preferences();
   const grants = (await chrome.permissions.getAll()).origins || [];
   const desired = settings.all ? ["http://*/*", "https://*/*"] : [...new Set(settings.sites.map(permissionPattern))];
@@ -86,6 +88,10 @@ async function changeSettings(message) {
   if (settings.sites.length > 1000 || settings.excluded.length > 1000) fail("requestError");
   settings.language = message.language === "zh" ? "zh" : "en";
   await chrome.storage.local.set({ [inlineKey]: settings });
+  if (message.action === "disable-all") {
+    const origins = ((await chrome.permissions.getAll()).origins || []).filter(value => !["http://127.0.0.1/*", "http://localhost/*"].includes(value));
+    if (origins.length) await chrome.permissions.remove({ origins });
+  }
   await synchronizeScripts();
   for (const tab of await chrome.tabs.query({})) {
     if (!/^https?:/.test(tab.url || "")) continue;
@@ -104,7 +110,7 @@ async function handle(message, sender) {
   if (extensionPage(sender, "frame-confirm.html")) {
     const pending = pendingFrames.get(message.id);
     if (!pending || pending.expires <= Date.now()) fail("expired");
-    if (message.type === "vault-frame-info") return { origin: pending.context.origin, topOrigin: pending.context.topOrigin, title: pending.title, username: pending.username, language: pending.language };
+    if (message.type === "vault-frame-info") return { origin: pending.context.origin, topOrigin: pending.context.topOrigin, title: pending.title, username: pending.username, language: pending.language, expires: pending.expires };
     if (message.type === "vault-frame-cancel") { pendingFrames.delete(message.id); return { cancelled: true }; }
     if (message.type === "vault-frame-approve") {
       pendingFrames.delete(message.id);
@@ -122,7 +128,7 @@ async function handle(message, sender) {
     const preferred = selection?.origin === context.origin && selection.expires > Date.now() ? selection.entryId : null;
     return { matches: result.matches, origin: context.origin, preferred, language: settings.language };
   }
-  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(message.entryId || "") || !/^[a-f0-9-]{36}$/.test(message.nonce || "")
+  if (typeof message.entryId !== "string" || !message.entryId.length || message.entryId.length > 128 || !/^[a-f0-9-]{36}$/.test(message.nonce || "")
       || !["login", "username", "password", "otp"].includes(message.mode)) fail("requestError");
   if (context.origin === context.topOrigin) return fill(context, message);
   const result = await vaultBrowserConnection.connectedRequest(`/matches?url=${encodeURIComponent(context.origin)}`);
