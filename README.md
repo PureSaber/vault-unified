@@ -2,7 +2,7 @@
 
 Vault Unified 是面向个人使用的 Windows 密码管理器。密码加密保存在这台设备上；你可以添加、搜索和复制密码，设置自动加密备份，并按需连接已有的外部密码服务。
 
-**v1.4.0** — 完整个人版，正在进行安装交付验证。新增整理恢复、日常登录、完整同步、Passkey、分享及签名更新，详见 [版本说明](docs/release-v1.4.0.md)和[安装／迁移步骤](docs/personal-edition-start.md)。当前正式发布仍为 [v1.3.0](https://github.com/PureSaber/vault-unified/releases/tag/v1.3.0)。
+**v1.4.0 个人版候选套件已生成**，开发及自动化安装验收已完成。新增整理恢复、日常登录、完整同步、Passkey、分享及签名更新，详见 [交付记录](docs/release-record-v1.4.0.md)、[版本说明](docs/release-v1.4.0.md)和[安装／迁移步骤](docs/personal-edition-start.md)。当前公开正式版本仍为 [v1.3.0](https://github.com/PureSaber/vault-unified/releases/tag/v1.3.0)。
 
 ## 开始使用
 
