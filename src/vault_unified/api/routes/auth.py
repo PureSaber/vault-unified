@@ -21,6 +21,8 @@ from vault_unified.api.schemas import (
     UnlockResponse,
     VaultInfoOut,
     SystemSessionStateIn,
+    HelloPrepareIn,
+    HelloUnlockIn,
 )
 from vault_unified.session import sessions
 from vault_unified.personal_settings import (
@@ -397,6 +399,38 @@ def check_keyring(request: Request) -> dict:
 
     pwd = get_master_password()
     return {"has_saved_password": pwd is not None}
+
+
+@router.post("/hello/prepare")
+def prepare_hello(body: HelloPrepareIn, request: Request, token: str = Depends(get_token)) -> dict:
+    _require_desktop(request)
+    from vault_unified.hello_unlock import hello_unlock, HelloUnlockError
+    try:
+        return {"grant_id": hello_unlock.prepare(token, bytes.fromhex(body.key))}
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Master password unlock required") from exc
+    except HelloUnlockError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/hello/unlock", response_model=UnlockResponse)
+def unlock_hello(body: HelloUnlockIn, request: Request) -> UnlockResponse:
+    _require_desktop(request)
+    from vault_unified.hello_unlock import hello_unlock, HelloUnlockError
+    try:
+        return UnlockResponse(token=hello_unlock.unlock(body.grant_id, bytes.fromhex(body.key)))
+    except PermissionError as exc:
+        raise HTTPException(status_code=423, detail="Unlock cancelled by Windows session lock") from exc
+    except HelloUnlockError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.delete("/hello")
+def clear_hello(request: Request) -> dict:
+    _require_desktop(request)
+    from vault_unified.hello_unlock import hello_unlock
+    hello_unlock.clear()
+    return {"cleared": True}
 
 
 @router.post("/unlock-keyring", response_model=UnlockResponse)

@@ -31,6 +31,7 @@ class VaultSession:
     vault: UnifiedVault
     last_active: float
     browser_binding: tuple[str, str, str] | None = None
+    master_verified: bool = False
 
     def touch(self) -> None:
         self.last_active = time.time()
@@ -66,7 +67,7 @@ class SessionManager:
             self.lock_all()
             return tokens
 
-    def _register(self, vault: UnifiedVault, *, expected_epoch: int) -> tuple[str, UnifiedVault]:
+    def _register(self, vault: UnifiedVault, *, expected_epoch: int, master_verified: bool = True) -> tuple[str, UnifiedVault]:
         from vault_unified.generation_history import prune
         prune(vault.local)
         token = str(uuid4())
@@ -86,6 +87,7 @@ class SessionManager:
                 vault=vault,
                 last_active=time.time(),
                 browser_binding=binding,
+                master_verified=master_verified,
             )
         return token, vault
 
@@ -102,8 +104,12 @@ class SessionManager:
         *,
         vault_path: Path | None = None,
         remember: bool = False,
+        master_verified: bool = True,
+        expected_epoch: int | None = None,
     ) -> tuple[str, UnifiedVault]:
         epoch = self.begin_unlock()
+        if expected_epoch is not None and epoch != expected_epoch:
+            raise PermissionError("Unlock was cancelled by a lock event")
         path = vault_path or get_vault_path()
         require_clean_storage(path)
         if not path.exists():
@@ -126,7 +132,7 @@ class SessionManager:
             if not isinstance(credential, str):
                 raise ValueError("Enter the master password before enabling device unlock")
             self._remember(path, credential)
-        return self._register(vault, expected_epoch=epoch)
+        return self._register(vault, expected_epoch=epoch, master_verified=master_verified and bool(password))
 
     def create_v3(
         self,
@@ -202,6 +208,11 @@ class SessionManager:
         with self._guard:
             self.get(token, touch=False)
             return self._sessions[token].browser_binding
+
+    def master_authenticated(self, token: str) -> bool:
+        with self._guard:
+            self.get(token, touch=False)
+            return self._sessions[token].master_verified
 
     def browser_session(self, binding: tuple[str, str, str]) -> str:
         """Find an already-unlocked vault; never unlock or extend idle time."""

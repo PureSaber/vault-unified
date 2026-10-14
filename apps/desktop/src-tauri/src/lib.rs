@@ -8,6 +8,8 @@ use std::thread;
 use std::time::Duration;
 use tauri::Manager;
 mod desktop;
+mod hello;
+mod native_api;
 pub mod native_host;
 mod system_lock;
 
@@ -35,19 +37,22 @@ use windows_sys::Win32::System::Threading::{
 const READY_PREFIX: &str = "VAULT_API_READY ";
 const MIN_BOOTSTRAP_SECRET_LENGTH: usize = 32;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Serialize)]
 struct ApiRuntimeConfig {
     base_url: String,
     bootstrap_secret: String,
     instance_id: String,
+    #[serde(skip)]
+    native_secret: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 struct SidecarReady {
     host: String,
     port: u16,
     bootstrap_secret: String,
     instance_id: String,
+    native_secret: String,
 }
 
 struct ApiSidecar {
@@ -379,7 +384,10 @@ fn health_ok(ready: &SidecarReady) -> bool {
     if ready.host != "127.0.0.1" || ready.port == 0 {
         return false;
     }
-    if ready.bootstrap_secret.len() < MIN_BOOTSTRAP_SECRET_LENGTH || ready.instance_id.is_empty() {
+    if ready.bootstrap_secret.len() < MIN_BOOTSTRAP_SECRET_LENGTH
+        || ready.native_secret.len() < MIN_BOOTSTRAP_SECRET_LENGTH
+        || ready.instance_id.is_empty()
+    {
         return false;
     }
 
@@ -460,6 +468,7 @@ fn spawn_api(
         base_url: format!("http://127.0.0.1:{}/api", ready.port),
         bootstrap_secret: ready.bootstrap_secret,
         instance_id: ready.instance_id,
+        native_secret: ready.native_secret,
     };
     Ok((child, config, job))
 }
@@ -538,7 +547,12 @@ pub fn run() {
             desktop::get_desktop_status,
             desktop::set_desktop_preferences,
             desktop::desktop_ready,
-            desktop::exit_desktop
+            desktop::exit_desktop,
+            hello::windows_hello_status,
+            hello::enable_windows_hello,
+            hello::unlock_windows_hello,
+            hello::disable_windows_hello,
+            hello::cancel_windows_hello
         ])
         .setup(|app| {
             desktop::setup(app.handle())?;
@@ -551,6 +565,7 @@ pub fn run() {
                 config,
             });
             system_lock::setup(app.handle())?;
+            app.manage(hello::HelloState::default());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -587,7 +602,7 @@ mod tests {
         let line = format!(
             "{}{}",
             READY_PREFIX,
-            r#"{"host":"127.0.0.1","port":54321,"bootstrap_secret":"abcdefghijklmnopqrstuvwxyz123456","instance_id":"instance-1"}"#
+            r#"{"host":"127.0.0.1","port":54321,"bootstrap_secret":"abcdefghijklmnopqrstuvwxyz123456","instance_id":"instance-1","native_secret":"generated-native-capability-0123456789"}"#
         );
         let payload = line.strip_prefix(READY_PREFIX).unwrap();
         let ready: SidecarReady = serde_json::from_str(payload).unwrap();

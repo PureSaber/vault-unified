@@ -23,8 +23,9 @@ def runtime(tmp_path, monkeypatch):
     browser_pairings.clear()
     master = secrets.token_hex(20)
     secret = secrets.token_hex(32)
-    headers = {"X-Vault-Bootstrap": secret, "X-Vault-Client": "vault-unified-desktop"}
-    app = create_app(bootstrap_secret=secret)
+    native_secret = secrets.token_hex(32)
+    headers = {"X-Vault-Bootstrap": secret, "X-Vault-Client": "vault-unified-desktop", "X-Vault-Native": native_secret}
+    app = create_app(bootstrap_secret=secret, native_secret=native_secret)
     with TestClient(app) as client:
         created = client.post("/api/auth/create", headers=headers, json={"password": master, "confirm_password": master})
         assert created.status_code == 200
@@ -89,10 +90,10 @@ def test_delayed_password_unlock_cannot_register_after_a_lock(runtime, monkeypat
     started, release = Event(), Event()
     register = manager._register
 
-    def delayed(vault, *, expected_epoch):
+    def delayed(vault, *, expected_epoch, **kwargs):
         started.set()
         assert release.wait(5)
-        return register(vault, expected_epoch=expected_epoch)
+        return register(vault, expected_epoch=expected_epoch, **kwargs)
 
     monkeypatch.setattr(manager, "_register", delayed)
     with ThreadPoolExecutor() as pool:

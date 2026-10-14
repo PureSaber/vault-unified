@@ -9,6 +9,14 @@ class SystemSessionStateIn(BaseModel):
     blocked: StrictBool
 
 
+class HelloPrepareIn(BaseModel):
+    key: str = Field(pattern=r"^[0-9a-f]{64}$", repr=False)
+
+
+class HelloUnlockIn(HelloPrepareIn):
+    grant_id: str = Field(pattern=r"^[0-9a-f]{64}$", repr=False)
+
+
 class UnlockRequest(BaseModel):
     password: str
     remember: bool = False

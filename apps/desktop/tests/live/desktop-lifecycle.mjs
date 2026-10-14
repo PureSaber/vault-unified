@@ -59,7 +59,12 @@ try {
   await page.getByRole('button', { name: 'Open Generated native account', exact: true }).waitFor();
   step = 'native Windows session and suspend notifications';
   const runtime = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_api_runtime_config'));
+  assert(Object.keys(runtime).sort().join(',') === 'base_url,bootstrap_secret,instance_id', 'Renderer must not receive native capability');
+  const hello = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('windows_hello_status'));
+  assert(typeof hello.supported === 'boolean' && !hello.ready && !hello.busy, 'Hello probe must not enroll or unlock');
+  await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('disable_windows_hello'));
   const apiHeaders = { 'Content-Type': 'application/json', 'X-Vault-Bootstrap': runtime.bootstrap_secret, 'X-Vault-Client': 'vault-unified-desktop' };
+  assert((await fetch(`${runtime.base_url}/auth/hello/prepare`, { method: 'POST', headers: apiHeaders, body: '{}' })).status === 403, 'Renderer bootstrap cannot authorize Hello enrollment');
   const unlockRequest = () => fetch(`${runtime.base_url}/auth/unlock`, { method: 'POST', headers: apiHeaders, body: JSON.stringify({ password: master }) });
   const extraToken = (await (await unlockRequest()).json()).token;
   await page.getByRole('button', { name: 'Add password', exact: true }).click();
@@ -110,6 +115,7 @@ try {
   await wait(async () => { try { await fetch(`${apiAddress}/browser/discovery`); return false; } catch { return true; } });
   step = 'restart, locked shortcut and persisted settings';
   await start();
+  assert(!(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('windows_hello_status'))).ready, 'Hello requires master enrollment after restart');
   native('shortcut');
   assert(await dialog().count() === 0, 'Locked shortcut must not expose entries');
   await page.getByLabel('Master password', { exact: true }).fill(master);

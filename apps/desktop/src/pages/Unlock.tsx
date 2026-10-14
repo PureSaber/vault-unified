@@ -3,6 +3,8 @@ import { api, clearToken, setToken, type RecoveryKitPreview, type StartupRestore
 import { useI18n } from "../i18n";
 import PathPicker from "../components/PathPicker";
 import ConfirmDialog from "../components/ConfirmDialog";
+import { isTauri } from "@tauri-apps/api/core";
+import { helloError } from "../desktop";
 
 interface Props {
   onUnlock: () => void;
@@ -109,6 +111,23 @@ export default function Unlock({ onUnlock }: Props) {
   const [loading, setLoading] = useState(false);
   const [hasKeyring, setHasKeyring] = useState(false);
   const [keyringChecked, setKeyringChecked] = useState(false);
+  const [helloReady, setHelloReady] = useState(false);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let active = true;
+    void api.helloStatus().then(value => { if (active) setHelloReady(value.ready); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  async function handleHello() {
+    setError(""); setLoading(true);
+    try { finish((await api.unlockHello()).token); }
+    catch (reason) {
+      setError(helloError(reason, zh));
+      if (String(reason).includes("hello_needs_master")) setHelloReady(false);
+    } finally { setLoading(false); }
+  }
 
   useEffect(() => {
     if (window.location.hash !== RECOVERY_ROUTE_HASH) return;
@@ -545,6 +564,7 @@ export default function Unlock({ onUnlock }: Props) {
                   {t("unlock.useSaved")}
                 </button>
               )}
+              {helloReady && <button type="button" className="secondary" disabled={loading} onClick={() => void handleHello()}>{zh ? "使用 Windows Hello 解锁" : "Unlock with Windows Hello"}</button>}
             </div>
           </form>
         )}
