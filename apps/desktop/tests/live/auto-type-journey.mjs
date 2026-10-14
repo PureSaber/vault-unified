@@ -48,7 +48,7 @@ export async function exerciseAutoType({ page, root, entryId, username, password
       if (state.username === username && state.password === password) break;
       await new Promise(resolve => setTimeout(resolve, 50));
     }
-    assert(state.username === username && state.password === password && state.submissions === 0 && !state.other, `Native literal Unicode/Tab typing or no-submit contract failed (username=${state.username === username}, password=${state.password === password}, submitted=${state.submissions !== 0}, diverted=${Boolean(state.other)})`);
+    assert(state.username === username && state.password === password && state.submissions === 0 && !state.other, `Native literal Unicode/Tab typing or no-submit contract failed (userLength=${state.username.length}/${username.length}, passLength=${state.password.length}/${password.length}, userPrefix=${username.startsWith(state.username)}, passPrefix=${password.startsWith(state.password)}, field=${state.field}, focused=${state.focused}, submitted=${state.submissions !== 0}, diverted=${Boolean(state.other)})`);
     assert(await type(id) === 'type_target', 'Target selection must be one-use');
     id = await capture('divert');
     assert(await type(id, 70) === 'type_focus', 'Focus change must stop native typing');

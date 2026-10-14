@@ -44,7 +44,7 @@ public static class GeneratedTypeTarget {
                 other.Hide(); Focus(form,user); divert=command == "divert";
                 Console.WriteLine(json.Serialize(new { focused=GetForegroundWindow() == form.Handle }));
             } else if (command == "read") {
-                Console.WriteLine(json.Serialize(new { username=user.Text, password=pass.Text, other=sink.Text, submissions=submissions }));
+                Console.WriteLine(json.Serialize(new { username=user.Text, password=pass.Text, other=sink.Text, submissions=submissions, field=user.Focused ? "username" : pass.Focused ? "password" : button.Focused ? "button" : "none", focused=GetForegroundWindow() == form.Handle }));
             } else if (command == "rename") {
                 form.Text="Vault generated changed target"; Console.WriteLine("{\"renamed\":true}");
             }
