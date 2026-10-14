@@ -11,7 +11,9 @@ export async function exerciseAutoType({ page, root, entryId, username, password
   target.stderr.on('data', () => { error = true; });
   function response(command) {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending = undefined; reject(new Error('Generated target timed out')); }, 10_000);
+      // The first response includes cold PowerShell/C# compilation on a CI
+      // worker. Once ready, every input/focus operation keeps its short bound.
+      const timer = setTimeout(() => { pending = undefined; reject(new Error(`Generated target timed out (${command || 'startup'}, exited=${target.exitCode !== null}, stderr=${error})`)); }, command ? 10_000 : 30_000);
       pending = { resolve: value => { clearTimeout(timer); resolve(value); }, reject: reason => { clearTimeout(timer); reject(reason); } };
       if (command) target.stdin.write(command + '\n');
     });
