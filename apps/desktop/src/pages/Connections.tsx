@@ -3,6 +3,7 @@ import ConnectionTools from "../components/ConnectionTools";
 import IntegrationManager from "../components/IntegrationManager";
 import { useI18n } from "../i18n";
 import SyncPanel from "./SyncPanel";
+import PersonalSync from "../components/PersonalSync";
 
 interface Props {
   conflictCount: number;
@@ -37,6 +38,7 @@ export default function Connections({ conflictCount, onOpenConflicts, onSyncDone
         </div>
       )}
 
+      <PersonalSync />
       <IntegrationManager />
       <ConnectionTools />
 

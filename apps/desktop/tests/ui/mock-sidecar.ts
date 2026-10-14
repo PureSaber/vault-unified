@@ -346,6 +346,14 @@ export class MockAuthenticatedSidecar {
       return;
     }
 
+    if (method === "POST" && url.pathname === "/personal-sync/run") {
+      await this.respond(route, 200, { skipped: true });
+      return;
+    }
+    if (method === "GET" && url.pathname === "/personal-sync/status") {
+      await this.respond(route, 200, { connected: false, generation: 0 });
+      return;
+    }
     if (method === "GET" && url.pathname === "/auth/status") {
       await this.respond(route, 200, { unlocked: true });
       return;

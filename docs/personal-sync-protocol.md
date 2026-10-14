@@ -1,13 +1,14 @@
-# Personal synchronization protocol — implementation in progress
+# Personal synchronization protocol
 
 Stage 5 uses immutable authenticated per-device records, transported identically
 through a user-selected folder or WebDAV collection. This document describes the
-implementation contract; no connected product workflow is delivered yet.
+implementation contract. The connected desktop workflow is described in
+[personal-computer-sync.md](personal-computer-sync.md).
 
 Implemented modules cover the record codec, folder/WebDAV transports, causal
-replica, portable payload adapter and crash-safe vault transaction engine. Device
-connection/credential storage, approval UI and automatic scheduling remain the
-next integration increment; the transport does not start on its own.
+replica, portable payload adapter, crash-safe vault transaction engine, explicit
+connection approval and Windows credential storage. No transport starts until a
+connection is approved. Automatic scheduling requires its separate opt-in.
 
 Each space has a random 256-bit AES-GCM key and random identifier. Each installation
 has a separate random device identifier. A change filename contains only the device
@@ -60,7 +61,7 @@ silently discarded. User resolution creates an explicit causal resolution record
 even if the chosen value equals the already-visible local value. A later ordinary
 edit must not implicitly acknowledge or clear an unresolved field conflict.
 
-Compound lists other than immutable entry history are treated as a field and
+Compound lists other than immutable entry/generated-password history are treated as a field and
 require a choice on concurrent edits. Each record is limited to 32 MiB and the
 existing encrypted vault limit remains 256 MiB including local replication state.
 Oversized records or vault candidates fail without truncating data. A cycle reads

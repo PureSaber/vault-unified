@@ -75,6 +75,9 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   useEffect(() => {
     void load();
     void api.payloadFormat().then(data => setPersonalReady(data.version >= 3)).catch(() => {});
+    const changed = () => { hideAllPasswords(); void load(); };
+    window.addEventListener("vault-entries-changed", changed);
+    return () => window.removeEventListener("vault-entries-changed", changed);
   }, []);
 
   const initialSearch = useRef(true);

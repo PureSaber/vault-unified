@@ -15,6 +15,7 @@ from vault_unified.personal_sync.payload import project, materialize
 from vault_unified.personal_sync.replica import initial
 from vault_unified.personal_sync.transport import FolderStore, StorageUnavailable, WebDAVStore
 from vault_unified.v3_crypto import create_v3_file
+from vault_unified.generation_history import generate_saved, list_generated, get_generated
 from test_personal_sync_transport import generated_webdav
 
 
@@ -139,3 +140,17 @@ def test_incoming_unknown_or_malformed_entry_fields_refuse_without_loss(tmp_path
         candidate = copy.deepcopy(view); candidate[object_id][field] = value
         with pytest.raises(ProtocolError): materialize(before, candidate, state(local))
     assert local.export_payload() == before
+
+
+def test_passwords_generated_on_two_offline_computers_are_both_recoverable(tmp_path):
+    space, key = uuid4().hex, secrets.token_bytes(32)
+    a, b = profile(tmp_path / "a", space), profile(tmp_path / "b", space)
+    store = FolderStore(tmp_path, space, create=True)
+    original = generate_saved(a)
+    run(a, store, key); run(b, store, key); run(a, store, key)
+    left, right = generate_saved(a), generate_saved(b)
+    run(a, store, key); run(b, store, key); run(a, store, key)
+    assert not state(a)["conflicts"] and not state(b)["conflicts"]
+    for local in (a, b):
+        assert {item["id"] for item in list_generated(local)} == {item["history_id"] for item in (original, left, right)}
+        assert get_generated(local, right["history_id"])["value"] == right["password"]

@@ -6,7 +6,7 @@ import type { Page, Request } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
-export async function startGeneratedSidecar(page: Page, options: { oldPayload?: boolean } = {}) {
+export async function startGeneratedSidecar(page: Page, options: { oldPayload?: boolean; personalSync?: boolean } = {}) {
   const root = resolve(process.cwd(), "../..");
   const directory = await mkdtemp(join(tmpdir(), "vault-renderer-generated-"));
   let child: ChildProcess | undefined;
@@ -18,6 +18,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   page.on("requestfinished", finished);
   page.on("requestfailed", finished);
   const stop = async () => {
+    let stopError: unknown;
     if (child?.pid && child.exitCode === null && child.signalCode === null) {
       const exited = new Promise<void>((accept) => child!.once("exit", () => accept()));
       try {
@@ -28,7 +29,8 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
           const deadline = setTimeout(() => {
             clearTimeout(quiet);
             changed = () => {};
-            reject(new Error("Generated API still has pending renderer requests"));
+            const requests = [...pending].map(request => `${request.method()} ${new URL(request.url()).pathname}`).join(", ");
+            reject(new Error(`Generated API still has pending renderer requests: ${requests}`));
           }, 5000);
           changed = () => {
             clearTimeout(quiet);
@@ -40,6 +42,8 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
           };
           changed();
         });
+      } catch (error) {
+        stopError = error;
       } finally {
         child.kill();
         await exited;
@@ -52,6 +56,16 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("vault-renderer-generated-")) {
       throw new Error("Generated test directory is outside its cleanup boundary");
     }
+    if (options.personalSync) {
+      await new Promise<void>((accept, reject) => {
+        const cleanup = spawn(join(root, process.platform === "win32" ? ".venv/Scripts/python.exe" : ".venv/bin/python"), [join(root, "apps/desktop/tests/live/cleanup-generated-sync.py"), directory], {
+          cwd: directory, windowsHide: true, stdio: "ignore", env: { ...process.env, PYTHONPATH: join(root, "src"), UI_GENERATED_SYNC_MASTER: testData.masterPassword },
+        });
+        cleanup.once("error", () => reject(new Error("Generated sync credential cleanup could not start")));
+        cleanup.once("exit", code => code === 0 ? accept() : reject(new Error("Generated sync credential cleanup failed; isolated files retained")));
+      });
+    }
+    if (stopError) throw stopError;
     await rm(target, { recursive: true, force: true, maxRetries: 3 });
   };
   try {
@@ -90,7 +104,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
         },
       } });
     }, { base_url: `http://127.0.0.1:${port}/api`, bootstrap_secret: testData.bootstrapSecret, instance_id: "generated-renderer-api" });
-    return { stop };
+    return { stop, directory };
   } catch (error) {
     await stop();
     throw error;

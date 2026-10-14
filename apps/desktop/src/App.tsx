@@ -22,6 +22,7 @@ import { useToast } from "./components/Toast";
 import ConfirmDialog from "./components/ConfirmDialog";
 import ImportWizard from "./components/ImportWizard";
 import QuickSearch from "./components/QuickSearch";
+import PersonalSyncRunner from "./components/PersonalSyncRunner";
 import { cancelHello, desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
 
 type TopPage = "passwords" | "security" | "connections" | "settings";
@@ -437,6 +438,7 @@ function AppShell() {
             />
           </>
         )}
+        <PersonalSyncRunner paused={["editor", "import", "connections", "conflicts"].includes(page)} onOpen={() => requestNavigation("connections")} />
         {page === "import" && (
           <div className="card">
             <button type="button" className="ghost page-back" onClick={() => requestNavigation("passwords")}>

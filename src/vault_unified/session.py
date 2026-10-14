@@ -199,6 +199,8 @@ class SessionManager:
             if not session or session.expired():
                 if session:
                     del self._sessions[token]
+                    from vault_unified.personal_sync.connections import connections
+                    connections.clear_scope(token)
                 raise PermissionError("Session expired or invalid")
             if touch:
                 session.touch()
@@ -225,11 +227,15 @@ class SessionManager:
         with self._guard:
             if self._sessions.pop(token, None):
                 self._epoch += 1
+            from vault_unified.personal_sync.connections import connections
+            connections.clear_scope(token)
 
     def lock_all(self) -> None:
         with self._guard:
             self._epoch += 1
             self._sessions.clear()
+            from vault_unified.personal_sync.connections import connections
+            connections.clear_scope(None)
 
     def is_unlocked(self, token: str) -> bool:
         session = self._sessions.get(token)
