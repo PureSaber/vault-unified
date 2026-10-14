@@ -27,7 +27,7 @@ export default function PasswordHealth({ onOpen }: { onOpen: (entry: Entry) => v
     finally { if (stamp === generation.current) setBusy(false); }
   }
   async function checkNetwork(items: PasswordHealthItem[]) {
-    if (!network || running) return;
+    if (!network || running || busy) return;
     stop(); const stamp = generation.current;
     const abort = new AbortController(); controller.current = abort; setRunning(true); setError("");
     const completed = new Set<string>();
@@ -75,7 +75,7 @@ export default function PasswordHealth({ onOpen }: { onOpen: (entry: Entry) => v
     {report && <>
       <p role="status">{zh ? `已检查 ${report.total} 个账号 · 弱密码 ${report.weak} · 重复密码 ${report.reused}` : `${report.total} logins checked · ${report.weak} weak · ${report.reused} reused`}</p>
       {report.unscored > 0 && <p className="field-hint">{zh ? `${report.unscored} 个长密码未做强度评估，仍已检查重复使用。` : `${report.unscored} long passwords were checked for reuse without a strength estimate.`}</p>}
-      <label className="checkbox-label"><input type="checkbox" checked={network} disabled={busy} onChange={event => { setNetwork(event.target.checked); if (!event.target.checked) stop(); }} />{zh ? "本次允许联网查询泄露记录" : "Allow exposure lookups for this visit"}</label>
+      <label className="checkbox-field"><input type="checkbox" checked={network} disabled={busy} onChange={event => { setNetwork(event.target.checked); if (!event.target.checked) stop(); }} /><span>{zh ? "本次允许联网查询泄露记录" : "Allow exposure lookups for this visit"}</span></label>
       <p className="field-hint">{zh ? "查询使用 Have I Been Pwned，仅发送密码 SHA-1 的前 5 位；密码、账号和完整哈希留在本机。" : "Lookups use Have I Been Pwned and send only the first 5 SHA-1 characters. Passwords, usernames and full hashes stay here."}</p>
       <div className="button-row"><button className="secondary" type="button" disabled={!network || running || !report.total} onClick={() => void checkNetwork(report.entries)}>{zh ? "查询这些账号的泄露记录" : "Check these logins for exposure"}</button>{running && <button type="button" className="secondary" onClick={stop}>{zh ? "停止查询" : "Stop checking"}</button>}</div>
       {running && <p role="status">{zh ? `正在查询，已有 ${Object.keys(exposure).length} 个结果…` : `Checking; ${Object.keys(exposure).length} results so far…`}</p>}

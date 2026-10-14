@@ -8,6 +8,7 @@ import { testData } from "./test-data";
 test.use({ trace: "off", screenshot: "off" });
 for (const locale of ["en", "zh"] as const) test(`offline findings, optional exposure and password improvement (${locale})`, async ({ page }, testInfo) => {
   test.setTimeout(90_000);
+  page.setDefaultTimeout(15_000);
   const zh = locale === "zh";
   const sidecar = await startGeneratedSidecar(page);
   const weak = testData.entryPassword.slice(-10);
