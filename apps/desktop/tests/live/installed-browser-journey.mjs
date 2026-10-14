@@ -16,6 +16,7 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
         context = await chromium.launchPersistentContext(join(data, `browser-${channel}`), { channel, headless: true, ignoreDefaultArgs: ['--disable-extensions'], args: ['--enable-unsafe-extension-debugging'] });
         const cdp = await context.browser().newBrowserCDPSession();
         const version = await cdp.send('Browser.getVersion');
+        console.log(JSON.stringify({ browser: version.product, phase, starting: true }));
         const { id } = await cdp.send('Extensions.loadUnpacked', { path: extension });
         const website = await context.newPage(); await website.goto(siteUrl);
         const popup = await context.newPage(); popup.setDefaultTimeout(20000);
@@ -52,7 +53,7 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
         await popup.locator('#save-title').fill(`Generated saved ${channel} ${phase}`);
         await popup.locator('#save-username').fill(`generated-${channel}-${phase}`);
         await popup.locator('#generate').click();
-        await popup.waitForFunction(() => document.querySelector('#save-password').value.length > 0);
+        await popup.waitForFunction(() => ['generatedRecoverable', 'generated'].includes(document.querySelector('#status').dataset.key) && document.querySelector('#save-password').value.length > 0);
         const generated = await popup.locator('#save-password').inputValue();
         await popup.getByRole('button', { name: 'Review saving', exact: true }).click();
         await popup.getByLabel("I've confirmed this password works on this website.").check();
@@ -60,7 +61,8 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
         await popup.waitForFunction(() => document.querySelector('#status').dataset.key === 'saved');
         const stored = await api('/entries', null, 'GET');
         const saved = stored.find(value => value.title === `Generated saved ${channel} ${phase}`);
-        assert(saved && (await api(`/entries/${saved.id}?reveal=true`, null, 'GET')).password === generated, 'Installed browser save failed');
+        assert(saved, 'Saved browser account is absent from the desktop session');
+        assert((await api(`/entries/${saved.id}?reveal=true`, null, 'GET')).password === generated, 'Saved browser password differs from the generated draft');
         // Update through the same popup review path, retaining the previous secret.
         await popup.getByRole('button', { name: `Update ${saved.title} ${saved.username}`, exact: true }).click();
         const changed = randomBytes(24).toString('hex');
