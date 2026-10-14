@@ -564,6 +564,21 @@ pub fn run() {
             updates::check_desktop_update,
             updates::install_desktop_update
         ])
+        .on_page_load(|webview, payload| {
+            if webview.label() != "main" || !matches!(payload.event(), tauri::webview::PageLoadEvent::Started) {
+                return;
+            }
+            let app = webview.app_handle();
+            if app.try_state::<ApiSidecar>().is_none() {
+                return; // Initial creation can precede sidecar setup.
+            }
+            hello::cancel_pending(app);
+            auto_type::cancel_pending(app);
+            if native_api::request(app, "POST", "/auth/renderer-reset", "{}", None, Duration::from_secs(2)).is_err() {
+                shutdown_api_sidecar(app);
+                app.exit(1);
+            }
+        })
         .setup(|app| {
             desktop::setup(app.handle())?;
             let resource_dir = app.path().resource_dir().ok();

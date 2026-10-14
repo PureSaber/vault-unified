@@ -61,7 +61,8 @@ def test_system_state_requires_desktop_bootstrap_and_boolean(runtime):
     assert client.get("/api/entries", headers=auth).status_code == 200
 
 
-def test_private_response_already_in_flight_is_discarded_on_system_lock(runtime):
+@pytest.mark.parametrize("path,body", [("system-state", {"blocked": True}), ("renderer-reset", {})])
+def test_private_response_already_in_flight_is_discarded_on_system_lock(runtime, path, body):
     app, client, headers, auth, _ = runtime
     started, release = Event(), Event()
     value = secrets.token_hex(24)
@@ -76,12 +77,32 @@ def test_private_response_already_in_flight_is_discarded_on_system_lock(runtime)
         request = pool.submit(client.get, "/api/generated-slow-read", headers=auth)
         assert started.wait(5)
         try:
-            assert client.post("/api/auth/system-state", headers=headers, json={"blocked": True}).status_code == 200
+            assert client.post(f"/api/auth/{path}", headers=headers, json=body).status_code == 200
         finally:
             release.set()
         result = request.result(timeout=5)
         assert result.status_code == 423
         assert value not in result.text
+
+
+def test_renderer_reset_requires_native_capability_and_preserves_os_lock(runtime):
+    _, client, headers, auth, master = runtime
+    second = client.post("/api/auth/unlock", headers=headers, json={"password": master}).json()["token"]
+    code = client.post("/api/browser/pairing-code", headers=auth).json()["pairing_code"]
+    origin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+    paired = client.post("/api/browser/pair", headers={"Origin": origin, "X-Vault-Browser-Pairing": code}, json={}).json()
+    browser = {"Origin": origin, "X-Vault-Browser-Token": paired["browser_token"]}
+    renderer = {key: value for key, value in headers.items() if key != "X-Vault-Native"}
+    assert client.post("/api/auth/renderer-reset", headers=renderer, json={}).status_code == 403
+    assert client.get("/api/entries", headers=auth).status_code == 200
+    assert client.post("/api/auth/renderer-reset", headers=headers, json={}).status_code == 200
+    assert client.get("/api/entries", headers=auth).status_code == 401
+    assert not sessions.is_unlocked(second)
+    assert client.post("/api/browser/status", headers=browser).status_code == 401
+    assert client.post("/api/auth/unlock", headers=headers, json={"password": master}).status_code == 200
+    assert client.post("/api/auth/system-state", headers=headers, json={"blocked": True}).status_code == 200
+    assert client.post("/api/auth/renderer-reset", headers=headers, json={}).status_code == 200
+    assert client.post("/api/auth/unlock", headers=headers, json={"password": master}).status_code == 423
 
 
 def test_delayed_password_unlock_cannot_register_after_a_lock(runtime, monkeypatch):

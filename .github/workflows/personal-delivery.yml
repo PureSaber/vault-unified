@@ -1,0 +1,88 @@
+name: Personal delivery
+
+on:
+  pull_request:
+    paths:
+      - 'apps/desktop/src-tauri/windows/**'
+      - 'apps/desktop/src-tauri/tauri.conf.json'
+      - 'apps/desktop/src-tauri/src/native_host.rs'
+      - 'apps/desktop/tests/live/installed-*.mjs'
+      - 'scripts/*release*'
+      - 'scripts/build_browser_extension.py'
+      - '.github/workflows/personal-delivery.yml'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release or draft assets to validate; empty builds with a disposable CI key'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  installed-personal-edition:
+    runs-on: windows-2022
+    timeout-minutes: 50
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable 2026-08-20
+      - name: Install build tools
+        run: npm --prefix apps/desktop ci
+      - name: Build a signed installer with a disposable CI key
+        if: env.RELEASE_TAG == ''
+        shell: pwsh
+        run: |
+          $keyPath = Join-Path $env:RUNNER_TEMP 'generated-updater.key'
+          node apps/desktop/node_modules/@tauri-apps/cli/tauri.js signer generate --ci --write-keys $keyPath *> $null
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create generated signing fixture' }
+          $configPath = 'apps/desktop/src-tauri/tauri.conf.json'
+          $config = Get-Content $configPath -Raw | ConvertFrom-Json
+          $config.plugins.updater.pubkey = (Get-Content ($keyPath + '.pub') -Raw).Trim()
+          $config | ConvertTo-Json -Depth 20 | Set-Content $configPath -Encoding utf8
+          $env:TAURI_SIGNING_PRIVATE_KEY = $keyPath
+          pwsh -NoProfile -File scripts/build-desktop-release.ps1 -SkipNpmInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Generated signed build failed' }
+      - name: Download exact delivery assets
+        if: env.RELEASE_TAG != ''
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Invalid release tag' }
+          npm --prefix apps/desktop run build
+          if ($LASTEXITCODE -ne 0) { throw 'Renderer build failed' }
+          pwsh -NoProfile -File scripts/build-api-sidecar.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged API build failed' }
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir . --pattern '*-setup.exe' --pattern '*.msi' --pattern '*.sig' --pattern '*.zip' --pattern latest.json
+          if ($LASTEXITCODE -ne 0) { throw 'Delivery download failed' }
+          foreach ($kind in @('nsis', 'msi')) {
+            $target = Join-Path $env:GITHUB_WORKSPACE "apps/desktop/src-tauri/target/release/bundle/$kind"
+            New-Item -ItemType Directory -Force -Path $target | Out-Null
+            $pattern = if ($kind -eq 'nsis') { '*-setup.exe*' } else { '*.msi*' }
+            Get-ChildItem -LiteralPath $env:GITHUB_WORKSPACE -Filter $pattern -File | ForEach-Object { Move-Item -LiteralPath $_.FullName -Destination $target }
+          }
+          $env:VAULT_VERIFY_UPDATE_DIR = $env:GITHUB_WORKSPACE
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --test updater_transport verify_release_artifacts_when_requested -- --exact
+          if ($LASTEXITCODE -ne 0) { throw 'Delivered signatures failed verification' }
+      - name: Upgrade v1.3, reopen data, retry and uninstall both formats
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/validate-desktop-release.ps1
+      - name: Retain nonsecret delivery results
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: personal-delivery-${{ github.run_id }}
+          path: release-manifest-v*.json
+          if-no-files-found: error
+          retention-days: 7

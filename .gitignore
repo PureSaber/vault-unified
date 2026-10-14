@@ -46,6 +46,9 @@ apps/desktop/src-tauri/binaries/*
 !apps/desktop/src-tauri/binaries/README.md
 Vault-Unified-Browser-Extension-v*.zip
 release-manifest-v*.json
+Vault-Unified-Personal-v*.zip
+Vault-Unified-Sharing-Service-v*.zip
+/latest.json
 
 # PyInstaller
 *.spec

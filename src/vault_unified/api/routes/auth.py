@@ -396,6 +396,19 @@ def system_session_state(body: SystemSessionStateIn, request: Request) -> dict:
     return {"locked": True, "blocked": body.blocked}
 
 
+@router.post("/renderer-reset")
+def renderer_reset(request: Request) -> dict:
+    _require_desktop(request)
+    from vault_unified.browser_pairing import browser_pairings
+    from vault_unified.import_flow import import_flow_store
+
+    for token in sessions.reset_renderer():
+        browser_pairings.cancel_session(token, forget=False)
+        import_flow_store.clear_session(token)
+        restore_preview_store.clear_scope(token)
+    return {"locked": True}
+
+
 @router.get("/check-keyring")
 def check_keyring(request: Request) -> dict:
     require_loopback(request)

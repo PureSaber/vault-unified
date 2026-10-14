@@ -56,8 +56,39 @@ def clear(instance_id: str) -> None:
             pass
 
 
+def restore_registration() -> bool:
+    """Restore an existing bridge after a manual upgrade/reinstall at the same path.
+
+    The public manifest is retained with the local configuration. Restoring it
+    cannot authorize a browser: signed device proof and vault unlock still apply.
+    A new installation or a manifest owned by another executable is left alone.
+    """
+    directory = discovery_dir()
+    executable = os.environ.get("VAULT_BROWSER_HOST_EXE")
+    if os.name != "nt" or directory is None or not executable:
+        return False
+    path = directory / "native-host.json"
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 8192:
+            return False
+        value = json.loads(path.read_text(encoding="utf-8"))
+        if value.get("name") != HOST_NAME or value.get("type") != "stdio":
+            return False
+        previous = Path(value.get("path", ""))
+        if not previous.is_absolute() or not previous.is_file() or previous.resolve() != Path(executable).resolve():
+            return False
+        origins = value.get("allowed_origins")
+        if not isinstance(origins, list) or not 1 <= len(origins) <= 32:
+            return False
+        if not all(isinstance(origin, str) and origin.endswith("/") and _ORIGIN.fullmatch(origin[:-1]) for origin in origins):
+            return False
+        return register(origins[0][:-1])
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+
+
 def register(origin: str) -> bool:
-    """Called only after a successful user-mediated pairing, never at import."""
+    """Pairing enrolls an origin; startup may restore a previously owned manifest."""
     directory = discovery_dir()
     executable = os.environ.get("VAULT_BROWSER_HOST_EXE")
     if os.name != "nt" or directory is None or not executable:

@@ -47,6 +47,7 @@ fn call(
                 "/auth/hello",
                 "/auth/lock",
                 "/auth/system-state",
+                "/auth/renderer-reset",
                 "/entries/tools/auto-type",
                 "/personal/update/prepare",
             ]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sys
 import zipfile
 from pathlib import Path
@@ -90,3 +91,14 @@ def test_extension_zip_is_identical_for_lf_and_crlf_checkouts(
     assert lf_archive.read_bytes() == crlf_archive.read_bytes()
     with zipfile.ZipFile(lf_archive, "r") as bundle:
         assert all(b"\r" not in bundle.read(name) for name in ARCHIVE_FILES)
+
+
+def test_release_contains_every_referenced_runtime_asset(tmp_path: Path) -> None:
+    archive = build_extension_archive(REPO_ROOT, tmp_path)
+    with zipfile.ZipFile(archive) as bundle:
+        names = set(bundle.namelist())
+        for name in names:
+            if name.endswith((".js", ".json", ".html")):
+                references = re.findall(r'["\']([a-z][a-z0-9-]*\.(?:js|css|html))["\']', bundle.read(name).decode())
+                assert set(references) <= names, (name, set(references) - names)
+        assert {"passkey-main.js", "passkey-bridge.js"} <= names

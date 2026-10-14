@@ -95,6 +95,47 @@ fn read_json(path: &std::path::Path) -> Result<Value, ()> {
     serde_json::from_slice(&data).map_err(|_| ())
 }
 
+fn manifest_belongs_to(manifest: &std::path::Path, executable: &std::path::Path) -> bool {
+    let Ok(value) = read_json(manifest) else { return false; };
+    if value.get("name").and_then(Value::as_str) != Some("org.vaultunified.desktop") {
+        return false;
+    }
+    let Some(path) = value.get("path").and_then(Value::as_str) else { return false; };
+    let path = std::path::Path::new(path);
+    if !path.is_absolute() { return false; }
+    match (path.canonicalize(), executable.canonicalize()) {
+        (Ok(left), Ok(right)) => left.to_string_lossy().eq_ignore_ascii_case(&right.to_string_lossy()),
+        _ => false,
+    }
+}
+
+/// The uninstaller only removes current-user registrations that still point to
+/// this exact executable. It never deletes a vault, identity, or another install.
+#[cfg(windows)]
+pub fn unregister() -> bool {
+    use windows_sys::Win32::System::Registry::{RegDeleteKeyW, RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+    let Ok(executable) = std::env::current_exe() else { return false; };
+    let mut success = true;
+    for browser in ["Google\\Chrome", "Microsoft\\Edge"] {
+        let subkey: Vec<u16> = format!("Software\\{browser}\\NativeMessagingHosts\\org.vaultunified.desktop\0").encode_utf16().collect();
+        let mut value = [0u16; 4096];
+        let mut size = std::mem::size_of_val(&value) as u32;
+        let result = unsafe { RegGetValueW(HKEY_CURRENT_USER, subkey.as_ptr(), std::ptr::null(), RRF_RT_REG_SZ, std::ptr::null_mut(), value.as_mut_ptr().cast(), &mut size) };
+        if result == 2 { continue; } // not registered
+        if result != 0 || size == 0 || size % 2 != 0 { success = false; continue; }
+        let Some(end) = value.iter().position(|v| *v == 0) else { success = false; continue; };
+        let Ok(path) = String::from_utf16(&value[..end]) else { success = false; continue; };
+        if manifest_belongs_to(std::path::Path::new(&path), &executable) {
+            let result = unsafe { RegDeleteKeyW(HKEY_CURRENT_USER, subkey.as_ptr()) };
+            success &= result == 0 || result == 2;
+        }
+    }
+    success
+}
+
+#[cfg(not(windows))]
+pub fn unregister() -> bool { true }
+
 fn discover(origin: &str, dir: &std::path::Path) -> Result<Value, ()> {
     if !valid_origin(origin) {
         return Err(());
@@ -237,5 +278,20 @@ mod tests {
         ));
         assert!(!valid_origin("https://abcdefghijklmnopabcdefghijklmnop/"));
         assert!(!valid_origin("chrome-extension://../../etc"));
+    }
+    #[test]
+    fn uninstall_registration_must_belong_to_this_executable() {
+        let temp = tempfile::tempdir().unwrap();
+        let this = temp.path().join("installed.exe");
+        let other = temp.path().join("other.exe");
+        std::fs::write(&this, b"generated").unwrap();
+        std::fs::write(&other, b"generated").unwrap();
+        let manifest = temp.path().join("native-host.json");
+        for (path, name, expected) in [(&this, "org.vaultunified.desktop", true), (&other, "org.vaultunified.desktop", false), (&this, "another.host", false)] {
+            std::fs::write(&manifest, json!({"name": name, "path": path}).to_string()).unwrap();
+            assert_eq!(manifest_belongs_to(&manifest, &this), expected);
+        }
+        std::fs::write(&manifest, b"invalid").unwrap();
+        assert!(!manifest_belongs_to(&manifest, &this));
     }
 }

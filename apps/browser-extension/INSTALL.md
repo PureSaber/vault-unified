@@ -23,11 +23,10 @@ The pairing token is kept only in `chrome.storage.session`. Locking or exiting
 the desktop app, cancelling or regenerating pairing, or reaching the expiry
 time makes the old token unusable.
 
-## Account saving in development builds
+## Account saving and persistent authorization
 
-The development source includes account saving and optional persistent authorization;
-the published v1.3.0 desktop does not provide these endpoints. Use a matching
-desktop build. For v3 vaults, name and authorize the browser when pairing. It can
+Version <version> includes account saving and optional persistent authorization.
+Use desktop version <version>; v1.3.0 does not provide these endpoints. For v3 vaults, name and authorize the browser when pairing. It can
 obtain fresh access after you unlock, including after either app restarts. A
 non-exportable signing identity is stored in the extension's IndexedDB; access
 tokens stay session-only. Revoke authorized browsers in desktop Connections.
@@ -47,7 +46,7 @@ explicitly marked new-password fields, then confirm the website accepted the
 password before saving. Closing the window, locking, or leaving the original
 website clears the draft. No background form monitoring is used.
 
-## Optional input-field suggestions in development builds
+## Optional input-field suggestions
 
 In the extension, expand **Choose accounts inside fields** and enable the current
 website. To authorize an embedded website, enter its address separately. You can
@@ -68,3 +67,14 @@ changed document, replaced target, lock, expired confirmation or revoked site
 permission prevents the pending fill. On unsupported fields, use the extension
 popup or copy from the desktop. Configure the shortcut in the browser's extension
 shortcut settings if another extension already uses it.
+
+## Passkeys and extension updates
+
+Enable passkeys for the chosen website in the extension. Create/sign-in requests
+open a desktop confirmation; private keys stay in the encrypted vault. Cancel or
+lock to stop. Use the website's other provider option when needed.
+
+To update, replace files in the existing extracted folder and click Reload in
+the extension manager. Keeping the directory retains the extension identity.
+Remove duplicate old extensions. Desktop updates do not replace unpacked files.
+Use the matching <version> desktop and extension from the same kit.

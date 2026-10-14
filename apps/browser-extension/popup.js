@@ -15,6 +15,7 @@ let busy = false;
 let checking = false;
 
 const messages = {
+  versionMismatch: ["桌面与扩展版本不一致，请更新同一安装套件中的两个组件后重试。", "Desktop and extension versions differ. Update both from the same release kit and retry."],
   fillOtp: ["填入验证码", "Fill verification code"],
   otpFilled: ["已填入验证码。", "Verification code filled."],
   otpAmbiguous: ["未找到唯一的验证码输入框，可从桌面端复制后粘贴。", "No single verification-code field was found. Copy the code from the desktop."],
