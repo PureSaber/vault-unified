@@ -46,7 +46,11 @@ TypeScript/build and the repository secret scan. The native lifecycle journey
 passed close-to-tray, a real shortcut from another generated window, second-launch
 focus, dirty-exit cancellation, restart/unlock, preference persistence, shortcut
 disable/re-enable, actual blob QR decoding and sidecar termination. CI reruns the
-native journey on the proposed commit.
+native journey on the proposed commit. Its native GUI job uses Windows Server
+2022 while the other jobs use the latest runner. Server 2025 currently has an
+[upstream WebView2 automation failure](https://github.com/actions/runner-images/issues/14738)
+before the debugging endpoint opens; the runtime is not downgraded or pinned.
+Local native acceptance also passed on Windows 11.
 
 The native content policy also permits local blob images, allowing the existing
 offline TOTP QR image reader to decode a selected image in the packaged webview.
