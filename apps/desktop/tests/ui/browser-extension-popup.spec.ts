@@ -10,6 +10,7 @@ const popupHtml = readFileSync(`${extensionRoot}/popup.html`, "utf8")
   .replace(/<script[^>]*><\/script>/g, "")
   .replace(/<link[^>]*popup\.css[^>]*>/g, "");
 const popupScript = readFileSync(`${extensionRoot}/popup.js`, "utf8");
+const connectionScript = readFileSync(`${extensionRoot}/connection.js`, "utf8");
 const fillScript = readFileSync(`${extensionRoot}/fill.js`, "utf8");
 const popupCss = readFileSync(`${extensionRoot}/popup.css`, "utf8");
 
@@ -171,6 +172,7 @@ async function loadPopup(
   // These renderer tests exercise session-only behavior. Cryptographic identity
   // and persistence are tested in the actual extension/API restart journey.
   await page.addScriptTag({ content: "const vaultBrowserIdentity = { read: async () => null, remove: async () => {}, create: async () => ({ publicKey: 'generated-public-key' }) };" });
+  await page.addScriptTag({ content: connectionScript });
   await page.addScriptTag({ content: popupScript });
   await expect(page.locator("#language")).toBeEnabled();
 }

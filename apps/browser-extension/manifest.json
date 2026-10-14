@@ -3,6 +3,12 @@
   "name": "Vault Unified Personal Fill",
   "description": "User-clicked fill from an unlocked local Vault Unified desktop app.",
   "version": "1.3.0",
+  "minimum_chrome_version": "109",
+  "background": { "service_worker": "background.js" },
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "commands": {
+    "choose-account": { "suggested_key": { "default": "Alt+Shift+V" }, "description": "Choose a Vault Unified account for the focused field" }
+  },
   "action": {
     "default_title": "Vault Unified Fill",
     "default_popup": "popup.html"

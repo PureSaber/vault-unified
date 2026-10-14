@@ -25,7 +25,7 @@ def test_all_shipped_components_share_one_release_version() -> None:
     assert require_version_contract(REPO_ROOT) == versions["browser-extension"]
 
 
-def test_extension_manifest_permissions_are_frozen() -> None:
+def test_extension_manifest_requires_explicit_website_authorization() -> None:
     manifest = json.loads(
         (REPO_ROOT / "apps/browser-extension/manifest.json").read_text(encoding="utf-8")
     )
@@ -37,6 +37,8 @@ def test_extension_manifest_permissions_are_frozen() -> None:
     ]
     assert "content_scripts" not in manifest
     assert "externally_connectable" not in manifest
+    assert manifest["optional_host_permissions"] == ["http://*/*", "https://*/*"]
+    assert manifest["background"] == {"service_worker": "background.js"}
 
 
 def test_extension_zip_is_deterministic_allowlisted_and_secret_free(tmp_path: Path) -> None:
@@ -58,7 +60,7 @@ def test_extension_zip_is_deterministic_allowlisted_and_secret_free(tmp_path: Pa
         combined = b"\n".join(bundle.read(name) for name in bundle.namelist())
     assert b"apps/browser-extension" not in combined
     assert b"chrome.storage.session" in combined
-    assert b"chrome.storage.local" not in combined
+    assert b"vaultUnifiedInlinePreferences" in combined
     assert b"chrome.storage.sync" not in combined
     for forbidden in (b".env", b"BEGIN PRIVATE KEY", b"Bearer ", b"bootstrap_secret"):
         assert forbidden not in combined

@@ -16,8 +16,14 @@ except ImportError:
 
 ARCHIVE_FILES = (
     "INSTALL.md",
+    "background.js",
+    "connection.js",
     "fill.js",
+    "frame-confirm.html",
+    "frame-confirm.js",
     "identity.js",
+    "inline-settings.js",
+    "inline.js",
     "manifest.json",
     "popup.css",
     "popup.html",

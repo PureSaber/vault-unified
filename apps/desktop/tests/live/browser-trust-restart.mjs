@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { resolve, join, dirname, basename } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { inlineJourney } from './browser-inline-journey.mjs';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const isolated = await mkdtemp(join(tmpdir(), 'vault-trust-live-'));
@@ -84,9 +85,18 @@ try {
   await cp(join(root, 'apps/browser-extension'), join(isolated, 'extension'), { recursive: true });
   // Only the native host name changes, so this test never registers/replaces
   // production Chrome/Edge host keys or uses the owner's browser profile.
-  const popupPath = join(isolated, 'extension/popup.js');
-  await writeFile(popupPath, (await readFile(popupPath, 'utf8')).replace('org.vaultunified.desktop', host));
-  site = createServer((_req, response) => response.end('<!doctype html><input autocomplete="username"><input type="password" autocomplete="current-password"><input autocomplete="one-time-code">'));
+  const connectionPath = join(isolated, 'extension/connection.js');
+  await writeFile(connectionPath, (await readFile(connectionPath, 'utf8')).replace('org.vaultunified.desktop', host));
+  site = createServer((req, response) => {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    response.setHeader('Content-Type', 'text/html');
+    if (url.pathname === '/step-one') return response.end('<!doctype html><form onsubmit="event.preventDefault();this.dataset.submitted=\'yes\'"><input autocomplete="username"></form>');
+    if (url.pathname === '/step-two') return response.end('<!doctype html><form><input type="password" autocomplete="current-password"></form>');
+    if (url.pathname === '/complex') return response.end('<!doctype html><form><input autocomplete="username"><input id="first-password" type="password"></form><form><input id="second-user" autocomplete="username"><input id="second-password" type="password"></form>');
+    if (url.pathname === '/dynamic') return response.end('<!doctype html><button id="mount" onclick="const root=document.querySelector(\'section\').attachShadow({mode:\'open\'});root.innerHTML=\'<form><input autocomplete=username><input type=password autocomplete=current-password></form>\';this.remove()">Show login</button><section></section>');
+    if (url.pathname === '/embedded' && /^http:\/\/127\.0\.0\.1:\d+$/.test(url.searchParams.get('origin') || '')) return response.end(`<!doctype html><iframe src="${url.searchParams.get('origin')}"></iframe>`);
+    response.end('<!doctype html><input autocomplete="username"><input type="password" autocomplete="current-password"><input autocomplete="one-time-code">');
+  });
   await new Promise((accept) => site.listen(0, '127.0.0.1', accept));
   const first = await startApi();
   token = (await api('/auth/create', { password: master, confirm_password: master })).token;
@@ -151,6 +161,8 @@ try {
   await browser.website.waitForFunction(() => /^\d{6}$/.test(document.querySelector('[autocomplete="one-time-code"]').value));
   const afterCode = await api(`/entries/${generatedEntry.id}/totp`, null, 'GET');
   assert([beforeCode.code, afterCode.code].includes(await browser.website.locator('[autocomplete="one-time-code"]').inputValue()), 'Actual extension filled an incorrect verification code');
+  step = 'actual inline selection, stepwise forms and cross-origin consent';
+  await inlineJourney({ browser, context, api, password, assert });
   step = 'manual address fallback when native discovery is unavailable';
   const manifest = join(isolated, 'bridge/native-host.json');
   const disabledManifest = join(isolated, 'bridge/native-host.disabled.json');
@@ -170,7 +182,10 @@ try {
     assert(await browser.popup.locator('#pair-form').isHidden(), 'Manual address fallback required new authorization');
   } finally { await rename(disabledManifest, manifest); }
   const persistent = await browser.popup.evaluate(async () => ({ local: await chrome.storage.local.get(null), sync: await chrome.storage.sync.get(null) }));
-  assert(JSON.stringify(persistent) === '{"local":{},"sync":{}}', 'Extension wrote persistent browser token storage');
+  const preferences = persistent.local.vaultUnifiedInlinePreferences;
+  assert(Object.keys(persistent.local).join() === 'vaultUnifiedInlinePreferences' && Object.keys(persistent.sync).length === 0
+    && Object.keys(preferences).sort().join() === 'all,excluded,language,sites' && preferences.all === false
+    && preferences.sites.length === 0 && preferences.excluded.length === 0 && preferences.language === 'en', 'Extension persisted data beyond non-secret inline preferences');
   const devices = await api('/browser/devices', null, 'GET');
   assert(devices.devices.length === 1 && devices.devices[0].id === identityCheck.deviceId, 'Device list lost authorization across restart');
   step = 'desktop revocation rejects outstanding browser authorization';
@@ -183,14 +198,14 @@ try {
   console.log(JSON.stringify({ result: 'passed', actual_native_executable: true, actual_windows_credentials: true,
     actual_chromium_extension: true, actual_api_restart: true, changed_port_discovered: true,
     private_key_export_denied: true, stale_instance_rejected: true, locked_access_denied: true, manual_address_fallback: true,
-    desktop_revocation: true, real_totp_fill: true, extra_website_matched: true, generated_password_recovered: true, real_credentials_used: false }));
+    desktop_revocation: true, real_totp_fill: true, extra_website_matched: true, generated_password_recovered: true, inline_filling: true, stepwise_login: true, cross_origin_frame_consent: true, real_credentials_used: false }));
 } catch (error) {
   console.error(`Generated trust restart check failed at ${step}: ${String(error.message).split('\n')[0]}`);
   process.exitCode = 1;
 } finally {
   if (context) await context.close();
   await stopApi();
-  if (site) await new Promise((accept) => site.close(accept));
+  if (site) { site.closeAllConnections(); await new Promise((accept) => site.close(accept)); }
   try { execFileSync(python, [fixture, 'clean', isolated, host], { cwd: root, windowsHide: true, stdio: 'pipe' }); }
   catch { console.error('Generated fixture cleanup failed; isolated artifacts retained'); process.exitCode = 1; }
   const target = resolve(isolated);

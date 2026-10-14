@@ -64,6 +64,7 @@ class EmergencyRecoveryApplyIn(BaseModel):
 class BrowserFillIn(BaseModel):
     entry_id: str = Field(min_length=1, max_length=128)
     url: str = Field(min_length=1, max_length=8_192)
+    field: Literal["login", "username", "password"] = "login"
 
 
 class BrowserPairIn(BaseModel):

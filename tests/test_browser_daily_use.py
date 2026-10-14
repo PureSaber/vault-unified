@@ -56,6 +56,31 @@ def account(**changes):
             "password": secrets.token_urlsafe(24), "url": SITE, **changes}
 
 
+def test_stepwise_fill_limits_returned_fields_and_keeps_matching_and_lock_checks(app):
+    generated = account()
+    created = app.client.post("/api/entries", headers=app.desktop,
+                              json={key: value for key, value in generated.items() if key != "entry_id"})
+    assert created.status_code == 200
+    entry_id = created.json()["id"]
+    for field, expected in (("username", {"username": generated["username"]}),
+                            ("password", {"password": generated["password"]}),
+                            ("login", {"username": generated["username"], "password": generated["password"]})):
+        result = app.client.post("/api/browser/fill", headers=app.browser,
+                                 json={"entry_id": entry_id, "url": SITE, "field": field})
+        assert result.status_code == 200 and result.json() == expected
+        assert result.headers["cache-control"] == "no-store"
+    wrong_site = app.client.post("/api/browser/fill", headers=app.browser,
+                                 json={"entry_id": entry_id, "url": "https://elsewhere.invalid", "field": "username"})
+    assert wrong_site.status_code == 400
+    invalid_field = app.client.post("/api/browser/fill", headers=app.browser,
+                                    json={"entry_id": entry_id, "url": SITE, "field": "notes"})
+    assert invalid_field.status_code == 422
+    assert app.client.post("/api/auth/lock", headers=app.desktop).status_code == 200
+    locked = app.client.post("/api/browser/fill", headers=app.browser,
+                             json={"entry_id": entry_id, "url": SITE, "field": "username"})
+    assert locked.status_code == 401
+
+
 def preview(app, body):
     result = app.client.post("/api/browser/save/preview", headers=app.browser, json=body)
     assert result.status_code == 200
