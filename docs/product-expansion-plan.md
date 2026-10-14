@@ -14,18 +14,18 @@ than replaced with a simulated completion claim.
 
 | # | Outcome and acceptance scope | Status / evidence |
 |---|---|---|
-| 1 | Chrome / Edge import: source guidance, format detection, faithful fields, duplicate review, invalid rows, cancel, apply, undo, password-page entry point | Merged in PR #58 / `6cf4237`; CI run 37187313246 passed; source feature, not yet released |
-| 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Merged PR #59 / `6518339`; full CI run 38497981145 passed, including actual native restart journey; source feature, not yet released |
+| 1 | Chrome / Edge import: source guidance, format detection, faithful fields, duplicate review, invalid rows, cancel, apply, undo, password-page entry point | Merged in PR #58 / `6cf4237`; CI run 37187313246 passed; included in the v1.4.0 candidate |
+| 2 | Persistent trusted-browser authorization, desktop discovery, locked-state denial, restart reconnection and device revocation | Merged PR #59 / `6518339`; full CI run 38497981145 passed, including actual native restart journey; included in the v1.4.0 candidate |
 | 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Merged PR #69 / `db7977c`; exact-head CI 38516082343 passed, including actual extension stepwise/dynamic forms, OTP and cross-origin consent |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Merged PR #68 / `db88b8e`; exact-head CI 38514736044 passed, including actual Windows global-shortcut/tray/exit/restart checks |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Merged PR #65 / `67b2db3`; exact-head CI 38507719041 passed, including native extension TOTP filling |
-| 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
+| 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; included in the v1.4.0 candidate |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Merged PR #73; exact-head CI 38525722860 passed, including local/opt-in network boundary tests and bilingual change-password workflow |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Merged PR #66 / `4c5f73c`; exact-head CI 38508845006 passed, including native extension restart recovery |
 | 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | OS lock/suspend merged PR #70 / `f8bdc89`; Hello merged PR #71 / `c4cc6aa`, exact-head CI 38519483457 passed. Native WinRT availability and API boundary checked; owner biometric and physical OS acceptance remain in final installed acceptance |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Merged PR #67 / `2e37952`; exact-head CI 38510146700 passed, including offline suffix boundaries and native extension extra-URL filling |
-| 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Signed updates merged PR #81 / `fb020f0`; exact-head CI 38564284132 passed. Actual Tauri signature/version rejection, encrypted pre-update backup and bilingual controls verified. Matching v1.4 installers, extension and service ZIP implemented in PR #82; installed upgrade/reinstall/uninstall acceptance is in progress. See [signed updates](signed-updates.md) |
+| 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Signed updates merged PR #81 / `fb020f0`; packaging merged PR #82 / `6c8846f`. Final source CI 38571419009 and installed CI 38571419013 passed: EXE/MSI v1.3 upgrades, reinstall/repair, preserved vaults, Chrome/Edge workflows, signatures and uninstall bridge removal. Matching v1.4 kit/service/extension and migration instructions delivered; see [release record](release-record-v1.4.0.md). Owner physical acceptance remains separate |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Merged PR #74 / `7aa71f7`; exact-head CI 38528106242 passed, including isolated full-payload recovery and bilingual two-profile migration |
@@ -36,6 +36,13 @@ than replaced with a simulated completion claim.
 | 20 | Encrypted single-item sharing with expiry/access limits/revocation, then household shared-vault workflow and permissions | Service merged PR #79 / `7214af7`, full CI 38551994402 and actual Compose CI 38551994491 passed. Desktop connection, selected-field links, independent families, signed invitation approval and recoverable pending drafts implemented; bilingual real HTTP/Windows Credential Manager journeys passed. Desktop merged PR #80 / `77a3f26`; full CI 38558369634 and Compose CI 38558369650 passed. See [encrypted sharing](encrypted-sharing.md) |
 
 ## Working method
+
+All seven implementation stages and twenty directions are integrated. The v1.4.0
+candidate kit is ready for the owner's installed acceptance, including physical
+Hello and lock/suspend checks. Automated installed evidence and the exact-file
+delivery record are in [the v1.4.0 record](release-record-v1.4.0.md). The public
+stable release remains v1.3.0 until the candidate is promoted; historical
+"not yet released" notes below refer to that public distribution status.
 
 The owner approved the complete personal-edition plan on 2026-10-14: local first,
 optional networking, Windows desktop and Chrome/Edge extension, plus a separately

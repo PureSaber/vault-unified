@@ -26,7 +26,8 @@ are rejected. There is no additional account or update service.
 The public key is pinned in `tauri.conf.json`. The release private key is kept in
 an ignored `secrets/updater` directory with access restricted to its Windows owner
 and SYSTEM. It is not an extension signing key and never enters Git, screenshots,
-logs or the sharing service. Keep an encrypted offline copy of this signing key;
+logs or the sharing service. The same key is configured in this repository's
+encrypted Actions secret for release builds. Keep an encrypted offline copy of this signing key;
 future in-app updates require the same key. Build scripts consume
 `TAURI_SIGNING_PRIVATE_KEY` and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 
@@ -34,8 +35,11 @@ Tauri CLI 2.12.2 signs the installer with its application version in the trusted
 comment. Updater 2.13.3 requires that value to equal the manifest version, so a
 manifest cannot label an older signed installer as a new release. `latest.json`
 must contain the actual installer URL and signature contents for each Windows
-installer target. Production manifests and signed release assets are produced by
-the packaging increment; this source increment alone is not an installed upgrade.
+installer target. The release build produces matching installers, signatures,
+manifest and personal-edition kit. Installed evidence is recorded in the
+[v1.4.0 delivery record](release-record-v1.4.0.md). Drafts and prereleases do not
+enter the stable update channel. Download the v1.4 candidate manually; promotion
+to the latest stable release makes its matching manifest available to the updater.
 
 ## Verification
 

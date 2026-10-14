@@ -50,28 +50,47 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
         assert([before.code, after.code].includes(await website.locator('[autocomplete="one-time-code"]').inputValue()), 'Installed TOTP does not match');
         step = 'save and change password';
         await popup.locator('#add').click();
-        await popup.locator('#save-title').fill(`Generated saved ${channel} ${phase}`);
-        await popup.locator('#save-username').fill(`generated-${channel}-${phase}`);
+        // openDraft focuses the password on the next frame; wait before typing
+        // into another field so its pending focus cannot redirect test input.
+        await popup.waitForFunction(() => document.activeElement === document.querySelector('#save-password'));
+        const savedTitle = `Generated saved ${channel} ${phase}`;
+        const savedUsername = `generated-${channel}-${phase}`;
+        await popup.locator('#save-title').fill(savedTitle);
+        await popup.locator('#save-username').fill(savedUsername);
         await popup.locator('#generate').click();
         await popup.waitForFunction(() => ['generatedRecoverable', 'generated'].includes(document.querySelector('#status').dataset.key) && document.querySelector('#save-password').value.length > 0);
         const generated = await popup.locator('#save-password').inputValue();
-        await popup.getByRole('button', { name: 'Review saving', exact: true }).click();
-        await popup.getByLabel("I've confirmed this password works on this website.").check();
-        await popup.getByRole('button', { name: 'Confirm save', exact: true }).click();
-        await popup.waitForFunction(() => document.querySelector('#status').dataset.key === 'saved');
-        const stored = await api('/entries', null, 'GET');
-        const saved = stored.find(value => value.title === `Generated saved ${channel} ${phase}`);
-        assert(saved, 'Saved browser account is absent from the desktop session');
-        assert((await api(`/entries/${saved.id}?reveal=true`, null, 'GET')).password === generated, 'Saved browser password differs from the generated draft');
+        async function confirmReviewedSave(expectedPassword, entryId = null) {
+          const reviewed = popup.waitForResponse(response => response.url().endsWith('/browser/save/preview') && response.request().method() === 'POST');
+          await popup.getByRole('button', { name: 'Review saving', exact: true }).click();
+          const response = await reviewed;
+          assert(response.ok(), 'Installed browser save preview failed');
+          const request = response.request().postDataJSON();
+          assert(request.title === savedTitle && request.username === savedUsername && request.password === expectedPassword && request.entry_id === entryId, 'Browser draft differs from the entered account before confirmation');
+          const preview = await response.json();
+          assert(preview.title === savedTitle && preview.username === savedUsername && preview.action === (entryId ? 'update' : 'create'), 'Browser preview differs from the entered account');
+          await popup.getByLabel("I've confirmed this password works on this website.").check();
+          const applied = popup.waitForResponse(response => response.url().endsWith('/browser/save/apply') && response.request().method() === 'POST');
+          await popup.getByRole('button', { name: 'Confirm save', exact: true }).click();
+          const result = await applied;
+          assert(result.ok(), 'Installed browser save commit failed');
+          const receipt = await result.json();
+          assert(receipt.saved === true && typeof receipt.entry_id === 'string' && (!entryId || receipt.entry_id === entryId), 'Browser save returned an invalid receipt');
+          await popup.waitForFunction(() => document.querySelector('#status').dataset.key === 'saved');
+          const stored = await api('/entries', null, 'GET');
+          const saved = stored.find(value => value.id === receipt.entry_id);
+          assert(saved, 'Committed browser account is absent from the desktop session');
+          assert(saved.title === savedTitle && saved.username === savedUsername, 'Committed browser account fields differ from the reviewed preview');
+          assert((await api(`/entries/${saved.id}?reveal=true`, null, 'GET')).password === expectedPassword, 'Committed browser password differs from the reviewed draft');
+          return saved;
+        }
+        const saved = await confirmReviewedSave(generated);
         // Update through the same popup review path, retaining the previous secret.
         await popup.getByRole('button', { name: `Update ${saved.title} ${saved.username}`, exact: true }).click();
+        await popup.waitForFunction(() => document.activeElement === document.querySelector('#save-password'));
         const changed = randomBytes(24).toString('hex');
         await popup.locator('#save-password').fill(changed);
-        await popup.getByRole('button', { name: 'Review saving', exact: true }).click();
-        await popup.getByLabel("I've confirmed this password works on this website.").check();
-        await popup.getByRole('button', { name: 'Confirm save', exact: true }).click();
-        await popup.waitForFunction(() => document.querySelector('#status').dataset.key === 'saved');
-        assert((await api(`/entries/${saved.id}?reveal=true`, null, 'GET')).password === changed, 'Installed browser change-password failed');
+        await confirmReviewedSave(changed, saved.id);
 
         if (phase === 'initial') {
           step = 'Passkey';
