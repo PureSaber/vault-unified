@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 
-from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer, organization
+from vault_unified.api.routes import auth, backups, browser, entries, integrations, personal, sync, transfer, organization, security
 from vault_unified.env import load_env
 from vault_unified import browser_discovery
 
@@ -84,11 +84,14 @@ def create_app(
     app.include_router(integrations.router, prefix="/api")
     app.include_router(personal.router, prefix="/api")
     app.include_router(organization.router, prefix="/api")
+    app.include_router(security.router, prefix="/api")
     app.include_router(sync.router, prefix="/api")
     app.include_router(transfer.router, prefix="/api")
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/security/"):
+            return JSONResponse({"detail": "Invalid security check request"}, status_code=422)
         if request.url.path.startswith("/api/auth/hello"):
             return JSONResponse({"detail": "Invalid Windows Hello request"}, status_code=422)
         if request.url.path.startswith("/api/entries"):

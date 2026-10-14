@@ -454,7 +454,7 @@ function AppShell() {
             onDone={(saved) => requestNavigation("passwords", Boolean(saved))}
           />
         )}
-        {page === "security" && <SecurityRecovery />}
+        {page === "security" && <SecurityRecovery onOpen={entry => { setEditEntry(entry); setEditorDirty(false); setPage("editor"); }} />}
         {page === "connections" && (
           <Connections
             conflictCount={conflictCount}

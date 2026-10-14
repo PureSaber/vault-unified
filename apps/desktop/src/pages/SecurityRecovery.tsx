@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type BackupSummary, type PersonalSettings } from "../api/client";
+import { api, type BackupSummary, type PersonalSettings, type Entry } from "../api/client";
 import BackupCenter from "../components/BackupCenter";
 import PersonalCenter from "../components/PersonalCenter";
 import PayloadUpgrade from "../components/PayloadUpgrade";
 import { useI18n } from "../i18n";
+import PasswordHealth from "../components/PasswordHealth";
 
 const SECURITY_STATUS_EVENT = "vault-security-status-changed";
 
@@ -17,7 +18,7 @@ function displayTime(value: string, locale: string, fallback: string) {
   return Number.isNaN(parsed.valueOf()) ? fallback : parsed.toLocaleString(locale === "zh" ? "zh-CN" : "en-US");
 }
 
-export default function SecurityRecovery() {
+export default function SecurityRecovery({ onOpen }: { onOpen: (entry: Entry) => void }) {
   const { locale } = useI18n();
   const zh = locale === "zh";
   const [settings, setSettings] = useState<PersonalSettings | null>(null);
@@ -75,6 +76,7 @@ export default function SecurityRecovery() {
         <button type="button" className="secondary" onClick={() => void load()}>{zh ? "刷新状态" : "Refresh status"}</button>
       </section>
       <PayloadUpgrade />
+      <PasswordHealth onOpen={onOpen} />
       <PersonalCenter />
       <BackupCenter />
     </div>
