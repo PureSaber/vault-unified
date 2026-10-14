@@ -10,6 +10,11 @@ class UnlockRequest(BaseModel):
     remember: bool = False
 
 
+class PayloadUpgradeIn(BaseModel):
+    preview_token: str = Field(min_length=32, max_length=512)
+    confirm_upgrade: bool = False
+
+
 class CreateVaultRequest(BaseModel):
     password: str = Field(min_length=1, max_length=1024)
     confirm_password: str = Field(min_length=1, max_length=1024)

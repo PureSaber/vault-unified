@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api, type BackupSummary, type PersonalSettings } from "../api/client";
 import BackupCenter from "../components/BackupCenter";
 import PersonalCenter from "../components/PersonalCenter";
+import PayloadUpgrade from "../components/PayloadUpgrade";
 import { useI18n } from "../i18n";
 
 const SECURITY_STATUS_EVENT = "vault-security-status-changed";
@@ -73,6 +74,7 @@ export default function SecurityRecovery() {
         {error && <div className="error" role="alert">{error}</div>}
         <button type="button" className="secondary" onClick={() => void load()}>{zh ? "刷新状态" : "Refresh status"}</button>
       </section>
+      <PayloadUpgrade />
       <PersonalCenter />
       <BackupCenter />
     </div>

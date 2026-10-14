@@ -362,6 +362,10 @@ export class MockAuthenticatedSidecar {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/personal/format") {
+      await this.respond(route, 200, { version: 2, current_version: 3 });
+      return;
+    }
     if (method === "GET" && url.pathname === "/personal/settings") {
       await this.respond(route, 200, clone(this.personalSettings));
       return;

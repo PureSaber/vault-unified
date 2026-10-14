@@ -77,6 +77,8 @@ def write_encrypted_file(path: Path, credential: V3Credential, payload: dict) ->
     if path.exists() and isinstance(inspect_vault_format_file(path), V3Container):
         update_v3_file(path, credential, payload)
         return
+    if payload.get("version") == 3 and "entries" in payload:
+        raise ValueError("Personal payload schema 3 requires a framed V3 vault")
     if not isinstance(credential, str):
         raise TypeError("Legacy vaults require a password")
     blob = encrypt_payload(credential, payload)
