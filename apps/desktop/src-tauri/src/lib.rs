@@ -13,6 +13,7 @@ mod hello;
 mod native_api;
 pub mod native_host;
 mod system_lock;
+mod updates;
 
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
@@ -534,6 +535,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _, event| {
@@ -557,7 +559,10 @@ pub fn run() {
             hello::cancel_windows_hello,
             auto_type::capture_type_target,
             auto_type::start_auto_type,
-            auto_type::cancel_auto_type
+            auto_type::cancel_auto_type,
+            updates::update_status,
+            updates::check_desktop_update,
+            updates::install_desktop_update
         ])
         .setup(|app| {
             desktop::setup(app.handle())?;
@@ -572,6 +577,7 @@ pub fn run() {
             system_lock::setup(app.handle())?;
             app.manage(hello::HelloState::default());
             app.manage(auto_type::AutoTypeState::default());
+            app.manage(updates::UpdateState::default());
             Ok(())
         })
         .build(tauri::generate_context!())

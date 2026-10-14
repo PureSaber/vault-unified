@@ -56,6 +56,7 @@ function AppShell() {
   const [desktop, setDesktop] = useState<DesktopStatus | null>(null);
   const pendingQuickSearch = useRef(false);
   const nativeHandlers = useRef({ search: () => {}, lock: () => {}, exit: () => {} });
+  const updateCheckStarted = useRef(false);
   const idleTimer = useRef<number | null>(null);
   const idleWarningTimer = useRef<number | null>(null);
   const idleCountdownTimer = useRef<number | null>(null);
@@ -206,6 +207,16 @@ function AppShell() {
     }
     lockToUnlock();
   }, [lockToUnlock]);
+
+  useEffect(() => {
+    if (!desktop || updateCheckStarted.current) return;
+    updateCheckStarted.current = true;
+    if (desktop.preferences.check_updates) {
+      void api.checkDesktopUpdate().then(value => {
+        if (value) showToast(locale === "zh" ? `发现 ${value.version} 版，可在设置中查看更新。` : `Version ${value.version} is available in Settings.`, "info");
+      }).catch(() => { /* Optional startup checks retry through the explicit Settings action. */ });
+    }
+  }, [desktop, locale, showToast]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -444,7 +455,7 @@ function AppShell() {
           </>
         )}
         <PasskeyRequests onPendingChange={setPasskeyPending} />
-        <PersonalSyncRunner paused={passkeyPending || ["editor", "import", "connections", "conflicts", "sharing"].includes(page)} onOpen={() => requestNavigation("connections")} />
+        <PersonalSyncRunner paused={editorSaving || passkeyPending || ["editor", "import", "connections", "conflicts", "sharing"].includes(page)} onOpen={() => requestNavigation("connections")} />
         {page === "import" && (
           <div className="card">
             <button type="button" className="ghost page-back" onClick={() => requestNavigation("passwords")}>
@@ -470,7 +481,7 @@ function AppShell() {
             onSyncDone={refreshConflicts}
           />
         )}
-        {page === "settings" && <Settings desktop={desktop} onDesktopChange={setDesktop} onExit={requestExit} />}
+        {page === "settings" && <Settings desktop={desktop} onDesktopChange={setDesktop} onExit={requestExit} onBusy={setEditorSaving} />}
         {page === "sharing" && <Sharing onDirtyChange={setEditorDirty} onSavingChange={setEditorSaving} />}
         {page === "conflicts" && (
           <>
