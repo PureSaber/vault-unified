@@ -787,6 +787,10 @@ button.icon-btn-lg {
 .generator-options .generator-wide { flex-basis: 100%; }
 .generated-secret { overflow-wrap: anywhere; white-space: pre-wrap; }
 .website-rules-list { margin-bottom: var(--space-lg); }
+.quick-search { width: min(680px, 92vw); }
+.quick-search-results { overflow: auto; min-height: 80px; }
+.quick-option { display: grid; gap: var(--space-xs); padding: var(--space-md); border: 1px solid transparent; border-radius: var(--radius-md); cursor: pointer; overflow-wrap: anywhere; }
+.quick-option.selected { border-color: var(--color-accent-hover); background: var(--color-surface-inset); }
 
 .more-options-heading {
   align-items: flex-start;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
 import {
   api,
   clearToken,
@@ -21,11 +21,13 @@ import SecurityRecovery from "./pages/SecurityRecovery";
 import { useToast } from "./components/Toast";
 import ConfirmDialog from "./components/ConfirmDialog";
 import ImportWizard from "./components/ImportWizard";
+import QuickSearch from "./components/QuickSearch";
+import { desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
 
 type TopPage = "passwords" | "security" | "connections" | "settings";
 type Page = TopPage | "editor" | "conflicts" | "import";
 type PendingAction =
-  | { kind: "navigate"; page: Page }
+  | { kind: "navigate"; page: Page; entry?: Entry }
   | { kind: "lock" }
   | { kind: "close" };
 
@@ -46,6 +48,10 @@ function AppShell() {
   const [editorSaving, setEditorSaving] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
+  const [quickSearch, setQuickSearch] = useState(false);
+  const [desktop, setDesktop] = useState<DesktopStatus | null>(null);
+  const pendingQuickSearch = useRef(false);
+  const nativeHandlers = useRef({ search: () => {}, lock: () => {}, exit: () => {} });
   const idleTimer = useRef<number | null>(null);
   const idleWarningTimer = useRef<number | null>(null);
   const idleCountdownTimer = useRef<number | null>(null);
@@ -60,6 +66,7 @@ function AppShell() {
     setEditorSaving(false);
     setPendingAction(null);
     setIdleCountdown(null);
+    setQuickSearch(false);
   }, []);
 
   useEffect(() => {
@@ -243,39 +250,48 @@ function AppShell() {
   }, [editorDirty, editorSaving]);
 
   useEffect(() => {
+    let cancelled = false;
+    void desktopStatus().then(async value => {
+      if (!value || cancelled) return;
+      if (value.preferences.locale !== locale) {
+        try { value = await saveDesktopPreferences({ ...value.preferences, locale }); } catch { /* Keep available controls when preferences cannot be saved. */ }
+      }
+      if (!cancelled) setDesktop(value);
+    });
+    return () => { cancelled = true; };
+  }, [locale]);
+
+  useEffect(() => {
     if (!isTauri()) return;
-
     let active = true;
-    let unlisten: (() => void) | undefined;
-
-    void getCurrentWindow()
-      .onCloseRequested(async (event) => {
-        if (editorSaving) {
-          event.preventDefault();
-          showToast(
-            locale === "zh" ? "正在保存，请等待完成后再关闭" : "Save in progress; wait before closing",
-            "info",
-          );
-          return;
-        }
-        if (editorDirty) {
-          event.preventDefault();
-          setPendingAction({ kind: "close" });
-        }
-      })
-      .then((stopListening) => {
-        if (active) unlisten = stopListening;
-        else stopListening();
-      })
-      .catch(() => {
-        // Renderer-only tests do not provide the Tauri window runtime.
-      });
-
-    return () => {
-      active = false;
-      unlisten?.();
+    const stops: (() => void)[] = [];
+    const subscribe = async (event: string, handler: () => void) => {
+      const stop = await listen(event, handler);
+      if (active) stops.push(stop); else stop();
     };
-  }, [editorDirty, editorSaving, locale, showToast]);
+    void Promise.all([
+      subscribe("desktop-quick-search", () => nativeHandlers.current.search()),
+      subscribe("desktop-lock-requested", () => nativeHandlers.current.lock()),
+      subscribe("desktop-exit-requested", () => nativeHandlers.current.exit()),
+      subscribe("desktop-hidden", () => setQuickSearch(false)),
+    ]).then(async () => { if (active && await desktopReady()) nativeHandlers.current.search(); }).catch(() => { /* Browser preview has no native event runtime. */ });
+    return () => { active = false; stops.forEach(stop => stop()); };
+  }, []);
+
+  useEffect(() => {
+    const key = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.key.toLowerCase() === "k" && !event.altKey && !event.metaKey && unlocked) {
+        event.preventDefault();
+        if (!pendingAction) setQuickSearch(value => !value);
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [unlocked, pendingAction]);
+
+  useEffect(() => {
+    if (unlocked && pendingQuickSearch.current) { pendingQuickSearch.current = false; setQuickSearch(true); }
+  }, [unlocked]);
 
   function requestNavigation(target: Page, force = false) {
     if (editorSaving && !force) {
@@ -293,6 +309,7 @@ function AppShell() {
   }
 
   function handleLock() {
+    setQuickSearch(false);
     if (editorSaving) {
       showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info");
       return;
@@ -304,11 +321,31 @@ function AppShell() {
     void performLock();
   }
 
+  function requestExit() {
+    setQuickSearch(false);
+    if (editorSaving) { showToast(locale === "zh" ? "正在保存，请等待完成后再退出" : "Save in progress; wait before quitting", "info"); return; }
+    if (editorDirty) { setPendingAction({ kind: "close" }); return; }
+    void exitDesktop().catch(() => showToast(locale === "zh" ? "退出失败，请重试" : "Could not quit. Try again.", "error"));
+  }
+
+  nativeHandlers.current = {
+    search: () => { if (!unlocked) pendingQuickSearch.current = true; else if (!pendingAction) setQuickSearch(true); },
+    lock: handleLock,
+    exit: requestExit,
+  };
+
+  function openSearchEntry(entry: Entry) {
+    setQuickSearch(false);
+    if (editorSaving) { showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info"); return; }
+    if (editorDirty) { setPendingAction({ kind: "navigate", page: "editor", entry }); return; }
+    setEditEntry(entry); setEditorDirty(false); setPage("editor");
+  }
+
   async function confirmDiscard() {
     const action = pendingAction;
     if (action?.kind === "close") {
       try {
-        await getCurrentWindow().destroy();
+        await exitDesktop();
       } catch {
         showToast(
           locale === "zh" ? "客户端未能关闭，草稿仍保留在当前窗口中" : "The app could not close; the draft remains in this window",
@@ -323,6 +360,7 @@ function AppShell() {
     if (action?.kind === "lock") {
       void performLock();
     } else if (action?.kind === "navigate") {
+      setEditEntry(action.entry || null);
       setPage(action.page);
       if (action.page === "conflicts" || action.page === "connections") void refreshConflicts();
     }
@@ -360,6 +398,7 @@ function AppShell() {
               {label}
             </button>
           ))}
+          <button type="button" onClick={() => setQuickSearch(true)} title="Ctrl+K">{locale === "zh" ? "快捷搜索" : "Quick search"}</button>
           <button type="button" className="nav-lock" onClick={handleLock}>
             {t("nav.lockNow")}
           </button>
@@ -420,7 +459,7 @@ function AppShell() {
             onSyncDone={refreshConflicts}
           />
         )}
-        {page === "settings" && <Settings />}
+        {page === "settings" && <Settings desktop={desktop} onDesktopChange={setDesktop} onExit={requestExit} />}
         {page === "conflicts" && (
           <>
             <button type="button" className="ghost page-back" onClick={() => setPage("passwords")}>
@@ -430,6 +469,7 @@ function AppShell() {
           </>
         )}
       </main>
+      {quickSearch && <QuickSearch onClose={() => setQuickSearch(false)} onOpen={openSearchEntry} />}
       {idleCountdown !== null && editorDirty && (
         <div className="idle-lock-warning" role="alert" aria-live="assertive">
           {locale === "zh"

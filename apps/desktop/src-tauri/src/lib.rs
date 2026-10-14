@@ -7,6 +7,7 @@ use std::sync::{mpsc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::Manager;
+mod desktop;
 pub mod native_host;
 
 #[cfg(windows)]
@@ -517,10 +518,29 @@ fn shutdown_api_sidecar(app: &tauri::AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            desktop::show_main(app)
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
-        .invoke_handler(tauri::generate_handler![get_api_runtime_config])
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        desktop::quick_search(app);
+                    }
+                })
+                .build(),
+        )
+        .invoke_handler(tauri::generate_handler![
+            get_api_runtime_config,
+            desktop::get_desktop_status,
+            desktop::set_desktop_preferences,
+            desktop::desktop_ready,
+            desktop::exit_desktop
+        ])
         .setup(|app| {
+            desktop::setup(app.handle())?;
             let resource_dir = app.path().resource_dir().ok();
             let (child, config, job) = start_api(resource_dir)
                 .map_err(|message| std::io::Error::new(std::io::ErrorKind::Other, message))?;
@@ -534,6 +554,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| match event {
+            tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { api, .. },
+                ..
+            } if label == "main" => {
+                api.prevent_close();
+                desktop::close_requested(app);
+            }
             tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::Destroyed,
