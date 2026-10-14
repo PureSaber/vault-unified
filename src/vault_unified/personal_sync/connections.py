@@ -304,11 +304,15 @@ class Connections:
         objects = project(payload)
         items = []
         def display(present, value, root=False):
+            from vault_unified.passkeys import NAMESPACE as PASSKEY_NAMESPACE, redact
             if not present: return {"present": False, "value": ""}
             if root:
                 if not isinstance(value, dict): raise ProtocolError("Invalid conflict value")
                 return {"present": True, "value": str(value.get("title", "")), "state": value.get("source_metadata", {}).get("vault_unified:organization", {}).get("state", "active")}
             if not reveal: return {"present": True, "value": "••••••••"}
+            if PASSKEY_NAMESPACE in path and "private_key" in path:
+                return {"present": True, "value": "••••••••"}
+            value = redact(value, within=PASSKEY_NAMESPACE in path)
             text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
             return {"present": True, "value": text[:4000], "truncated": len(text) > 4000}
         for conflict in state["conflicts"].values():

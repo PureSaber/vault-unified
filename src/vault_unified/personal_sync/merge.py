@@ -83,6 +83,22 @@ def reconcile(before: dict | None, current: dict | None, incoming: dict | None, 
             return _clone(ours)
         if ours == base:
             return _clone(theirs)
+        if path == ("source_metadata", "vault_unified:passkeys", "credentials") and isinstance(ours, list) and isinstance(theirs, list):
+            # Credentials are immutable. Merge distinct additions/removals, but
+            # never synthesize one identity from independently changed keys.
+            lists = [base if isinstance(base, list) else [], ours, theirs]
+            if all(all(isinstance(item, dict) and isinstance(item.get("id"), str) for item in group) for group in lists):
+                maps = [{item["id"]: item for item in group} for group in lists]
+                if all(len(group) == len(mapping) for group, mapping in zip(lists, maps)):
+                    result = []
+                    for key in sorted(maps[0].keys() | maps[1].keys() | maps[2].keys()):
+                        original, local, remote = [mapping.get(key, _MISSING) for mapping in maps]
+                        if local == remote or remote == original: selected = local
+                        elif local == original: selected = remote
+                        else: return conflict(base, ours, theirs, path)
+                        if selected is not _MISSING: result.append(copy.deepcopy(selected))
+                    return result
+            return conflict(base, ours, theirs, path)
         if _history_path(path):
             united = _history_union(ours, theirs)
             if united is not None:

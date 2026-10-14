@@ -173,6 +173,14 @@ def apply_resolution(
         winner.linked_sources = {**local.linked_sources, **merged.linked_sources}
     else:
         winner = local
+    # External password sources do not carry portable Passkeys. Choosing their
+    # password fields must not discard local credentials or accept injected ones.
+    from vault_unified.passkeys import NAMESPACE
+    from copy import deepcopy
+    if NAMESPACE in local.source_metadata:
+        winner.source_metadata[NAMESPACE] = deepcopy(local.source_metadata[NAMESPACE])
+    else:
+        winner.source_metadata.pop(NAMESPACE, None)
     winner.mark_synced(remote.remote_updated_at or winner.remote_updated_at)
     return winner
 

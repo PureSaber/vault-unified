@@ -56,7 +56,8 @@ $Collect = @(
     "click",
     "rich",
     "tldextract",
-    "zxcvbn"
+    "zxcvbn",
+    "fido2"
 )
 
 $PyInstallerArgs = @(
@@ -74,6 +75,7 @@ foreach ($mod in $Collect) {
 }
 $PyInstallerArgs += @("--collect-data", "vault_unified")
 $PyInstallerArgs += @("--collect-data", "tldextract")
+$PyInstallerArgs += @("--collect-data", "fido2")
 $PyInstallerArgs += $Entry
 
 Write-Host "Running PyInstaller ..."

@@ -265,7 +265,8 @@ def list_conflicts(
     reveal: bool = False,
     vault: UnifiedVault = Depends(get_vault),
 ) -> list:
-    return [c.to_dict(reveal=reveal) for c in vault.list_conflicts()]
+    from vault_unified.passkeys import redact
+    return [redact(c.to_dict(reveal=reveal)) for c in vault.list_conflicts()]
 
 
 @router.post("/sync/conflicts/{conflict_id}/resolve")

@@ -91,6 +91,7 @@ def copy_totp(entry_id: str, response: Response, vault: UnifiedVault = Depends(g
 
 
 def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
+    from vault_unified.passkeys import summaries
     organization = organization_for(entry)
     return EntryOut(
         id=entry.id,
@@ -107,6 +108,7 @@ def _to_out(entry: SecretEntry, *, reveal: bool = False) -> EntryOut:
         linked_sources=entry.linked_sources,
         created_at=entry.created_at,
         updated_at=entry.updated_at,
+        passkeys=summaries(entry),
         state=organization["state"], favorite=organization["favorite"], trashed_at=organization["trashed_at"],
         **public_data(entry, reveal=reveal),
     )
