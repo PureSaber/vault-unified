@@ -19,15 +19,15 @@ than replaced with a simulated completion claim.
 | 3 | Inline account choice, keyboard filling, multi-step/dynamic forms, explicit handling of complex forms | Pending |
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Pending |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Pending |
-| 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Implemented on `codex/account-organization`; local runtime/regression validation in progress |
+| 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Pending |
-| 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Implemented with account organization; integration pending |
+| 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Pending |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Bulk preview/apply implemented with organization; duplicate review and merge pending |
-| 14 | Understandable history comparison and selective field restoration | Pending |
+| 14 | Understandable history comparison and selective field restoration | Implemented on `codex/history-field-restore`; real API selective restore and existing editor regressions passed; integration pending |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Pending |
 | 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Pending |
@@ -125,9 +125,27 @@ Defaults and scope:
   unlock backup refresh before shutting down that test API fixed it; both focused
   organization journeys then passed, including accessibility and artifact scan.
   The generated screenshot was visually inspected and the search/filter widths
-  corrected. Exact-head CI is pending.
+  corrected. Exact-head CI 38501649498 passed; merged PR #61 / `565f4d7`.
 - See [account-organization.md](account-organization.md). Duplicate merging,
   history field selection and templates remain stage 2 work.
+
+### History field restore
+
+- The history comparison shows current-draft and saved values for changed fields,
+  with per-field selection. Loading selected fields stays in the draft until the
+  existing atomic Save; current unselected fields and attachments remain intact.
+- Passwords, notes, authenticator keys and custom values are hidden by default,
+  with explicit reveal, timeout and blur/visibility hiding. The modal supports
+  keyboard focus and Escape cancellation; old confirmation-only copy was removed.
+- Existing six transactional-editor journeys and the real isolated API selective
+  password/title restore passed, including persistence, cancellation, accessibility
+  and artifact scanning. The full renderer suite exposed a generated-sidecar
+  teardown race (an import cancellation was still in flight at process shutdown).
+  Waiting for a fresh request-quiet interval fixes teardown without suppressing
+  errors; all seven real-API journeys passed afterwards. TypeScript/build passed.
+  Exact-head CI supplies the final full-suite evidence before integration.
+- See [history-field-restore.md](history-field-restore.md). No additional backend
+  approval, hashing or persistence mechanism was introduced.
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

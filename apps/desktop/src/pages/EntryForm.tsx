@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Attachment, type Entry } from "../api/client";
-import ConfirmDialog from "../components/ConfirmDialog";
+import HistoryReview, { type HistoryField } from "../components/HistoryReview";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
@@ -91,10 +91,6 @@ const copy = {
     attachmentSummary: "{count} 个附件",
     historySummary: "{count} 个历史版本",
     restoredSummary: "已载入历史草稿",
-    historyTitle: "将历史版本载入草稿？",
-    historyMessage: "这只会更新当前表单。只有点击保存后才会修改保险库。",
-    loadDraft: "载入草稿",
-    loadingDraft: "正在载入…",
     loadedDraft: "历史版本已载入草稿；保存前不会修改保险库",
   },
   en: {
@@ -155,10 +151,6 @@ const copy = {
     attachmentSummary: "{count} attachment(s)",
     historySummary: "{count} saved version(s)",
     restoredSummary: "history draft loaded",
-    historyTitle: "Load this version into the draft?",
-    historyMessage: "This updates only the current form. The vault changes only after you save.",
-    loadDraft: "Load draft",
-    loadingDraft: "Loading…",
     loadedDraft: "Version loaded into the draft; the vault is unchanged until you save",
   },
 } as const;
@@ -268,7 +260,6 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   const [loading, setLoading] = useState(isEdit);
   const [history, setHistory] = useState<Array<{ id: string; saved_at: string }>>([]);
   const [historyToRestore, setHistoryToRestore] = useState<string | null>(null);
-  const [historyPreviewing, setHistoryPreviewing] = useState(false);
   const [genLength, setGenLength] = useState(20);
   const [genSymbols, setGenSymbols] = useState(true);
   const [showGeneratorOptions, setShowGeneratorOptions] = useState(false);
@@ -458,33 +449,13 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
     }
   }
 
-  async function previewHistoryRestore() {
-    if (!entry || !historyToRestore || historyPreviewing) return;
-    setHistoryPreviewing(true);
-    try {
-      const preview = await api.previewEntryHistory(entry.id, historyToRestore);
-      const restored = draftFromEntry(preview.entry);
-      setDraft((current) => ({
-        ...current,
-        title: restored.title,
-        username: restored.username,
-        password: restored.password,
-        url: restored.url,
-        notes: restored.notes,
-        tags: restored.tags,
-        entryType: restored.entryType,
-        customFields: restored.customFields,
-        totpSecret: restored.totpSecret,
-        restoreHistoryId: historyToRestore,
-      }));
-      setShowMore(false);
-      showToast(text.loadedDraft);
-    } catch (previewError) {
-      showToast(String(previewError).replace(/^Error:\s*/, ""), "error");
-    } finally {
-      setHistoryPreviewing(false);
-      setHistoryToRestore(null);
-    }
+  function previewHistoryRestore(previous: Entry, fields: HistoryField[]) {
+    const restored = draftFromEntry(previous);
+    const mapping = { title: "title", username: "username", password: "password", url: "url", notes: "notes", tags: "tags", entry_type: "entryType", custom_fields: "customFields", totp_secret: "totpSecret" } as const;
+    setDraft(current => ({ ...current, ...Object.fromEntries(fields.map(field => [mapping[field], restored[mapping[field]]])), restoreHistoryId: historyToRestore }));
+    setShowMore(false);
+    showToast(text.loadedDraft);
+    setHistoryToRestore(null);
   }
 
   if (loading) return <div className="loading-state">{t("form.loading")}</div>;
@@ -712,16 +683,9 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
           <button className="secondary" type="button" onClick={() => onDone()} disabled={saving}>{t("form.cancel")}</button>
         </div>
       </form>
-      <ConfirmDialog
-        open={historyToRestore !== null}
-        idPrefix="history-draft-confirm"
-        title={text.historyTitle}
-        message={text.historyMessage}
-        confirmLabel={historyPreviewing ? text.loadingDraft : text.loadDraft}
-        cancelLabel={t("form.cancel")}
-        onConfirm={() => void previewHistoryRestore()}
-        onCancel={() => setHistoryToRestore(null)}
-      />
+      {entry && historyToRestore && <HistoryReview entryId={entry.id} historyId={historyToRestore}
+        current={{ title: draft.title, username: draft.username, password: draft.password, url: draft.url, notes: draft.notes, tags: draft.tags, entry_type: draft.entryType, custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })), totp_secret: draft.totpSecret }}
+        onRestore={previewHistoryRestore} onCancel={() => setHistoryToRestore(null)} />}
     </div>
   );
 }

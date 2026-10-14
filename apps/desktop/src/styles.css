@@ -462,6 +462,18 @@ textarea:focus-visible {
   justify-content: flex-end;
 }
 
+.history-review { width: min(900px, 90vw); max-height: 85dvh; margin: auto; color: var(--color-text); display: flex; flex-direction: column; }
+.history-review:not([open]) { display: none; }
+.history-review::backdrop { background: rgba(0, 0, 0, .6); }
+.history-field-list { overflow: auto; min-height: 0; }
+.history-field { border: 1px solid var(--color-border); margin: var(--space-md) 0; padding: var(--space-md); }
+.history-field legend label { display: flex; align-items: center; gap: var(--space-sm); }
+.history-field input { width: auto; margin: 0; }
+.history-values { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-lg); }
+.history-values pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.history-review > .button-row { flex-shrink: 0; margin-top: var(--space-md); }
+@media (max-width: 600px) { .history-values { grid-template-columns: minmax(0, 1fr); } }
+
 /* —— Sync result summary —— */
 .sync-summary {
   margin-top: var(--space-md);
