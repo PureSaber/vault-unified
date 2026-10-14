@@ -61,6 +61,7 @@ try {
     fixture.id = (await api('/entries', fixture.entry)).id;
     fixture.backup = (await api('/backups/create')).created.path;
     await writeFile(fixturePath, JSON.stringify(fixture));
+    await api('/auth/lock'); token = null;
     await page.reload();
   } else {
     token = (await api('/auth/unlock', { password: fixture.master })).token;
@@ -92,7 +93,7 @@ try {
   stage = 'renderer unlock';
   // Setup requests used a separate desktop session. Close it before the real
   // UI unlock so browser requests belong to the session displaying approvals.
-  await api('/auth/lock');
+  if (token) await api('/auth/lock');
   const unlocked = page.waitForResponse(response => response.url().endsWith('/auth/unlock') && response.request().method() === 'POST');
   await page.getByLabel('Master password', { exact: true }).fill(fixture.master);
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();

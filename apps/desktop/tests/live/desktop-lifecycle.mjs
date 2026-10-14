@@ -49,7 +49,9 @@ try {
   step = 'create and search';
   await page.getByLabel('Master password', { exact: true }).fill(master);
   await page.getByLabel('Confirm master password', { exact: true }).fill(master);
+  const created = page.waitForResponse(response => response.url().endsWith('/auth/create'));
   await page.getByRole('button', { name: 'Create and unlock', exact: true }).click();
+  const originalToken = (await (await created).json()).token;
   await page.getByRole('button', { name: 'Add password', exact: true }).click();
   await page.getByLabel('Website or app name', { exact: true }).fill('Generated native account');
   const username = 'generated{ENTER}中文';
@@ -67,6 +69,13 @@ try {
   assert(typeof hello.supported === 'boolean' && !hello.ready && !hello.busy, 'Hello probe must not enroll or unlock');
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('disable_windows_hello'));
   const apiHeaders = { 'Content-Type': 'application/json', 'X-Vault-Bootstrap': runtime.bootstrap_secret, 'X-Vault-Client': 'vault-unified-desktop' };
+  step = 'native document replacement';
+  await page.reload();
+  await page.getByLabel('Master password', { exact: true }).waitFor();
+  assert((await fetch(`${runtime.base_url}/entries`, { headers: { ...apiHeaders, Authorization: `Bearer ${originalToken}` } })).status === 401, 'Replaced desktop document must revoke its old session');
+  await page.getByLabel('Master password', { exact: true }).fill(master);
+  await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Generated native account', exact: true }).waitFor();
   assert((await fetch(`${runtime.base_url}/auth/hello/prepare`, { method: 'POST', headers: apiHeaders, body: '{}' })).status === 403, 'Renderer bootstrap cannot authorize Hello enrollment');
   const unlockRequest = () => fetch(`${runtime.base_url}/auth/unlock`, { method: 'POST', headers: apiHeaders, body: JSON.stringify({ password: master }) });
   const extraToken = (await (await unlockRequest()).json()).token;

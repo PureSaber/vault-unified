@@ -68,6 +68,14 @@ class SessionManager:
             self.lock_all()
             return tokens
 
+    def reset_renderer(self) -> list[str]:
+        """Revoke a replaced desktop document without changing OS lock state."""
+        with self._guard:
+            self._system_epoch += 1
+            tokens = list(self._sessions)
+            self.lock_all()
+            return tokens
+
     def _register(self, vault: UnifiedVault, *, expected_epoch: int, master_verified: bool = True) -> tuple[str, UnifiedVault]:
         from vault_unified.generation_history import prune
         prune(vault.local)

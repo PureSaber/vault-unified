@@ -132,7 +132,7 @@ def create_app(
 
         async def guarded_response():
             response = await call_next(request)
-            if request.url.path != "/api/auth/system-state" and system_epoch != sessions.system_epoch:
+            if request.url.path not in {"/api/auth/system-state", "/api/auth/renderer-reset"} and system_epoch != sessions.system_epoch:
                 return JSONResponse({"detail": "Windows session changed; unlock again"}, status_code=423)
             return response
 
@@ -145,7 +145,7 @@ def create_app(
         extension_version = request.headers.get("x-vault-extension-version")
         if request.url.path.startswith("/api/browser/") and extension_version and extension_version != app.version:
             return JSONResponse({"detail": "Update desktop and extension from the same release kit"}, status_code=426)
-        if request.url.path.startswith("/api/auth/hello") or request.url.path in {"/api/auth/system-state", "/api/entries/tools/auto-type", "/api/personal/update/prepare"}:
+        if request.url.path.startswith("/api/auth/hello") or request.url.path in {"/api/auth/system-state", "/api/auth/renderer-reset", "/api/entries/tools/auto-type", "/api/personal/update/prepare"}:
             if not hmac.compare_digest(request.headers.get("x-vault-native", ""), app.state.native_secret):
                 return JSONResponse({"detail": "Native desktop required"}, status_code=403)
         provided = request.headers.get("x-vault-bootstrap", "")
