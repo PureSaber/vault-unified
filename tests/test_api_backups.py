@@ -18,6 +18,33 @@ from vault_unified.session import sessions
 BOOTSTRAP_SECRET = "backup-api-secret-0123456789abcdef"
 
 
+def test_personal_upgrade_cancel_stale_apply_and_reopen(backup_api):
+    from vault_unified.crypto import decrypt_payload
+
+    client, headers, path, _ = backup_api
+    old = path.read_bytes()
+    cancelled = client.post("/api/personal/format/preview", headers=headers).json()
+    assert path.read_bytes() == old
+    assert client.post("/api/personal/format/cancel", headers=headers, json={"preview_token": cancelled["preview_token"]}).status_code == 200
+    assert client.post("/api/personal/format/apply", headers=headers, json={**cancelled, "confirm_upgrade": True}).status_code == 409
+    stale = client.post("/api/personal/format/preview", headers=headers).json()
+    from vault_unified.models import SecretEntry
+    sessions.get(headers["Authorization"].removeprefix("Bearer ")).local.add(SecretEntry(title="Generated after preview"))
+    old = path.read_bytes()
+    assert client.post("/api/personal/format/apply", headers=headers, json={**stale, "confirm_upgrade": True}).status_code == 409
+    assert path.read_bytes() == old
+    preview = client.post("/api/personal/format/preview", headers=headers).json()
+    assert client.post("/api/personal/format/apply", headers=headers, json=preview).status_code == 400
+    applied = client.post("/api/personal/format/apply", headers=headers, json={**preview, "confirm_upgrade": True})
+    assert applied.status_code == 200, applied.text
+    assert Path(applied.json()["backup_path"]).read_bytes() == old
+    assert client.get("/api/personal/format", headers=headers).status_code == 401
+    assert decrypt_payload("backup-password", path.read_bytes())["version"] == 3
+    unlocked = client.post("/api/auth/unlock", headers={"X-Vault-Bootstrap": BOOTSTRAP_SECRET}, json={"password": "backup-password"})
+    headers = {**headers, "Authorization": f"Bearer {unlocked.json()['token']}"}
+    assert client.get("/api/personal/format", headers=headers).json()["version"] == 3
+
+
 @pytest.fixture
 def backup_api(monkeypatch):
     with tempfile.TemporaryDirectory() as tmp:

@@ -283,7 +283,7 @@ def verify_backup(
     payload = decrypt_payload(credential, data)
     if (
         not isinstance(payload, dict)
-        or payload.get("version") not in {1, 2}
+        or payload.get("version") not in {1, 2, 3}
         or not isinstance(payload.get("entries"), dict)
     ):
         raise ValueError("Backup payload is not supported")

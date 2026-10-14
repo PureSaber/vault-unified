@@ -28,6 +28,8 @@ class LocalVault:
         # Compatibility alias for sync sidecar encryption; it may now be a device credential.
         self.password = credential
         self._entries: dict[str, SecretEntry] = {}
+        self._payload_version = VAULT_VERSION
+        self._metadata: dict[str, Any] = {}
         self._generation = 0
         self._lock = threading.RLock()
         require_clean_storage(vault_path)
@@ -52,6 +54,15 @@ class LocalVault:
     def _load(self) -> None:
         data = read_encrypted_file(self.vault_path, self.credential)
         version = data.get("version", 1)
+        if type(version) is not int or version not in {1, 2, 3}:
+            raise ValueError("Unsupported vault payload version")
+        if version == 3:
+            from vault_unified.vault_format import V3Container, inspect_vault_format_file
+
+            if not isinstance(inspect_vault_format_file(self.vault_path), V3Container):
+                raise ValueError("Personal payload schema 3 requires a framed V3 vault")
+        self._payload_version = max(VAULT_VERSION, version)
+        self._metadata = copy.deepcopy(data.get("metadata", {}))
         entries_raw = data.get("entries", {})
         if version < VAULT_VERSION:
             entries_raw = {
@@ -62,11 +73,26 @@ class LocalVault:
             for item_id, entry in entries_raw.items()
         }
 
-    def _save_entries(self, entries: dict[str, SecretEntry]) -> None:
+    def _payload(self, entries: dict[str, SecretEntry]) -> dict[str, Any]:
         payload = {
-            "version": VAULT_VERSION,
+            "version": self._payload_version,
             "entries": {item_id: entry.to_dict() for item_id, entry in entries.items()},
         }
+        if self._payload_version == 3:
+            payload["metadata"] = copy.deepcopy(self._metadata)
+        return payload
+
+    def export_payload(self) -> dict[str, Any]:
+        """Snapshot all encrypted data, including vault-wide personal metadata."""
+        with self._lock:
+            return copy.deepcopy(self._payload(self._entries))
+
+    @property
+    def payload_version(self) -> int:
+        return self._payload_version
+
+    def _save_entries(self, entries: dict[str, SecretEntry]) -> None:
+        payload = self._payload(entries)
         write_encrypted_file(self.vault_path, self.credential, payload)
         self._generation += 1
 
@@ -79,6 +105,8 @@ class LocalVault:
             return self._generation
 
     def _state_digest_locked(self) -> str:
+        if self._payload_version == 3:
+            return canonical_digest(self._payload(self._entries))
         return canonical_digest(
             sorted(
                 (entry.to_dict() for entry in self._entries.values()),
@@ -179,6 +207,11 @@ class LocalVault:
                 key=lambda item: item["id"],
             )
         )
+        if payload.get("version") == 3:
+            candidate_digest = canonical_digest({
+                **payload,
+                "entries": {key: entry.to_dict() for key, entry in restored.items()},
+            })
         if candidate_digest != restored_digest:
             raise ValueError("Import backup does not match the recorded pre-import state")
         with self._lock:
@@ -189,8 +222,59 @@ class LocalVault:
                 raise EntryTransactionConflict(
                     "Vault changed after the import; undo was refused"
                 )
-            self._save_entries(restored)
+            if max(2, payload.get("version", 2)) != self._payload_version:
+                raise EntryTransactionConflict("Vault schema changed after the import")
+            # An import undo must restore the complete snapshot, not only entries.
+            old_metadata = self._metadata
+            self._metadata = copy.deepcopy(payload.get("metadata", {}))
+            try:
+                self._save_entries(restored)
+            except Exception:
+                self._metadata = old_metadata
+                raise
             self._entries = restored
+
+    def upgrade_payload(self, *, expected_generation: int, expected_sha256: str) -> str:
+        """Back up the old format, then atomically enable personal payload metadata."""
+        import hashlib
+
+        from vault_unified.backup_manager import create_manual_backup, set_backup_pinned
+        from vault_unified.crypto import decrypt_payload
+        from vault_unified.storage import atomic_write_bytes
+        from vault_unified.v3_crypto import (
+            _advance_anchor_after_write, create_v3_container, update_v3_container,
+        )
+        from vault_unified.vault_format import V3Container, parse_vault_container
+
+        with self._lock:
+            require_clean_storage(self.vault_path)
+            source = self.vault_path.read_bytes()
+            if self._generation != expected_generation or hashlib.sha256(source).hexdigest() != expected_sha256:
+                raise EntryTransactionConflict("Vault changed after the upgrade preview")
+            if self._payload_version == 3:
+                raise ValueError("Vault already uses the personal payload format")
+            if LocalVault(self.vault_path, self.credential).export_payload() != self.export_payload():
+                raise EntryTransactionConflict("Vault changed on disk; unlock again")
+            payload = {**self.export_payload(), "version": 3, "metadata": {}}
+            container = parse_vault_container(source)
+            if isinstance(container, V3Container):
+                candidate = update_v3_container(self.credential, payload, container)
+            else:
+                if not isinstance(self.credential, str):
+                    raise ValueError("Master password required to upgrade a legacy vault")
+                candidate = create_v3_container(self.credential, payload)
+            backup = create_manual_backup(self.vault_path, self.credential)
+            set_backup_pinned(self.vault_path, backup.path, self.credential, True)
+            atomic_write_bytes(
+                self.vault_path, candidate,
+                validator=lambda data: decrypt_payload(self.credential, data),
+                expected_old_sha256=expected_sha256,
+            )
+            self._payload_version = 3
+            self._metadata = {}
+            self._generation += 1
+            _advance_anchor_after_write(self.vault_path, self.credential)
+            return backup.path
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> LocalVault:

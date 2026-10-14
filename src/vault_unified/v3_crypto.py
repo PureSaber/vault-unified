@@ -271,10 +271,14 @@ def _json_depth(value: Any) -> int:
 def _validate_payload(payload: Any) -> dict:
     if not isinstance(payload, dict):
         raise V3PayloadError("V3 payload must be a JSON object")
-    if set(payload) != {"version", "entries"}:
-        raise V3PayloadError("V3 payload schema 2 requires only version and entries")
-    if payload.get("version") != 2 or isinstance(payload.get("version"), bool):
-        raise V3PayloadError("V3 payload version must be 2")
+    version = payload.get("version")
+    if type(version) is not int or version not in {2, 3}:
+        raise V3PayloadError("Unsupported V3 payload version")
+    expected_keys = {"version", "entries"} if version == 2 else {"version", "entries", "metadata"}
+    if set(payload) != expected_keys:
+        raise V3PayloadError("V3 payload fields do not match its schema")
+    if version == 3 and not isinstance(payload["metadata"], dict):
+        raise V3PayloadError("V3 vault metadata must be an object")
     entries = payload.get("entries")
     if not isinstance(entries, dict) or len(entries) > MAX_ENTRY_COUNT:
         raise V3PayloadError("V3 entries must be an object within the entry limit")
@@ -432,6 +436,7 @@ def _base_header(
     key_generation: int,
     plaintext_length: int,
     ciphertext_length: int,
+    payload_schema: int = 2,
     key_slots: tuple[KeySlotHeader, ...] = (),
     extensions: dict[str, str | int | bool] | None = None,
 ) -> V3Header:
@@ -440,7 +445,7 @@ def _base_header(
         vault_id=materials.vault_id,
         generation=generation,
         key_generation=key_generation,
-        payload_schema=2,
+        payload_schema=payload_schema,
         cipher="AES-256-GCM",
         payload_nonce=materials.payload_nonce,
         plaintext_length=plaintext_length,
@@ -579,7 +584,10 @@ def _decrypt_with_dek(container: V3Container, dek: bytes) -> dict:
         )
     except InvalidTag as exc:
         raise V3AuthenticationError("Wrong password or tampered V3 payload") from exc
-    return _parse_plaintext(plaintext, container.header.plaintext_length)
+    payload = _parse_plaintext(plaintext, container.header.plaintext_length)
+    if payload["version"] != container.header.payload_schema:
+        raise V3PayloadError("Authenticated payload version differs from its header")
+    return payload
 
 
 def decrypt_v3_payload(credential: V3Credential, value: bytes | V3Container) -> dict:
@@ -734,6 +742,7 @@ def _create_v3_container_with_materials(
         materials=materials,
         generation=generation,
         key_generation=key_generation,
+        payload_schema=payload["version"],
         plaintext_length=len(plaintext),
         ciphertext_length=len(plaintext) + 16,
         key_slots=(slot,),
@@ -745,6 +754,7 @@ def _create_v3_container_with_materials(
         materials=materials,
         generation=generation,
         key_generation=key_generation,
+        payload_schema=payload["version"],
         plaintext_length=len(plaintext),
         ciphertext_length=len(plaintext) + 16,
         key_slots=(slot,),
@@ -789,6 +799,8 @@ def update_v3_container(
     if container.header.generation >= 2**63 - 1:
         raise V3CryptoError("V3 content generation is exhausted")
     plaintext = _serialize_payload(payload)
+    if payload["version"] < container.header.payload_schema:
+        raise V3PayloadError("Payload schema downgrade would discard personal data")
     dek = _unlock_dek(credential, container)
     try:
         # Authenticate the old payload before replacing it.
@@ -799,7 +811,7 @@ def update_v3_container(
             vault_id=container.header.vault_id,
             generation=container.header.generation + 1,
             key_generation=container.header.key_generation,
-            payload_schema=2,
+            payload_schema=payload["version"],
             cipher="AES-256-GCM",
             payload_nonce=nonce,
             plaintext_length=len(plaintext),

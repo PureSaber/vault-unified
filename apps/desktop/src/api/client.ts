@@ -489,6 +489,10 @@ export interface SyncPreview {
 }
 
 export const api = {
+  payloadFormat: () => request<{ version: number; current_version: number }>("/personal/format"),
+  previewPayloadUpgrade: () => request<{ preview_token: string; entry_count: number }>("/personal/format/preview", { method: "POST" }),
+  cancelPayloadUpgrade: (preview_token: string) => request("/personal/format/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
+  applyPayloadUpgrade: (preview_token: string) => request<{ backup_path: string; locked: boolean }>("/personal/format/apply", { method: "POST", body: JSON.stringify({ preview_token, confirm_upgrade: true }) }),
   vaultInfo: () => request<VaultInfo>("/auth/vault-info"),
   createVault: (password: string, confirmPassword: string, remember = false) =>
     request<{ token: string }>("/auth/create", {

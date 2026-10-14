@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from vault_unified.api.deps import get_vault
-from vault_unified.api.schemas import PersonalSettingsIn, PersonalSettingsOut
+from vault_unified.api.deps import get_token, get_vault
+from vault_unified.api.schemas import PersonalSettingsIn, PersonalSettingsOut, PayloadUpgradeIn, RestorePreviewCancelIn
 from vault_unified.manager import UnifiedVault
+from vault_unified.restore_preview import restore_preview_store, RestorePreviewError
+from vault_unified.session import sessions
 from vault_unified.personal_settings import (
     load_personal_settings,
     maybe_create_scheduled_backup,
@@ -19,6 +22,56 @@ from vault_unified.personal_settings import (
 
 
 router = APIRouter(prefix="/personal", tags=["personal"])
+
+
+@router.get("/format")
+def payload_format(vault: UnifiedVault = Depends(get_vault)) -> dict:
+    return {"version": vault.local.payload_version, "current_version": 3}
+
+
+@router.post("/format/preview")
+def preview_payload_upgrade(
+    vault: UnifiedVault = Depends(get_vault), token: str = Depends(get_token),
+) -> dict:
+    if vault.local.payload_version == 3:
+        raise HTTPException(status_code=409, detail="Vault format is already current")
+    intent = restore_preview_store.issue(
+        scope=token, kind="payload_upgrade", source_path="", source_sha256="",
+        active_sha256=hashlib.sha256(vault.vault_path.read_bytes()).hexdigest(),
+        active_state_digest=vault.local.state_digest(), active_generation=vault.local.generation,
+    )
+    return {"preview_token": intent.token, "entry_count": len(vault.local.export_payload()["entries"])}
+
+
+@router.post("/format/cancel")
+def cancel_payload_upgrade(body: RestorePreviewCancelIn, token: str = Depends(get_token),
+                           vault: UnifiedVault = Depends(get_vault)) -> dict:
+    try:
+        restore_preview_store.consume(body.preview_token, scope=token, kind="payload_upgrade")
+    except RestorePreviewError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"cancelled": True}
+
+
+@router.post("/format/apply")
+def apply_payload_upgrade(body: PayloadUpgradeIn, token: str = Depends(get_token),
+                          vault: UnifiedVault = Depends(get_vault)) -> dict:
+    if not body.confirm_upgrade:
+        raise HTTPException(status_code=400, detail="Upgrade confirmation is required")
+    try:
+        intent = restore_preview_store.consume(body.preview_token, scope=token, kind="payload_upgrade")
+        if vault.local.state_digest() != intent.active_state_digest:
+            raise ValueError("Vault changed after the upgrade preview")
+        backup = vault.local.upgrade_payload(
+            expected_generation=intent.active_generation, expected_sha256=intent.active_sha256,
+        )
+    except (OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    finally:
+        # All sessions must reload, including sessions holding the previous schema.
+        if vault.local.payload_version == 3:
+            sessions.lock_all()
+    return {"version": 3, "backup_path": backup, "locked": True}
 
 
 def _out(settings) -> PersonalSettingsOut:

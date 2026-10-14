@@ -40,14 +40,8 @@ def default_recovery_dir() -> Path:
 
 
 def _portable_payload(vault: object) -> dict:
-    """Rebuild a current v2 payload without changing the active vault bytes."""
-    return {
-        "version": 2,
-        "entries": {
-            entry_id: entry.to_dict()
-            for entry_id, entry in vault.local._entries.items()
-        },
-    }
+    """Preserve all personal payload data without copying local unlock keys."""
+    return vault.local.export_payload()
 
 
 def create_recovery_kit(
@@ -84,7 +78,7 @@ def inspect_recovery_kit(kit_path: str | Path, recovery_code: str) -> dict:
     payload = decrypt_payload(code, data)
     if (
         not isinstance(payload, dict)
-        or payload.get("version") != 2
+        or payload.get("version") not in {2, 3}
         or not isinstance(payload.get("entries"), dict)
     ):
         raise ValueError("Recovery kit has an unsupported payload")
@@ -126,7 +120,7 @@ def restore_from_recovery_kit(
     if expected_kit_sha256 is not None and hashlib.sha256(source_bytes).hexdigest() != expected_kit_sha256:
         raise ValueError("Recovery kit changed after the preview")
     payload = decrypt_payload(code, source_bytes)
-    if not isinstance(payload, dict) or payload.get("version") != 2 or not isinstance(payload.get("entries"), dict):
+    if not isinstance(payload, dict) or payload.get("version") not in {2, 3} or not isinstance(payload.get("entries"), dict):
         raise ValueError("Recovery kit has an unsupported payload")
     require_clean_storage(target)
     target.parent.mkdir(parents=True, exist_ok=True)
