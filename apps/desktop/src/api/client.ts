@@ -327,6 +327,14 @@ export interface StartupRestorePreview {
   warning: string;
 }
 
+export interface RecoveryRehearsalResult {
+  verified_at: string;
+  payload_version: number;
+  complete_payload_matched: boolean;
+  temporary_copy_removed: boolean;
+  counts: { entries: number; active: number; archived: number; trash: number; attachments: number; history: number; totp: number };
+}
+
 export interface RecoveryKitPreview {
   preview_token: string;
   expires_at: string;
@@ -736,6 +744,8 @@ export const api = {
         destination_dir: destinationDir || null,
       }),
     }),
+  rehearseRecoveryKit: (kitPath: string, recoveryCode: string) =>
+    request<RecoveryRehearsalResult>("/auth/recover/rehearse", { method: "POST", body: JSON.stringify({ kit_path: kitPath, recovery_code: recoveryCode }) }),
   previewRecoveryKit: (kitPath: string, recoveryCode: string) =>
     request<RecoveryKitPreview>("/auth/recover/preview", {
       method: "POST",
