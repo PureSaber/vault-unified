@@ -110,6 +110,8 @@ class LocalVault:
         return self._payload_version
 
     def _save_entries(self, entries: dict[str, SecretEntry]) -> None:
+        from vault_unified.website_rules import require_website_payload
+        require_website_payload(self, list(entries.values()))
         from vault_unified.template_data import require_template_payload
         require_template_payload(self, list(entries.values()))
         payload = self._payload(entries)
@@ -358,13 +360,14 @@ class LocalVault:
         return matches[0] if matches else None
 
     def search(self, query: str) -> list[SecretEntry]:
+        from vault_unified.website_rules import rules_for
         q = query.lower()
         results = []
         for entry in self._entries.values():
             if entry.sync_status == SyncStatus.DELETED_PENDING:
                 continue
             haystack = " ".join(
-                [entry.title, entry.username, entry.url, entry.notes, *entry.tags]
+                [entry.title, entry.username, entry.url, entry.notes, *entry.tags, *rules_for(entry)["additional_urls"]]
             ).lower()
             if q in haystack:
                 results.append(entry)
@@ -491,7 +494,9 @@ class LocalVault:
         self, entries: list[SecretEntry], *, from_remote: bool = True
     ) -> dict[str, int]:
         from vault_unified.template_data import require_template_payload
+        from vault_unified.website_rules import require_website_payload
         require_template_payload(self, entries)
+        require_website_payload(self, entries)
         added = 0
         updated = 0
         conflicts = 0

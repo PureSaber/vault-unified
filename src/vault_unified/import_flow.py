@@ -18,6 +18,7 @@ from uuid import uuid4
 from vault_unified.models import SecretEntry, Source
 from vault_unified.personal_data import PERSONAL_METADATA_KEY, data_for, record_history, set_data
 from vault_unified.template_data import template_for, set_template
+from vault_unified.website_rules import rules_for, set_rules
 from vault_unified.sync.preview import canonical_digest
 from vault_unified.transfer import (
     JSON_SCHEMA,
@@ -44,6 +45,7 @@ SUPPORTED_FIELDS = frozenset(
         "totp_secret",
         "attachments",
         "template_data",
+        "website_rules",
     }
 )
 
@@ -217,6 +219,7 @@ def secure_entry_fingerprint(entry: SecretEntry) -> str:
             "totp_secret": "".join(personal["totp_secret"].split()).upper(),
             "attachments": _attachment_fingerprints(entry),
             "template_data": template_for(entry),
+            "website_rules": rules_for(entry),
         }
     )
 
@@ -334,7 +337,7 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
         if (
             not isinstance(raw, dict)
             or raw.get("schema") != JSON_SCHEMA
-            or type(raw.get("version")) is not int or raw.get("version") not in {1, JSON_VERSION}
+            or type(raw.get("version")) is not int or raw.get("version") not in {1, 2, JSON_VERSION}
             or not isinstance(raw.get("entries"), list)
         ):
             raise ImportFlowError("Transfer JSON has an unsupported schema")
@@ -380,6 +383,10 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
                     template_data = json.loads(row["template_data"]) if row.get("template_data") else None
                 except json.JSONDecodeError:
                     template_data = {"invalid_csv_json": True}
+                try:
+                    website_rules = json.loads(row["website_rules"]) if row.get("website_rules") else None
+                except json.JSONDecodeError:
+                    website_rules = {"invalid_csv_json": True}
                 value: dict[str, Any] = {
                     "title": row.get("title", ""),
                     "username": row.get("username", ""),
@@ -391,6 +398,7 @@ def inspect_transfer(content: str, format_name: str) -> tuple[str, tuple[ParsedI
                     "custom_fields": custom_fields,
                     "totp_secret": row.get("totp_secret", ""),
                     "template_data": template_data,
+                    "website_rules": website_rules,
                     "attachments": [],
                 }
                 unknown = [name for name in row if name not in SUPPORTED_FIELDS and row.get(name)]
@@ -624,6 +632,8 @@ def prepare_apply(
             set_data(candidate, personal)
             if item.row.entry.template_data is not None:
                 set_template(candidate, template_for(imported))
+            if item.row.entry.website_rules is not None:
+                set_rules(candidate, rules_for(imported))
         candidate.mark_dirty()
         candidates.append(candidate)
         updated_ids.append(candidate.id)

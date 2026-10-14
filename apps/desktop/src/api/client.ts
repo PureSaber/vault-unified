@@ -5,6 +5,7 @@ export interface GenerationOptions {
   upper: boolean; lower: boolean; allowed: string; excluded: string; words: number; separator: "-" | " " | "." | "_";
 }
 export interface GeneratedPassword { id: string; kind: "password" | "passphrase"; created_at: number; origin: string }
+export interface WebsiteRules { match: "exact" | "base_domain"; additional_urls: string[]; excluded_urls: string[] }
 
 interface ApiRuntimeConfig {
   base_url: string;
@@ -170,6 +171,7 @@ export interface Entry {
   linked_sources: Record<string, string>;
   entry_type: "login" | "secure_note" | "card" | "identity" | "ssh_key" | "recovery_code" | "software_license" | "api_credential";
   template_data?: TemplateData;
+  website_rules?: WebsiteRules;
   custom_fields: Array<{ label: string; value: string; concealed: boolean }>;
   totp_secret: string;
   has_totp_secret: boolean;
@@ -185,7 +187,7 @@ export interface Entry {
 export type OrganizationAction = "trash" | "archive" | "restore" | "purge" | "favorite" | "unfavorite" | "tag";
 export interface OrganizationChange { entry_ids: string[]; action: OrganizationAction; tags: string[] }
 export interface OrganizationPreview { preview_token: string; action: OrganizationAction; entries: Array<{ id: string; title: string }> }
-export const mergeFields = ["title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret", "template_data"] as const;
+export const mergeFields = ["title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret", "template_data", "website_rules"] as const;
 export type MergeField = typeof mergeFields[number];
 export interface MergeChange { target_id: string; source_id: string; choices: Record<MergeField, "target" | "source"> }
 export interface MergePreview { preview_token: string; target_title: string; source_title: string; history_count: number; attachment_count: number }
@@ -200,6 +202,7 @@ export interface Attachment {
 
 export interface EntryTransactionPayload {
   template_data?: TemplateData;
+  website_rules?: WebsiteRules;
   transaction_id: string;
   entry_id: string | null;
   expected_updated_at: string | null;
@@ -585,6 +588,7 @@ export const api = {
     ),
   generateSaved: (options: GenerationOptions, url: string, request_id: string) => request<{ password: string; history_saved: boolean }>("/entries/tools/generate", { method: "POST", body: JSON.stringify({ ...options, url, request_id }) }),
   generationHistory: () => request<{ items: GeneratedPassword[] }>("/entries/tools/generation/history"),
+  testWebsiteMatch: (primary_url: string, rules: WebsiteRules, test_url: string) => request<{ valid: boolean; matches: boolean }>("/entries/tools/website-match", { method: "POST", body: JSON.stringify({ primary_url, rules, test_url }) }),
   generationValue: (id: string) => request<{ password: string }>(`/entries/tools/generation/history/${encodeURIComponent(id)}`),
   copyGeneration: (id: string) => request(`/entries/tools/generation/history/${encodeURIComponent(id)}/copy`, { method: "POST" }),
   integrations: () => request<Integration[]>("/integrations"),

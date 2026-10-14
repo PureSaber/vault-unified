@@ -1111,6 +1111,7 @@ class UnifiedVault:
         remove_attachment_ids: list[str],
         restore_history_id: str | None,
         template_data: dict[str, Any] | None = None,
+        website_rules: dict[str, Any] | None = None,
     ) -> SecretEntry:
         """Commit the complete editor draft with one encrypted vault write."""
 
@@ -1155,6 +1156,8 @@ class UnifiedVault:
         from vault_unified.template_data import NEW_ENTRY_TYPES, set_template, template_for
         if template_data is not None:
             set_template(candidate, template_data)
+        from vault_unified.website_rules import set_rules, rules_for
+        set_rules(candidate, website_rules if website_rules is not None else rules_for(candidate))
         if entry_type in NEW_ENTRY_TYPES and not password.strip():
             raise PersonalDataError("A license key or API token is required")
         if entry_type == "recovery_code" and not (template_for(candidate).get("recovery_codes") or password or notes):

@@ -21,10 +21,10 @@ than replaced with a simulated completion claim.
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Merged PR #65 / `67b2db3`; exact-head CI 38507719041 passed, including native extension TOTP filling |
 | 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
 | 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Pending |
-| 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Implemented on `codex/generator-recovery`; real renderer discard/unlock/recovery and native extension restart recovery passed; integration pending |
+| 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Merged PR #66 / `4c5f73c`; exact-head CI 38508845006 passed, including native extension restart recovery |
 | 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
-| 11 | Multiple URLs per account, explicit matching and exclusion rules | Pending |
+| 11 | Multiple URLs per account, explicit matching and exclusion rules | Implemented on `codex/website-matching`; offline public/private suffix boundaries, real renderer rules and native extension extra-URL filling passed; integration pending |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
@@ -218,8 +218,28 @@ Defaults and scope:
   that actual result fixed the test; both real English/Chinese journeys passed,
   including accessibility and artifact scanning. Masked screenshot inspected.
 - Actual native executable/API restart and Chromium extension proved a cancelled
-  browser-generated password remains recoverable. Required full CI precedes merge.
+  browser-generated password remains recoverable. Exact-head CI 38508845006 passed;
+  merged PR #66 / `4c5f73c`.
   See [generated-password-recovery.md](generated-password-recovery.md).
+
+### Website matching rules
+
+- Each login defaults to exact origin matching, with optional additional websites,
+  base-domain mode and exact-origin exclusions. Scheme/port are never broadened.
+  IDNA normalization, private hosting suffixes and PSL wildcard/exception rules use
+  tldextract's packaged offline snapshot, without network fetching or disk cache.
+- The editor tests draft rules without saving. Atomic Save, history comparison,
+  selective restore, duplicate merge, encrypted recovery and plaintext JSON/CSV
+  preserve rules. JSON transfer advances to v3 and reads v1/v2/v3. Older imports
+  with absent rules retain existing values; old vaults refuse new rule metadata.
+- Twenty-three focused backend cases and 58 existing browser/import/template/merge
+  cases passed. Sixteen distinct renderer journeys passed across two focused runs,
+  including real English/Chinese matching, discard, merge/history, accessibility
+  and scanned artifacts. The generated screenshot was inspected and spacing fixed.
+- Actual native/API restart with the Chromium extension filled a login and TOTP
+  selected through an additional website. Python audit and secret scan passed;
+  sidecar data collection includes the offline PSL snapshot. Full exact-head CI
+  precedes integration. See [website-matching-rules.md](website-matching-rules.md).
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

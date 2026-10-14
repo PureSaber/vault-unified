@@ -54,7 +54,8 @@ $Collect = @(
     "keyring",
     "dotenv",
     "click",
-    "rich"
+    "rich",
+    "tldextract"
 )
 
 $PyInstallerArgs = @(
@@ -71,6 +72,7 @@ foreach ($mod in $Collect) {
     $PyInstallerArgs += @("--collect-submodules", $mod)
 }
 $PyInstallerArgs += @("--collect-data", "vault_unified")
+$PyInstallerArgs += @("--collect-data", "tldextract")
 $PyInstallerArgs += $Entry
 
 Write-Host "Running PyInstaller ..."
