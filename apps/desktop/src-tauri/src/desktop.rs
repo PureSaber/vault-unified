@@ -19,6 +19,8 @@ pub struct Preferences {
     pub close_to_tray: bool,
     pub shortcut: String,
     pub locale: String,
+    #[serde(default)]
+    pub check_updates: bool,
 }
 
 impl Default for Preferences {
@@ -27,6 +29,7 @@ impl Default for Preferences {
             close_to_tray: true,
             shortcut: "Control+Shift+Space".into(),
             locale: "zh".into(),
+            check_updates: false,
         }
     }
 }

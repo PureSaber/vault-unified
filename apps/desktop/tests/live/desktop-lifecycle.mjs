@@ -97,6 +97,12 @@ try {
   await dialog().getByRole('button', { name: 'Close', exact: true }).click();
   const status = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'));
   assert(status.tray_available && status.shortcut_registered, 'Native tray and global shortcut must be available');
+  assert(status.preferences.check_updates === false, 'Automatic update checks must default off when loading old preferences');
+  assert(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('update_status')) === null, 'Startup must not implicitly fetch an update');
+  assert(await page.evaluate(async () => {
+    try { await window.__TAURI_INTERNALS__.invoke('install_desktop_update', { version: '99.0.0', token: '', confirm: false }); return false; }
+    catch (error) { return String(error).includes('update_confirmation_required'); }
+  }), 'Native installation must require explicit consent');
   step = 'native Passkey approval window';
   native('close'); await wait(() => !native('state').visible);
   await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('show_desktop_approval'));

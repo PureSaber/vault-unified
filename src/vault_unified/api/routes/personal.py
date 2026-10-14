@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import hashlib
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, ConfigDict, StrictBool
 
 from vault_unified.api.deps import get_token, get_vault
 from vault_unified.api.schemas import PersonalSettingsIn, PersonalSettingsOut, PayloadUpgradeIn, RestorePreviewCancelIn
@@ -22,6 +23,29 @@ from vault_unified.personal_settings import (
 
 
 router = APIRouter(prefix="/personal", tags=["personal"])
+
+
+class UpdatePrepare(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: StrictBool = False
+
+
+@router.post("/update/prepare")
+def prepare_desktop_update(body: UpdatePrepare, vault: UnifiedVault = Depends(get_vault),
+                           token: str = Depends(get_token)) -> dict:
+    if body.confirm is not True:
+        raise HTTPException(400, "Confirm the desktop update")
+    from vault_unified.backup_manager import create_manual_backup, set_backup_pinned
+    try:
+        with sessions.active(token, vault), vault.local._lock:
+            backup = create_manual_backup(vault.vault_path, vault.local.credential)
+            set_backup_pinned(vault.vault_path, backup.path, vault.local.credential, True)
+            sessions.lock_all()
+    except PermissionError:
+        raise HTTPException(401, "Unlock again before updating") from None
+    except (OSError, ValueError):
+        raise HTTPException(409, "Could not retain the pre-update backup; installation stopped") from None
+    return {"backup_path": backup.path, "locked": True}
 
 
 @router.get("/format")

@@ -53,7 +53,7 @@ npm run test:ui:install
 npm run test:ui
 Set-Location ..\..
 
-cargo test --manifest-path apps\desktop\src-tauri\Cargo.toml --lib
+cargo test --manifest-path apps\desktop\src-tauri\Cargo.toml --lib --test updater_transport
 cargo audit --file apps\desktop\src-tauri\Cargo.lock
 ```
 

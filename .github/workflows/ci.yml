@@ -64,7 +64,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
           New-Item -ItemType File -Force -Path $path | Out-Null
       - name: Check authenticated sidecar launcher
-        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib
+        run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --test updater_transport
       - name: Verify actual native browser and desktop lifecycle with generated data
         run: |
           $runtimeKey = 'SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'

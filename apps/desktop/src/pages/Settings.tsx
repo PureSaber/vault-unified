@@ -3,8 +3,9 @@ import { useState } from "react";
 import { useI18n, type Locale } from "../i18n";
 import { saveDesktopPreferences, type DesktopPreferences, type DesktopStatus } from "../desktop";
 import HelloSettings from "../components/HelloSettings";
+import DesktopUpdates from "../components/DesktopUpdates";
 
-export default function Settings({ desktop, onDesktopChange, onExit }: { desktop: DesktopStatus | null; onDesktopChange: (value: DesktopStatus) => void; onExit: () => void }) {
+export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: { desktop: DesktopStatus | null; onDesktopChange: (value: DesktopStatus) => void; onExit: () => void; onBusy: (value: boolean) => void }) {
   const { t, locale, setLocale } = useI18n();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +50,7 @@ export default function Settings({ desktop, onDesktopChange, onExit }: { desktop
           </select>
         </div>
         {desktop.preferences.shortcut && !desktop.shortcut_registered && <p role="status">{zh ? "当前快捷键不可用，请更换组合。" : "The current shortcut is unavailable. Choose another combination."}</p>}
-        <label className="checkbox-label"><input type="checkbox" checked={desktop.preferences.close_to_tray} disabled={saving || !desktop.tray_available} onChange={event => void update({ ...desktop.preferences, close_to_tray: event.target.checked })} />{zh ? "关闭主窗口时收起到托盘" : "Keep running in the tray when the window closes"}</label>
+        <label className="checkbox-field"><input type="checkbox" checked={desktop.preferences.close_to_tray} disabled={saving || !desktop.tray_available} onChange={event => void update({ ...desktop.preferences, close_to_tray: event.target.checked })} /><span>{zh ? "关闭主窗口时收起到托盘" : "Keep running in the tray when the window closes"}</span></label>
         {!desktop.tray_available && <p role="status">{zh ? "托盘不可用，关闭窗口会退出应用。" : "The tray is unavailable; closing the window quits the app."}</p>}
         <p className="field-hint">{zh ? "收起后仍按设定时间自动锁定。需要完全退出时，使用托盘菜单或下方按钮。" : "Auto-lock stays active while hidden. Use the tray menu or the button below to quit."}</p>
         <p className="field-hint">{zh ? "Windows 锁屏或休眠会立即锁定密码库并清除未保存的草稿。恢复后需要重新解锁。" : "Windows lock or sleep locks the vault and clears unsaved drafts. Unlock again after resuming."}</p>
@@ -58,6 +59,7 @@ export default function Settings({ desktop, onDesktopChange, onExit }: { desktop
       </section>}
 
       {desktop && <HelloSettings />}
+      {desktop && <DesktopUpdates preferences={desktop.preferences} onPreferences={update} onBusy={onBusy} />}
       <section className="settings-section" aria-labelledby="about-heading">
         <h3 id="about-heading" className="section-title">{t("settings.about")}</h3>
         <dl className="status-grid">

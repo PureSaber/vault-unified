@@ -1,6 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
-export interface DesktopPreferences { close_to_tray: boolean; shortcut: string; locale: "en" | "zh" }
+export interface DesktopPreferences { close_to_tray: boolean; shortcut: string; locale: "en" | "zh"; check_updates?: boolean }
 export interface DesktopStatus { preferences: DesktopPreferences; tray_available: boolean; shortcut_registered: boolean }
 export async function desktopStatus(): Promise<DesktopStatus | null> {
   if (!isTauri()) return null;

@@ -39,6 +39,16 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVGNTgwN0U2OTUyMEM3OUQKUldTZHh5Q1Y1Z2RZWDJ1MTZ6a1NNeWV2aTdUQXZncWgzZDZkN2QvK1g1WnZhOW5yZHJ3WG5nSXQK",
+      "endpoints": [
+        "https://github.com/PureSaber/vault-unified/releases/latest/download/latest.json"
+      ],
+      "requireSignedVersion": true,
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

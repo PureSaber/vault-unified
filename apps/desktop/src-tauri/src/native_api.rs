@@ -48,6 +48,7 @@ fn call(
                 "/auth/lock",
                 "/auth/system-state",
                 "/entries/tools/auto-type",
+                "/personal/update/prepare",
             ]
             .contains(&path)
         {
