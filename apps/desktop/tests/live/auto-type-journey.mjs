@@ -38,7 +38,8 @@ export async function exerciseAutoType({ page, root, entryId, username, password
     }, { id, entryId, delayMs, token });
   }
   try {
-    await response();
+    const ready = await response();
+    assert(ready.ready && ready.unicode === '生成', 'Generated target pipe must preserve Unicode before input testing');
     let id = await capture();
     const typed = await type(id);
     assert(typed === 'typed', `Native application typing failed (${typed})`);

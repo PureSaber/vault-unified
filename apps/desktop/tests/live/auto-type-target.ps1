@@ -20,6 +20,10 @@ public static class GeneratedTypeTarget {
         finally { if (attached) AttachThreadInput(own, foreign, false); }
     }
     public static void Run() {
+        // Redirected PowerShell pipes inherit the machine's legacy code page.
+        // Pin UTF-8 so Unicode text typed correctly is also compared correctly.
+        Console.InputEncoding = new System.Text.UTF8Encoding(false);
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         Application.EnableVisualStyles();
         var form = new Form { Text="Vault generated auto-type target", Size=new Size(420,240), StartPosition=FormStartPosition.Manual, Location=new Point(30,30) };
         var user = new TextBox { Top=30, Left=20, Width=340, TabIndex=0 };
@@ -49,7 +53,7 @@ public static class GeneratedTypeTarget {
                 form.Text="Vault generated changed target"; Console.WriteLine("{\"renamed\":true}");
             }
         };
-        form.Shown += (s,e) => { timer.Start(); Console.WriteLine("{\"ready\":true}"); };
+        form.Shown += (s,e) => { timer.Start(); Console.WriteLine(json.Serialize(new { ready=true, unicode="\u751f\u6210" })); };
         Application.Run(form); timer.Dispose(); other.Dispose(); form.Dispose();
     }
 }
