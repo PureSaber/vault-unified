@@ -9,6 +9,7 @@ use std::time::Duration;
 use tauri::Manager;
 mod desktop;
 pub mod native_host;
+mod system_lock;
 
 #[cfg(windows)]
 use std::os::windows::io::AsRawHandle;
@@ -549,6 +550,7 @@ pub fn run() {
                 job: Mutex::new(job),
                 config,
             });
+            system_lock::setup(app.handle())?;
             Ok(())
         })
         .build(tauri::generate_context!())

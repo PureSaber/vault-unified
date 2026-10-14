@@ -20,6 +20,7 @@ from vault_unified.api.schemas import (
     UnlockRequest,
     UnlockResponse,
     VaultInfoOut,
+    SystemSessionStateIn,
 )
 from vault_unified.session import sessions
 from vault_unified.personal_settings import (
@@ -85,6 +86,8 @@ def create_vault(body: CreateVaultRequest, request: Request) -> UnlockResponse:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=423, detail="Unlock cancelled by Windows session lock") from exc
     return UnlockResponse(token=token, message="created")
 
 
@@ -341,6 +344,8 @@ def unlock(body: UnlockRequest, request: Request) -> UnlockResponse:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RecoveryRequiredError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=423, detail="Unlock cancelled by Windows session lock") from exc
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Invalid password or vault") from exc
     return UnlockResponse(token=token)
@@ -362,6 +367,20 @@ def lock(token: str = Depends(get_token)) -> dict:
 @router.get("/status")
 def auth_status(token: str = Depends(get_token)) -> dict:
     return {"unlocked": sessions.is_unlocked(token)}
+
+
+@router.post("/system-state")
+def system_session_state(body: SystemSessionStateIn, request: Request) -> dict:
+    _require_desktop(request)
+    from vault_unified.browser_pairing import browser_pairings
+    from vault_unified.import_flow import import_flow_store
+
+    tokens = sessions.set_system_blocked(body.blocked)
+    for token in tokens:
+        browser_pairings.cancel_session(token, forget=False)
+        import_flow_store.clear_session(token)
+        restore_preview_store.clear_scope(token)
+    return {"locked": True, "blocked": body.blocked}
 
 
 @router.get("/check-keyring")

@@ -108,6 +108,15 @@ def create_app(
 
     @app.middleware("http")
     async def sidecar_security_guard(request: Request, call_next):
+        from vault_unified.session import sessions
+        system_epoch = sessions.system_epoch
+
+        async def guarded_response():
+            response = await call_next(request)
+            if request.url.path != "/api/auth/system-state" and system_epoch != sessions.system_epoch:
+                return JSONResponse({"detail": "Windows session changed; unlock again"}, status_code=423)
+            return response
+
         client = request.client.host if request.client else ""
         allow_remote = os.environ.get("VAULT_API_ALLOW_REMOTE", "") == "1"
         if not allow_remote and client and client not in LOOPBACK_HOSTS:
@@ -142,13 +151,13 @@ def create_app(
         )
         discovery = request.method == "GET" and request.url.path == "/api/browser/discovery"
         if browser_pair or browser_token or browser_connection or browser_proof or discovery:
-            return await call_next(request)
+            return await guarded_response()
         if not provided or not hmac.compare_digest(provided, secret):
             return JSONResponse(
                 {"detail": "Sidecar authentication failed"},
                 status_code=403,
             )
-        return await call_next(request)
+        return await guarded_response()
 
     return app
 

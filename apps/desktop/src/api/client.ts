@@ -133,7 +133,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     headers: requestHeaders,
   });
   if (!res.ok) {
-    if (res.status === 401 && token) {
+      if ((res.status === 401 || res.status === 423) && token) {
       clearToken();
       onUnauthorized?.();
     }

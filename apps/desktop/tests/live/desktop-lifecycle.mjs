@@ -57,6 +57,25 @@ try {
   await page.getByText('QR code loaded into the draft; save to keep it', { exact: true }).waitFor();
   await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.getByRole('button', { name: 'Open Generated native account', exact: true }).waitFor();
+  step = 'native Windows session and suspend notifications';
+  const runtime = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_api_runtime_config'));
+  const apiHeaders = { 'Content-Type': 'application/json', 'X-Vault-Bootstrap': runtime.bootstrap_secret, 'X-Vault-Client': 'vault-unified-desktop' };
+  const unlockRequest = () => fetch(`${runtime.base_url}/auth/unlock`, { method: 'POST', headers: apiHeaders, body: JSON.stringify({ password: master }) });
+  const extraToken = (await (await unlockRequest()).json()).token;
+  await page.getByRole('button', { name: 'Add password', exact: true }).click();
+  await page.getByLabel('Website or app name', { exact: true }).fill('Generated draft cleared by Windows lock');
+  native('session-lock');
+  await page.getByLabel('Master password', { exact: true }).waitFor();
+  await wait(async () => !(await (await fetch(`${runtime.base_url}/auth/status`, { headers: { ...apiHeaders, Authorization: `Bearer ${extraToken}` } })).json()).unlocked);
+  assert((await unlockRequest()).status === 423, 'Windows lock must block a new password unlock');
+  native('suspend'); native('session-unlock');
+  assert((await unlockRequest()).status === 423, 'Session unlock must not bypass an outstanding suspend');
+  native('resume');
+  await wait(async () => (await unlockRequest()).ok);
+  assert(await page.getByLabel('Master password', { exact: true }).isVisible(), 'Windows resume must not unlock the user interface');
+  await page.getByLabel('Master password', { exact: true }).fill(master);
+  await page.getByRole('button', { name: 'Unlock', exact: true }).click();
+  await page.getByRole('button', { name: 'Open Generated native account', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Quick search', exact: true }).click();
   const dialog = () => page.getByRole('dialog', { name: 'Quick search', exact: true });
   await dialog().getByRole('option').waitFor();
@@ -101,7 +120,7 @@ try {
   const restored = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_desktop_status'));
   assert(!restored.preferences.close_to_tray, 'Preferences must survive restart');
   native('close'); await wait(() => child.exitCode !== null); browser = undefined;
-  console.log(JSON.stringify({ nativeQuickSearch: true, globalShortcutFromAnotherWindow: true, closeToTray: true, singleInstance: true, dirtyExit: true, lockedRestart: true, preferencesPersisted: true, qrImageUnderNativeCsp: true, shortcutToggle: true, sidecarShutdown: true }));
+  console.log(JSON.stringify({ nativeQuickSearch: true, globalShortcutFromAnotherWindow: true, closeToTray: true, singleInstance: true, dirtyExit: true, lockedRestart: true, preferencesPersisted: true, qrImageUnderNativeCsp: true, shortcutToggle: true, sidecarShutdown: true, nativeSessionNotifications: true, nativeSuspendNotifications: true, pendingDraftClearedOnSystemLock: true, resumeStayedLocked: true }));
 } catch (error) {
   console.error(`Generated desktop lifecycle failed at ${step}: ${String(error.message).split(master).join('[generated]').split(password).join('[generated]')}`);
   process.exitCode = 1;

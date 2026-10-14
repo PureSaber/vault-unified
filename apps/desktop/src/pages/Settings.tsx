@@ -51,6 +51,7 @@ export default function Settings({ desktop, onDesktopChange, onExit }: { desktop
         <label className="checkbox-label"><input type="checkbox" checked={desktop.preferences.close_to_tray} disabled={saving || !desktop.tray_available} onChange={event => void update({ ...desktop.preferences, close_to_tray: event.target.checked })} />{zh ? "关闭主窗口时收起到托盘" : "Keep running in the tray when the window closes"}</label>
         {!desktop.tray_available && <p role="status">{zh ? "托盘不可用，关闭窗口会退出应用。" : "The tray is unavailable; closing the window quits the app."}</p>}
         <p className="field-hint">{zh ? "收起后仍按设定时间自动锁定。需要完全退出时，使用托盘菜单或下方按钮。" : "Auto-lock stays active while hidden. Use the tray menu or the button below to quit."}</p>
+        <p className="field-hint">{zh ? "Windows 锁屏或休眠会立即锁定密码库并清除未保存的草稿。恢复后需要重新解锁。" : "Windows lock or sleep locks the vault and clears unsaved drafts. Unlock again after resuming."}</p>
         {error && <p className="error" role="alert">{error}</p>}
         <button type="button" className="secondary" onClick={onExit}>{zh ? "退出 Vault Unified" : "Quit Vault Unified"}</button>
       </section>}

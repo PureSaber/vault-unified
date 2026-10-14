@@ -116,4 +116,10 @@ test("native event handoff queues search until unlock and guards explicit exit",
   await page.getByRole("button", { name: "Discard and close", exact: true }).click();
   await expect.poll(() => page.evaluate(() => (window as unknown as { nativeHarness: { exits: number } }).nativeHarness.exits)).toBe(1);
   expect(sidecar.writes).toEqual({ create: 0, update: 0, delete: 0 });
+  await title.fill("Generated system-lock draft");
+  await emit("desktop-system-locked");
+  await expect(page.getByLabel("Master password", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Keep editing", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Generated system-lock draft", { exact: true })).toHaveCount(0);
+  expect(sidecar.writes).toEqual({ create: 0, update: 0, delete: 0 });
 });

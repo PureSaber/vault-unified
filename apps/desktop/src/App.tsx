@@ -274,6 +274,7 @@ function AppShell() {
       subscribe("desktop-lock-requested", () => nativeHandlers.current.lock()),
       subscribe("desktop-exit-requested", () => nativeHandlers.current.exit()),
       subscribe("desktop-hidden", () => setQuickSearch(false)),
+      subscribe("desktop-system-locked", () => { pendingQuickSearch.current = false; lockToUnlock(); }),
     ]).then(async () => { if (active && await desktopReady()) nativeHandlers.current.search(); }).catch(() => { /* Browser preview has no native event runtime. */ });
     return () => { active = false; stops.forEach(stop => stop()); };
   }, []);
