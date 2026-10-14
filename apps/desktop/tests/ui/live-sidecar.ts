@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Page } from "@playwright/test";
+import type { Page, Request } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
@@ -10,11 +10,43 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   const root = resolve(process.cwd(), "../..");
   const directory = await mkdtemp(join(tmpdir(), "vault-renderer-generated-"));
   let child: ChildProcess | undefined;
+  const pending = new Set<Request>();
+  let changed = () => {};
+  const started = (request: Request) => { pending.add(request); changed(); };
+  const finished = (request: Request) => { pending.delete(request); changed(); };
+  page.on("request", started);
+  page.on("requestfinished", finished);
+  page.on("requestfailed", finished);
   const stop = async () => {
     if (child?.pid && child.exitCode === null && child.signalCode === null) {
       const exited = new Promise<void>((accept) => child!.once("exit", () => accept()));
-      child.kill();
-      await exited;
+      try {
+        // waitForLoadState can reuse an earlier idle state. Observe a fresh quiet
+        // interval instead, so cancellation and unlock effects finish before exit.
+        if (!page.isClosed()) await new Promise<void>((accept, reject) => {
+          let quiet: ReturnType<typeof setTimeout> | undefined;
+          const deadline = setTimeout(() => {
+            clearTimeout(quiet);
+            changed = () => {};
+            reject(new Error("Generated API still has pending renderer requests"));
+          }, 5000);
+          changed = () => {
+            clearTimeout(quiet);
+            if (!pending.size) quiet = setTimeout(() => {
+              clearTimeout(deadline);
+              changed = () => {};
+              accept();
+            }, 500);
+          };
+          changed();
+        });
+      } finally {
+        child.kill();
+        await exited;
+        page.off("request", started);
+        page.off("requestfinished", finished);
+        page.off("requestfailed", finished);
+      }
     }
     const target = resolve(directory);
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("vault-renderer-generated-")) {
