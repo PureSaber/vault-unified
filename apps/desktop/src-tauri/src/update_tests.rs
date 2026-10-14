@@ -73,6 +73,9 @@ fn real_updater_rejects_tamper_wrong_version_missing_version_and_rollback() {
                 std::thread::sleep(Duration::from_millis(5));
                 continue;
             };
+            // Accepted Winsock sockets inherit the listener's nonblocking mode.
+            // The HTTP fixture uses bounded blocking reads after accept.
+            stream.set_nonblocking(false).unwrap();
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
