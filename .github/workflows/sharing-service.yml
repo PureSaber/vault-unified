@@ -14,14 +14,19 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Extract the actual service deployment ZIP
+        run: |
+          python scripts/build_release_assets.py --service-only --output-dir "$RUNNER_TEMP/service-kit"
+          python -c "import pathlib,zipfile,os; root=pathlib.Path(os.environ['RUNNER_TEMP']); zipfile.ZipFile(next((root/'service-kit').glob('*.zip'))).extractall(root/'sharing-delivery')"
+          echo "SHARING_ROOT=$RUNNER_TEMP/sharing-delivery" >> "$GITHUB_ENV"
       - name: Create generated deployment credential
         run: |
-          mkdir -p deploy/sharing/secrets
-          python -c "import pathlib,secrets; pathlib.Path('deploy/sharing/secrets/admin-token.txt').write_text(secrets.token_urlsafe(32))"
+          mkdir -p "$SHARING_ROOT/deploy/sharing/secrets"
+          python -c "import pathlib,secrets,os; (pathlib.Path(os.environ['SHARING_ROOT'])/'deploy/sharing/secrets/admin-token.txt').write_text(secrets.token_urlsafe(32))"
       - name: Build and start the actual Compose deployment
-        run: docker compose -f deploy/sharing/compose.yaml up --build --detach --wait --wait-timeout 90
+        run: docker compose -f "$SHARING_ROOT/deploy/sharing/compose.yaml" up --build --detach --wait --wait-timeout 90
       - name: Verify encrypted HTTP access and revocation
-        run: docker compose -f deploy/sharing/compose.yaml exec -T sharing python - < scripts/verify-sharing-service.py
+        run: docker compose -f "$SHARING_ROOT/deploy/sharing/compose.yaml" exec -T sharing python - < scripts/verify-sharing-service.py
       - name: Remove generated containers and volume
         if: always()
-        run: docker compose -f deploy/sharing/compose.yaml down --volumes
+        run: docker compose -f "$SHARING_ROOT/deploy/sharing/compose.yaml" down --volumes

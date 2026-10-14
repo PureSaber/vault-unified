@@ -44,7 +44,7 @@ try {
   const runtime = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_api_runtime_config'));
   let token;
   async function api(path, body, method = 'POST', extraHeaders = {}) {
-    const response = await fetch(`${runtime.base_url}${path}`, { method, headers: { 'Content-Type': 'application/json', 'X-Vault-Bootstrap': runtime.bootstrap_secret, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders }, ...(method === 'GET' ? {} : { body: JSON.stringify(body || {}) }) });
+    const response = await fetch(`${runtime.base_url}${path}`, { method, headers: { 'Content-Type': 'application/json', 'X-Vault-Client': 'vault-unified-desktop', 'X-Vault-Bootstrap': runtime.bootstrap_secret, ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extraHeaders }, ...(method === 'GET' ? {} : { body: JSON.stringify(body || {}) }) });
     assert(response.ok, `Installed API ${path} returned ${response.status}`);
     return response.json();
   }
@@ -98,7 +98,8 @@ try {
   console.log(JSON.stringify({ installedVersion: expectedVersion, journey: mode, preservedVault: true, locked: true }));
 } catch (error) {
   // Never print response objects, generated credentials or renderer contents.
-  throw new Error(`Installed journey failed at ${stage}: ${error.name}`);
+  const message = String(error.message).split('\n')[0].replaceAll(fixture.master, '[generated]').replaceAll(fixture.entry.password, '[generated]');
+  throw new Error(`Installed journey failed at ${stage}: ${error.name}: ${message}`);
 } finally {
   await browser?.close().catch(() => {});
   if (child.exitCode === null) { try { execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch { /* exited */ } }

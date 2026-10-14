@@ -29,6 +29,23 @@ def archive_files(output: Path, files: dict[str, Path]) -> None:
             archive.writestr(info, path.read_bytes())
 
 
+def build_service(root: Path, output: Path, version: str) -> Path:
+    service = output / f"Vault-Unified-Sharing-Service-v{version}.zip"
+    files = {name: root / name for name in ["pyproject.toml", "README.md", "LICENSE", ".dockerignore",
+        "deploy/sharing/Dockerfile", "deploy/sharing/compose.yaml", "docs/encrypted-sharing.md"]}
+    tracked = subprocess.check_output(["git", "ls-files", "-z", "--", "src/vault_unified"], cwd=root).decode("utf-8").split("\0")
+    for name in filter(None, tracked):
+        path = root / name
+        if path.suffix not in {".py", ".js", ".css", ".html", ".txt", ".md"}:
+            raise ValueError(f"Unexpected sharing source file: {name}")
+        files[name] = path
+    for name, path in files.items():
+        if any(pattern.search(path.read_bytes()) for pattern in SECRET_PATTERNS):
+            raise ValueError(f"Secret-like content in sharing package source: {name}")
+    archive_files(service, files)
+    return service
+
+
 def build_assets(root: Path, output: Path) -> dict[str, Path]:
     root, output = root.resolve(), output.resolve()
     version = require_version_contract(root)
@@ -62,19 +79,7 @@ def build_assets(root: Path, output: Path) -> dict[str, Path]:
     latest.write_text(json.dumps({"version": version, "notes": notes.read_text(encoding="utf-8"),
         "pub_date": datetime.now(timezone.utc).isoformat(), "platforms": platforms}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     extension = build_extension_archive(root, output)
-    service = output / f"Vault-Unified-Sharing-Service-v{version}.zip"
-    files = {name: root / name for name in ["pyproject.toml", "README.md", "LICENSE", ".dockerignore",
-        "deploy/sharing/Dockerfile", "deploy/sharing/compose.yaml", "docs/encrypted-sharing.md"]}
-    tracked = subprocess.check_output(["git", "ls-files", "-z", "--", "src/vault_unified"], cwd=root).decode("utf-8").split("\0")
-    for name in filter(None, tracked):
-        path = root / name
-        if path.suffix not in {".py", ".js", ".css", ".html", ".txt", ".md"}:
-            raise ValueError(f"Unexpected sharing source file: {name}")
-        files[name] = path
-    for name, path in files.items():
-        if any(pattern.search(path.read_bytes()) for pattern in SECRET_PATTERNS):
-            raise ValueError(f"Secret-like content in sharing package source: {name}")
-    archive_files(service, files)
+    service = build_service(root, output, version)
     kit = output / f"Vault-Unified-Personal-v{version}-Windows-x64.zip"
     kit_files = {**installers, extension.name: extension, service.name: service, "latest.json": latest,
         "START-HERE.md": root / "docs/personal-edition-start.md", "ACCEPTANCE.md": root / "docs/personal-edition-acceptance.md",
@@ -87,6 +92,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo-root", type=Path, default=Path(__file__).resolve().parents[1])
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--service-only", action="store_true")
     args = parser.parse_args()
-    for label, path in build_assets(args.repo_root, args.output_dir or args.repo_root).items():
+    output = (args.output_dir or args.repo_root).resolve(); output.mkdir(parents=True, exist_ok=True)
+    result = {"service": build_service(args.repo_root.resolve(), output, require_version_contract(args.repo_root))} if args.service_only else build_assets(args.repo_root, output)
+    for label, path in result.items():
         print(f"{label}: {path.name}")

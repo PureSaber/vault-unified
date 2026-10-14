@@ -108,7 +108,7 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
           assert(await popup.locator('#accounts').isHidden(), 'Revoked installed browser retained access');
         }
         console.log(JSON.stringify({ browser: version.product, packagedExtension: true, phase, fill: true, totp: true, saveAndChange: true, passkey: phase === 'initial', revoked: phase === 'restart' }));
-      } catch (error) { throw new Error(`Installed ${channel} failed at ${step}: ${error.name}`); }
+      } catch (error) { throw new Error(`Installed ${channel} failed at ${step}: ${error.name}: ${String(error.message).split('\n')[0]}`); }
       finally {
         await context?.close();
         if (rp && rp.exitCode === null && rp.signalCode === null) { const exited = new Promise(done => rp.once('exit', done)); rp.kill(); await exited; }
