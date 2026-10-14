@@ -26,8 +26,8 @@ than replaced with a simulated completion claim.
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | Pending |
 | 11 | Multiple URLs per account, explicit matching and exclusion rules | Pending |
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
-| 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Bulk preview/apply implemented with organization; duplicate review and merge pending |
-| 14 | Understandable history comparison and selective field restoration | Implemented on `codex/history-field-restore`; real API selective restore and existing editor regressions passed; integration pending |
+| 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Bulk preview/apply merged; duplicate field merge implemented on `codex/duplicate-merge`, validation in progress |
+| 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
 | 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Pending |
 | 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Pending |
@@ -143,9 +143,24 @@ Defaults and scope:
   teardown race (an import cancellation was still in flight at process shutdown).
   Waiting for a fresh request-quiet interval fixes teardown without suppressing
   errors; all seven real-API journeys passed afterwards. TypeScript/build passed.
-  Exact-head CI supplies the final full-suite evidence before integration.
+  Exact-head CI 38503677441 passed, including all 54 UI journeys, full Python,
+  native desktop and dependency audits. Merged PR #62 / `30a3e05`.
 - See [history-field-restore.md](history-field-restore.md). No additional backend
   approval, hashing or persistence mechanism was introduced.
+
+### Duplicate account merge
+
+- Exact website/username candidate filtering, per-field choice and a final
+  preview/confirmation merge two active logins. The original source goes to
+  recoverable trash; both histories and attachments remain in the kept entry.
+- Merged versions live in an encrypted schema-3 namespace outside ordinary edit
+  history retention. Attachment identity collisions are repaired and capacity
+  limits refuse the whole operation without discarding data.
+- All 28 focused Python cases passed before the final attachment-reference and
+  legacy-refusal additions. Four real-API organization/history/merge journeys
+  passed, including accessibility and artifact scan; the screenshot was inspected.
+  Full Python and exact-head CI are pending before integration.
+- See [duplicate-account-merge.md](duplicate-account-merge.md).
 
 The starting source is `b88b328` (PR #57). Browser saving and same-run reconnection
 already exist there; they are not a replacement for rows 2, 3, or 8.

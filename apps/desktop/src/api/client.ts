@@ -174,6 +174,10 @@ export interface Entry {
 export type OrganizationAction = "trash" | "archive" | "restore" | "purge" | "favorite" | "unfavorite" | "tag";
 export interface OrganizationChange { entry_ids: string[]; action: OrganizationAction; tags: string[] }
 export interface OrganizationPreview { preview_token: string; action: OrganizationAction; entries: Array<{ id: string; title: string }> }
+export const mergeFields = ["title", "username", "password", "url", "notes", "tags", "custom_fields", "totp_secret"] as const;
+export type MergeField = typeof mergeFields[number];
+export interface MergeChange { target_id: string; source_id: string; choices: Record<MergeField, "target" | "source"> }
+export interface MergePreview { preview_token: string; target_title: string; source_title: string; history_count: number; attachment_count: number }
 
 export interface Attachment {
   id: string;
@@ -539,6 +543,10 @@ export const api = {
   listEntries: (q?: string, state = "active") =>
     request<Entry[]>(`/entries?state=${encodeURIComponent(state)}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
   previewOrganization: (data: OrganizationChange) => request<OrganizationPreview>("/organization/preview", { method: "POST", body: JSON.stringify(data) }),
+  duplicateGroups: () => request<{ groups: string[][] }>("/organization/duplicates"),
+  previewMerge: (data: MergeChange) => request<MergePreview>("/organization/merge/preview", { method: "POST", body: JSON.stringify(data) }),
+  cancelMerge: (preview_token: string) => request("/organization/merge/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
+  applyMerge: (data: MergeChange, preview_token: string) => request<{ merged_id: string; trashed_id: string }>("/organization/merge/apply", { method: "POST", body: JSON.stringify({ ...data, preview_token, confirm: true }) }),
   cancelOrganization: (preview_token: string) => request("/organization/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
   applyOrganization: (data: OrganizationChange, preview_token: string) => request("/organization/apply", { method: "POST", body: JSON.stringify({ ...data, preview_token, confirm: true }) }),
   getEntry: (id: string, reveal = true) =>
