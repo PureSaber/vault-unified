@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api, type Attachment, type Entry, type TemplateData } from "../api/client";
 import CredentialTemplateFields from "../components/CredentialTemplateFields";
 import TotpEditor from "../components/TotpEditor";
+import GeneratorOptions, { defaultGenerationOptions } from "../components/GeneratorOptions";
+import GenerationHistory from "../components/GenerationHistory";
 import HistoryReview, { type HistoryField } from "../components/HistoryReview";
 import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
@@ -265,8 +267,13 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   const [personalReady, setPersonalReady] = useState(false);
   const [history, setHistory] = useState<Array<{ id: string; saved_at: string }>>([]);
   const [historyToRestore, setHistoryToRestore] = useState<string | null>(null);
-  const [genLength, setGenLength] = useState(20);
-  const [genSymbols, setGenSymbols] = useState(true);
+  const [generationOptions, setGenerationOptions] = useState(defaultGenerationOptions);
+  const [generating, setGenerating] = useState(false);
+  const [showGenerationHistory, setShowGenerationHistory] = useState(false);
+  const generationSequence = useRef(0);
+  const latestPassword = useRef(draft.password);
+  latestPassword.current = draft.password;
+  useEffect(() => () => { ++generationSequence.current; }, []);
   const [showGeneratorOptions, setShowGeneratorOptions] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [showTechnical, setShowTechnical] = useState(false);
@@ -374,12 +381,21 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   }
 
   async function handleGenerate() {
+    if (generating) return;
+    const stamp = ++generationSequence.current;
+    const previous = draft.password;
+    setGenerating(true);
     try {
-      const result = await api.generate(genLength, genSymbols);
-      patchDraft({ password: result.password });
-      showToast(t("form.generated"));
+      const result = personalReady
+        ? await api.generateSaved(generationOptions, draft.url, clientId())
+        : await api.generate(generationOptions.length, generationOptions.symbols);
+      if (stamp !== generationSequence.current) return;
+      if (latestPassword.current === previous) patchDraft({ password: result.password });
+      showToast(personalReady ? (locale === "zh" ? "已生成并加入加密历史" : "Generated and kept in encrypted history") : t("form.generated"));
     } catch (generateError) {
-      showToast(String(generateError).replace(/^Error:\s*/, ""), "error");
+      if (stamp === generationSequence.current) showToast(locale === "zh" ? "生成失败，请检查字符限制或重试。" : "Could not generate. Check character restrictions or try again.", "error");
+    } finally {
+      if (stamp === generationSequence.current) setGenerating(false);
     }
   }
 
@@ -474,6 +490,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   return (
     <div className="card entry-editor-card">
+      {showGenerationHistory && <GenerationHistory onClose={() => setShowGenerationHistory(false)} onUse={password => patchDraft({ password })} />}
       <h2>{heading()}</h2>
       <form onSubmit={handleSave} aria-busy={saving}>
         {!isEdit && (
@@ -516,7 +533,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
               onChange={(password) => patchDraft({ password })}
               hint={isTemplate ? undefined : t("form.passwordHint")}
               required={draft.entryType === "software_license" || draft.entryType === "api_credential"}
-              action={draft.entryType === "login" ? <button type="button" className="primary" onClick={handleGenerate}>{t("form.generate")}</button> : undefined}
+              action={draft.entryType === "login" ? <button type="button" className="primary" disabled={generating || saving} onClick={handleGenerate}>{t("form.generate")}</button> : undefined}
             />}
             {draft.entryType === "login" && <>
             <button
@@ -528,15 +545,8 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
             >
               {showGeneratorOptions ? text.hideGeneratorOptions : text.generatorOptions}
             </button>
-            {showGeneratorOptions && (
-              <div className="generator-options" id="generator-options">
-                <div className="field generate-length">
-                  <label className="field-label" htmlFor="gen-length">{t("form.genLength")}</label>
-                  <input id="gen-length" type="number" min={12} max={64} value={genLength} onChange={(event) => setGenLength(Math.min(64, Math.max(12, Number(event.target.value) || 12)))} />
-                </div>
-                <label className="checkbox-field"><input type="checkbox" checked={genSymbols} onChange={(event) => setGenSymbols(event.target.checked)} /><span>{t("form.genSymbols")}</span></label>
-              </div>
-            )}
+            {personalReady && <button type="button" className="ghost compact-disclosure" onClick={() => setShowGenerationHistory(true)}>{locale === "zh" ? "找回生成的密码" : "Recover a generated password"}</button>}
+            {showGeneratorOptions && <GeneratorOptions value={generationOptions} onChange={setGenerationOptions} historyEnabled={personalReady} />}
             </>}
             <div className="field">
               <label className="field-label" htmlFor="entry-url">{text.website}</label>

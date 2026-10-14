@@ -61,6 +61,7 @@ const messages = {
   noField: ["未找到可用的密码字段，可手动添加账号。", "No supported visible password field was found. Nothing was filled."],
   captured: ["已读取页面内容，请核对账号并确认密码可用。", "Read the page. Check the account and confirm the password works."],
   generated: ["新密码已生成，尚未保存。", "Password generated; not saved yet."],
+  generatedRecoverable: ["新密码已加入桌面生成历史；确认保存后才会更新账号。", "Password kept in desktop generation history; confirm Save to update the account."],
   saved: ["账号已保存到本地保险库。", "Account saved to the local vault."],
   saveUnknown: ["连接中断，保存结果待确认。请重新连接后检查账号。", "Connection interrupted; save result is unknown. Reconnect and check the account."],
   cancelled: ["已取消，保险库未改动。", "Cancelled. The vault was not changed."],
@@ -429,10 +430,10 @@ el("save-target").addEventListener("change", () => {
 });
 el("generate").addEventListener("click", () => void action(async () => {
   const stamp = epoch;
-  const result = await request("/generate", { body: "{}" });
+  const result = await request("/generate", { body: JSON.stringify({ url: new URL(currentTab.url).origin, request_id: crypto.randomUUID() }) });
   if (stamp !== epoch) return;
   el("save-password").value = result.password;
-  setStatus("generated");
+  setStatus(result.history_saved ? "generatedRecoverable" : "generated");
 }));
 el("reveal").addEventListener("click", () => {
   const show = el("save-password").type === "password";

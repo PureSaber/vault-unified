@@ -19,7 +19,9 @@ from vault_unified.browser_pairing import (
 )
 from vault_unified.session import sessions
 from vault_unified.browser_save import BrowserSaveError, browser_saves
-from vault_unified.generator import generate_password
+from vault_unified.generation_history import generate_saved
+from pydantic import BaseModel, Field
+from uuid import UUID
 from vault_unified.local_store import EntryTransactionConflict
 
 
@@ -174,9 +176,18 @@ def browser_status(vault=Depends(_vault_for_browser)) -> dict:
     return {"unlocked": True}
 
 
+class BrowserGenerateIn(BaseModel):
+    url: str = Field(default="", max_length=2048)
+    request_id: UUID | None = None
+
+
 @router.post("/generate")
-def browser_generate(vault=Depends(_vault_for_browser)) -> dict:
-    return {"password": generate_password(24)}
+def browser_generate(response: Response, body: BrowserGenerateIn | None = None, vault=Depends(_vault_for_browser)) -> dict:
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return generate_saved(vault.local, length=24, url=body.url if body else "", request_id=str(body.request_id) if body and body.request_id else None)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Generated password was not saved; try again") from exc
 
 
 def _save_error(exc: Exception) -> HTTPException:
