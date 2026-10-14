@@ -50,7 +50,7 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
         step = 'save and change password';
         await popup.locator('#add').click();
         await popup.locator('#save-title').fill(`Generated saved ${channel} ${phase}`);
-        await popup.locator('#save-username').fill(`generated-${phase}`);
+        await popup.locator('#save-username').fill(`generated-${channel}-${phase}`);
         await popup.locator('#generate').click();
         await popup.waitForFunction(() => document.querySelector('#save-password').value.length > 0);
         const generated = await popup.locator('#save-password').inputValue();

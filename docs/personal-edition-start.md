@@ -28,7 +28,8 @@
 换电脑请用“安全与恢复”的迁移包及隔离恢复演练，或连接同一加密同步文件夹／WebDAV。
 主密码和恢复码应分开离线保存。新电脑的浏览器授权和 Windows Hello 需重新设置。
 
-卸载会移除该安装的浏览器桥接注册，保留密码库和加密备份。需要重新使用时安装并配对。
+卸载会移除该安装的浏览器桥接注册，保留密码库和加密备份。重新安装到原位置可恢复
+已有浏览器连接；换位置或换电脑请重新配对。恢复连接仍需先解锁密码库。
 
 ## 可选分享服务
 
@@ -50,6 +51,8 @@ Update checks are optional; installation verifies signatures and retains a backu
 If interrupted, rerun the same installer without deleting your vault. For a new PC,
 use migration/recovery rehearsal or encrypted folder/WebDAV sync, then authorize
 the browser and Windows Hello again. Uninstall preserves vaults and backups.
+Reinstalling at the same path restores the existing browser bridge; it still
+requires an unlocked vault and valid browser authorization.
 
 The optional sharing-service ZIP includes Python and Docker Compose instructions
 in `docs/encrypted-sharing.md`. Use HTTPS outside localhost. See `ACCEPTANCE.md`

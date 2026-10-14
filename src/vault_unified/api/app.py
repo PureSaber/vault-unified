@@ -266,6 +266,7 @@ def main() -> None:
     try:
         if host == "127.0.0.1":
             browser_discovery.publish(actual_port, instance_id)
+            browser_discovery.restore_registration()
         server.run(sockets=[server_socket])
     finally:
         browser_discovery.clear(instance_id)
