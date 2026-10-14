@@ -4,7 +4,7 @@ import hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from vault_unified.config import get_vault_path
 from vault_unified.api.deps import get_token, require_loopback
@@ -284,6 +284,17 @@ def preview_emergency_recovery(body: EmergencyRecoveryPreviewIn, request: Reques
         "impact": "The active vault will be atomically replaced, retained as an encrypted recovery copy, and protected with the new master password",
         "warning": "Preview only: the active vault was not changed",
     }
+
+
+@router.post("/recover/rehearse")
+def rehearse_emergency_recovery(body: EmergencyRecoveryPreviewIn, request: Request, response: Response) -> dict:
+    _require_desktop(request)
+    from vault_unified.recovery_rehearsal import rehearse_recovery
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return rehearse_recovery(body.kit_path, body.recovery_code)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Recovery rehearsal failed; check the file and recovery code") from None
 
 
 @router.post("/recover/apply")

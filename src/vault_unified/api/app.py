@@ -90,6 +90,8 @@ def create_app(
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
+        if request.url.path.startswith("/api/auth/recover"):
+            return JSONResponse({"detail": "Invalid recovery request"}, status_code=422)
         if request.url.path.startswith("/api/security/"):
             return JSONResponse({"detail": "Invalid security check request"}, status_code=422)
         if request.url.path.startswith("/api/auth/hello"):

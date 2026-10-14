@@ -20,7 +20,7 @@ than replaced with a simulated completion claim.
 | 4 | System-wide quick search and copy, keyboard navigation, tray and window lifecycle | Merged PR #68 / `db88b8e`; exact-head CI 38514736044 passed, including actual Windows global-shortcut/tray/exit/restart checks |
 | 5 | TOTP setup including QR, current code/countdown/copy and browser filling | Merged PR #65 / `67b2db3`; exact-head CI 38507719041 passed, including native extension TOTP filling |
 | 6 | Recoverable trash and archive, clear retention/permanent-delete behavior, exclusion from normal fill | Merged PR #61 / `565f4d7`; full CI 38501649498 passed; source feature, not released |
-| 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Implemented local checks, opt-in range queries and change-password workflow; focused API and bilingual renderer validation passed; integration checks pending |
+| 7 | Local weak/reused-password findings and actionable change-password workflow; optional privacy-preserving exposure checking | Merged PR #73; exact-head CI 38525722860 passed, including local/opt-in network boundary tests and bilingual change-password workflow |
 | 8 | Encrypted, bounded generated-password recovery; passphrases and configurable website character restrictions | Merged PR #66 / `4c5f73c`; exact-head CI 38508845006 passed, including native extension restart recovery |
 | 9 | Favorites, tag/type filters, sorting and efficient keyboard search | Merged with account organization in PR #61; full CI passed |
 | 10 | Windows Hello device authorization and fallback, OS lock and suspend integration | OS lock/suspend merged PR #70 / `f8bdc89`; Hello merged PR #71 / `c4cc6aa`, exact-head CI 38519483457 passed. Native WinRT availability and API boundary checked; owner biometric and physical OS acceptance remain in final installed acceptance |
@@ -28,7 +28,7 @@ than replaced with a simulated completion claim.
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
-| 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
+| 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Guided package preparation, real isolated restore/reopen/full-payload comparison and startup migration implemented; seven API cases and bilingual two-profile migration passed; full integration checks pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Merged PR #72 / `1e281ce`; exact-head CI 38524795766 passed, including actual Windows Unicode/Tab input, one-use confirmation, focus diversion, cancellation and native lifecycle |
 | 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Merged PR #64 / `57aeb90`; exact-head CI 38505943098 passed, including all 57 renderer journeys |
 | 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Pending |
