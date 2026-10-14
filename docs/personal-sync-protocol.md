@@ -4,6 +4,11 @@ Stage 5 uses immutable authenticated per-device records, transported identically
 through a user-selected folder or WebDAV collection. This document describes the
 implementation contract; no connected product workflow is delivered yet.
 
+Implemented modules cover the record codec, folder/WebDAV transports, causal
+replica, portable payload adapter and crash-safe vault transaction engine. Device
+connection/credential storage, approval UI and automatic scheduling remain the
+next integration increment; the transport does not start on its own.
+
 Each space has a random 256-bit AES-GCM key and random identifier. Each installation
 has a separate random device identifier. A change filename contains only the device
 and monotonic sequence. AEAD associated data binds protocol version, space and
@@ -38,6 +43,14 @@ connection failure leaves outstanding records pending, never skips a sequence.
 Require the captured vault generation when committing a merge so an editor change
 made during I/O cannot be overwritten.
 
+The existing local writer additionally binds a save to the encrypted payload
+generation loaded by that `LocalVault` instance. A second unlocked instance cannot
+silently overwrite a newer disk generation; it must unlock again. This uses the
+existing container generation/nonce and atomic writer, without another persisted
+hash registry or lock file. Device-key wrapping changes do not invalidate a
+loaded content generation. Entries and replication state switch in memory only
+after their single encrypted commit succeeds.
+
 Different fields merge automatically. Same-field conflicts retain base, local and
 remote values. Concurrent trash/delete and edit is an object-level conflict.
 Retained deletion identities prevent an old offline device's create record from
@@ -46,6 +59,15 @@ IDs; overflow moves to the existing merged-history namespace instead of being
 silently discarded. User resolution creates an explicit causal resolution record,
 even if the chosen value equals the already-visible local value. A later ordinary
 edit must not implicitly acknowledge or clear an unresolved field conflict.
+
+Compound lists other than immutable entry history are treated as a field and
+require a choice on concurrent edits. Each record is limited to 32 MiB and the
+existing encrypted vault limit remains 256 MiB including local replication state.
+Oversized records or vault candidates fail without truncating data. A cycle reads
+at most 1,000 records / 128 MiB before continuing in another cycle; missing causal
+predecessors stay pending. Existing remote ciphertext records are retained, so a
+storage owner may still possess old encrypted revisions after local history
+retention or permanent removal. No automatic remote history erasure is claimed.
 
 Device announcement records include their received causal context. A deletion
 remains retained until every known authorized device has acknowledged it; the first
