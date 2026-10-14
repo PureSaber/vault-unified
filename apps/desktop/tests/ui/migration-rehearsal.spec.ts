@@ -42,6 +42,7 @@ for (const locale of ["en", "zh"] as const) test(`rehearse and move to an indepe
     await expect(guide.getByRole("status")).toContainText(zh ? "演练通过：完整数据一致，临时副本已删除。" : "Rehearsal passed: all data matched and the temporary copy was removed.");
     await expect(guide.getByLabel(zh ? "演练恢复码" : "Recovery code for rehearsal", { exact: true })).toBeEmpty();
     expect((await new AxeBuilder({ page }).analyze()).violations.filter(item => ["serious", "critical"].includes(item.impact || "")).map(item => item.id)).toEqual([]);
+    await expect(page.locator(".toast")).toHaveCount(0, { timeout: 10_000 });
     await guide.screenshot({ path: testInfo.outputPath(`migration-${locale}.png`) });
 
     destination = await startGeneratedSidecar(nextPage);

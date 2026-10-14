@@ -28,7 +28,7 @@ than replaced with a simulated completion claim.
 | 12 | Extension distribution, desktop update flow, version compatibility, signing and preserved-vault upgrade validation | Pending |
 | 13 | In-vault duplicate review and field merge, bulk tagging/archive with safe preview/apply | Merged PR #63 / `95d126a`; exact-head CI 38504714200 passed; bulk actions previously merged in #61 |
 | 14 | Understandable history comparison and selective field restoration | Merged PR #62 / `30a3e05`; exact-head CI 38503677441 passed, including all 54 UI journeys |
-| 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Pending |
+| 15 | New-computer migration and isolated restore rehearsal using existing backup/recovery mechanisms | Guided package preparation, real isolated restore/reopen/full-payload comparison and startup migration implemented; seven API cases and bilingual two-profile migration passed; full integration checks pending |
 | 16 | User-triggered Windows application auto-type with verified destination and configurable sequences | Merged PR #72 / `1e281ce`; exact-head CI 38524795766 passed, including actual Windows Unicode/Tab input, one-use confirmation, focus diversion, cancellation and native lifecycle |
 | 17 | Practical templates for recovery codes, software licenses and API credentials, including used-code tracking | Merged PR #64 / `57aeb90`; exact-head CI 38505943098 passed, including all 57 renderer journeys |
 | 18 | Full-vault encrypted cross-computer synchronization over user-controlled storage, concurrent-edit conflict resolution | Pending |

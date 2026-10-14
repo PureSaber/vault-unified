@@ -36,10 +36,10 @@ export default function RecoveryRehearsal({ suggestedPath = "" }: { suggestedPat
       </ol>
       <p className="field-hint">{zh ? "浏览器授权、Windows Hello 和本机连接设置需要在新电脑重新配置。演练不会修改当前密码库，也不会启用同步。" : "Set up browser authorization, Windows Hello and local connection settings again on the new computer. Rehearsal leaves the current vault unchanged and does not enable sync."}</p>
       <form onSubmit={event => void rehearse(event)}>
-        <fieldset disabled={busy}>
+        <fieldset className="recovery-rehearsal-fields" disabled={busy}>
           <PathPicker id="rehearsal-kit" label={zh ? "用于演练的加密包" : "Encrypted kit to rehearse"} mode="file" value={path} onChange={value => { setPath(value); setResult(null); }} extensions={["vault"]} required />
-          <label className="field-label" htmlFor="rehearsal-code">{zh ? "演练恢复码" : "Recovery code for rehearsal"}</label>
-          <input id="rehearsal-code" type="password" autoComplete="off" value={code} onChange={event => { setCode(event.target.value); setResult(null); }} required />
+          <div className="field"><label className="field-label" htmlFor="rehearsal-code">{zh ? "演练恢复码" : "Recovery code for rehearsal"}</label>
+          <input id="rehearsal-code" type="password" autoComplete="off" value={code} onChange={event => { setCode(event.target.value); setResult(null); }} required /></div>
           <button type="submit" className="secondary" disabled={!path.trim() || !code}>{busy ? (zh ? "正在隔离恢复…" : "Restoring in isolation…") : (zh ? "开始恢复演练" : "Rehearse recovery")}</button>
         </fieldset>
       </form>
