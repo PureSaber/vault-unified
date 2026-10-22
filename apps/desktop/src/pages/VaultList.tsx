@@ -11,13 +11,16 @@ interface Props {
   onAdd: () => void;
   onImport: () => void;
   onEdit: (entry: Entry) => void;
+  onOpen: (entry: Entry) => void;
+  selectedId?: string;
+  active?: boolean;
 }
 
 function maskPassword(hasPassword: boolean) {
   return hasPassword ? "••••••••" : "—";
 }
 
-export default function VaultList({ onAdd, onEdit, onImport }: Props) {
+export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId, active = true }: Props) {
   const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -39,10 +42,12 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   const [organizationPlan, setOrganizationPlan] = useState<{ change: OrganizationChange; preview: OrganizationPreview } | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [connectedSources, setConnectedSources] = useState<string[]>([]);
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, string>>({});
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const debounceRef = useRef<number | null>(null);
   const requestSequence = useRef(0);
+  const revealGeneration = useRef(0);
   const revealTimers = useRef(new Map<string, number>());
   const criteriaRef = useRef({ query, state, duplicatesOnly });
   criteriaRef.current = { query, state, duplicatesOnly };
@@ -67,6 +72,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   }
 
   function hideAllPasswords() {
+    ++revealGeneration.current;
     for (const timer of revealTimers.current.values()) window.clearTimeout(timer);
     revealTimers.current.clear();
     setRevealedPasswords({});
@@ -75,9 +81,11 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   useEffect(() => {
     void load();
     void api.payloadFormat().then(data => setPersonalReady(data.version >= 3)).catch(() => {});
+    let active = true;
+    void api.integrations().then(items => { if (active) setConnectedSources(items.filter(item => item.configured).map(item => item.source)); }).catch(() => {});
     const changed = () => { hideAllPasswords(); void load(); };
     window.addEventListener("vault-entries-changed", changed);
-    return () => window.removeEventListener("vault-entries-changed", changed);
+    return () => { active = false; ++requestSequence.current; window.removeEventListener("vault-entries-changed", changed); };
   }, []);
 
   const initialSearch = useRef(true);
@@ -95,6 +103,8 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
     };
   }, [query, state, duplicatesOnly]);
 
+  useEffect(() => { hideAllPasswords(); }, [active, selectedId]);
+
   useEffect(() => {
     const handleBlur = () => hideAllPasswords();
     const handleVisibility = () => {
@@ -107,6 +117,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
       document.removeEventListener("visibilitychange", handleVisibility);
       for (const timer of revealTimers.current.values()) window.clearTimeout(timer);
       revealTimers.current.clear();
+      ++revealGeneration.current;
     };
   }, []);
 
@@ -160,9 +171,11 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
       hideAllPasswords();
       return;
     }
+    hideAllPasswords();
+    const generation = revealGeneration.current;
     try {
       const entry = await api.getEntry(id, true);
-      hideAllPasswords();
+      if (generation !== revealGeneration.current) return;
       setRevealedPasswords({ [id]: entry.password || "" });
       const timer = window.setTimeout(() => {
         setRevealedPasswords((previous) => {
@@ -210,11 +223,11 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
   }
 
   return (
-    <div>
+    <div className="vault-list-panel">
       {mergeIds && <DuplicateMerge ids={mergeIds} onCancel={() => setMergeIds(null)} onMerged={() => { setMergeIds(null); hideAllPasswords(); void load(); showToast(zh ? "账号已合并，被合并条目可在回收站恢复" : "Accounts merged; the second account can be restored from trash"); }} />}
       <ConfirmDialog open={organizationPlan !== null} idPrefix="organization"
         title={organizationPlan ? actionLabel(organizationPlan.change.action) : ""}
-        message={organizationPlan ? `${zh ? "选中条目" : "Selected entries"}: ${organizationPlan.preview.entries.map(entry => entry.title).join("、")}\n${organizationPlan.change.action === "trash" ? (zh ? "回收站保留 30 天，到期自动清理；期间可恢复。" : "Trash keeps items for 30 days, then removes them automatically. Restore them during this period.") : organizationPlan.change.action === "purge" ? (zh ? "将从回收站永久删除这些条目。" : "These items will be permanently removed from trash.") : ""}` : ""}
+        message={organizationPlan ? `${zh ? "选中条目" : "Selected entries"}: ${organizationPlan.preview.entries.map(entry => entry.title).join(zh ? "、" : ", ")}\n${organizationPlan.change.action === "trash" ? (zh ? "回收站保留 30 天，到期自动清理；期间可恢复。" : "Trash keeps items for 30 days, then removes them automatically. Restore them during this period.") : organizationPlan.change.action === "purge" ? (zh ? "将从回收站永久删除这些条目。" : "These items will be permanently removed from trash.") : ""}` : ""}
         confirmLabel={organizationPlan ? actionLabel(organizationPlan.change.action) : ""}
         variant={organizationPlan?.change.action === "purge" ? "danger" : "default"}
         onConfirm={() => void applyOrganization()} onCancel={cancelOrganization} />
@@ -299,22 +312,23 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
           {filtered.map((entry) => {
             const revealed = revealedPasswords[entry.id] != null;
             return (
-              <li className={`entry-row${personalReady ? " entry-row-selectable" : ""}`} key={entry.id}>
+              <li className={`entry-row${personalReady ? " entry-row-selectable" : ""}${selectedId === entry.id ? " is-selected" : ""}`} key={entry.id}>
                 {personalReady && <input type="checkbox" aria-label={`${zh ? "选择" : "Select"} ${entry.title}`} checked={selected.includes(entry.id)} disabled={busy} onChange={event => setSelected(current => event.target.checked ? [...current, entry.id] : current.filter(id => id !== entry.id))} />}
                 <button
                   type="button"
                   className="entry-open"
-                  onClick={() => onEdit(entry)}
+                  onClick={() => { hideAllPasswords(); onOpen(entry); }}
                   aria-label={t("list.openEntry", { title: entry.title })}
+                  aria-pressed={selectedId === entry.id}
                 >
-                  <span className="entry-title">{entry.title}</span>
+                  <span className="entry-title"><span className="account-avatar" aria-hidden="true">{entry.title.slice(0, 1).toUpperCase()}</span><span>{entry.title}</span></span>
                   {entry.favorite && <span aria-label={zh ? "已收藏" : "Favorite"}>★</span>}
                   <span className="entry-meta">
                     <span className="entry-username">{entry.username || t("list.noUsername")}</span>
-                    <span className="entry-password-preview" aria-label={t("list.passwordAria")}>
+                    <span className={`entry-password-preview${revealed ? " is-revealed" : ""}`} aria-label={`${t("list.passwordAria")}: ${entry.title}`}>
                       {revealed ? revealedPasswords[entry.id] || "—" : maskPassword(entry.has_password)}
                     </span>
-                    {entry.sync_status === "dirty" && (
+                    {entry.sync_status === "dirty" && connectedSources.some(source => Boolean(entry.linked_sources?.[source])) && (
                       <span className="badge badge-sync-dirty">{t("list.waitingSync")}</span>
                     )}
                     {entry.sync_status === "conflict" && (
@@ -328,7 +342,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
                   )}
                 </button>
                 <div className="entry-actions">
-                  <button type="button" className="primary" onClick={() => entry.entry_type === "recovery_code" ? onEdit(entry) : void handleCopy(entry.id)}>
+                  <button type="button" className="secondary" onClick={() => { if (entry.entry_type === "recovery_code") { hideAllPasswords(); onOpen(entry); } else void handleCopy(entry.id); }}>
                     {entry.entry_type === "recovery_code" ? (zh ? "查看恢复码" : "View recovery codes") : ["software_license", "api_credential"].includes(entry.entry_type) ? (zh ? "复制密钥" : "Copy key") : t("list.copyPass")}
                   </button>
                   <details className="entry-more">
@@ -342,7 +356,7 @@ export default function VaultList({ onAdd, onEdit, onImport }: Props) {
                       <button type="button" className="ghost" onClick={() => handleCopyUsername(entry.id)}>
                         {t("list.copyUser")}
                       </button>
-                      <button type="button" className="ghost" onClick={() => onEdit(entry)}>
+                      <button type="button" className="ghost" onClick={() => { hideAllPasswords(); onEdit(entry); }}>
                         {t("list.edit")}
                       </button>
                       <button

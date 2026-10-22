@@ -48,6 +48,7 @@ test("duplicate review cancels without writes and merges chosen fields into a re
     await expect(dialog).toHaveCount(0);
     await page.getByLabel("Duplicates only", { exact: true }).uncheck();
     await page.getByRole("button", { name: "Open Generated duplicate A", exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByLabel("Password", { exact: true })).toHaveValue(testData.masterPassword);
     await page.getByRole("button", { name: "Cancel", exact: true }).click();
     await page.getByLabel("Entry location", { exact: true }).selectOption("trash");

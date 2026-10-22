@@ -17,7 +17,10 @@ for (const locale of ["en", "zh"] as const) test(`credential templates persist u
     await page.getByRole("button", { name: zh ? "创建并解锁" : "Create and unlock", exact: true }).click();
     const save = () => page.getByRole("button", { name: zh ? "保存" : "Save", exact: true }).click();
     const cancel = () => page.getByRole("button", { name: zh ? "取消" : "Cancel", exact: true }).click();
-    const open = (title: string) => page.getByRole("button", { name: `${zh ? "打开" : "Open"} ${title}`, exact: true }).click();
+    const open = async (title: string) => {
+      await page.getByRole("button", { name: `${zh ? "打开" : "Open"} ${title}`, exact: true }).click();
+      await page.getByRole("article").getByRole("button", { name: zh ? "编辑" : "Edit", exact: true }).click();
+    };
     const add = async (type: string, title: string) => {
       await page.getByRole("button", { name: zh ? "添加密码" : "Add password", exact: true }).click();
       await page.getByLabel(zh ? "内容类型" : "Content type", { exact: true }).selectOption(type);

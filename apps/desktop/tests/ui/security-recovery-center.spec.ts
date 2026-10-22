@@ -107,6 +107,11 @@ test("offers emergency recovery before authentication and preserves the in-app h
   await page.getByRole("button", { name: "Unlock", exact: true }).click();
   await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
   await page.getByRole("button", { name: "Restore from recovery kit", exact: true }).click();
+  await expect(page.getByRole("alertdialog", { name: "Lock and open recovery?" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Lock now", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Restore from recovery kit", exact: true }).click();
+  await page.getByRole("button", { name: "Lock and continue", exact: true }).click();
 
   await expect(page.getByRole("heading", { name: "Recover from an emergency kit", exact: true })).toBeVisible();
   await expect(page).not.toHaveURL(/#recovery-kit$/);

@@ -62,6 +62,7 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
   async function edit(target: Page, password: string) {
     await target.getByRole("button", { name: text("Passwords", "密码"), exact: true }).click();
     await target.getByRole("button", { name: text(`Open ${title}`, `打开 ${title}`), exact: true }).click();
+    await target.getByRole("article").getByRole("button", { name: text("Edit", "编辑"), exact: true }).click();
     await target.getByLabel(text("Password", "密码"), { exact: true }).fill(password);
     await target.getByRole("button", { name: text("Save", "保存"), exact: true }).click();
     await expect(target.getByRole("button", { name: text(`Open ${title}`, `打开 ${title}`), exact: true })).toBeVisible();
@@ -111,6 +112,7 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
     await sync(page); await sync(other);
     await other.getByRole("button", { name: text("Passwords", "密码"), exact: true }).click();
     await other.getByRole("button", { name: text(`Open ${title}`, `打开 ${title}`), exact: true }).click();
+    await other.getByRole("article").getByRole("button", { name: text("Edit", "编辑"), exact: true }).click();
     await expect.poll(async () => await other.getByLabel(text("Password", "密码"), { exact: true }).inputValue() === testData.entryPassword + "-first").toBe(true);
     await connections(other);
     await section(other).getByLabel(text("Sync automatically while unlocked", "解锁期间自动同步"), { exact: true }).check();
@@ -123,6 +125,7 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
     await other.clock.fastForward(61_000);
     expect((await automaticResult).status()).toBe(200);
     await other.getByRole("button", { name: text(`Open ${title}`, `打开 ${title}`), exact: true }).click();
+    await other.getByRole("article").getByRole("button", { name: text("Edit", "编辑"), exact: true }).click();
     await expect.poll(async () => await other.getByLabel(text("Password", "密码"), { exact: true }).inputValue() === testData.entryPassword + "-automatic").toBe(true);
     await connections(other);
     if (server) {

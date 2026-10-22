@@ -4,9 +4,11 @@ import { useI18n, type Locale } from "../i18n";
 import { saveDesktopPreferences, type DesktopPreferences, type DesktopStatus } from "../desktop";
 import HelloSettings from "../components/HelloSettings";
 import DesktopUpdates from "../components/DesktopUpdates";
+import { useAppearance } from "../components/Appearance";
 
 export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: { desktop: DesktopStatus | null; onDesktopChange: (value: DesktopStatus) => void; onExit: () => void; onBusy: (value: boolean) => void }) {
   const { t, locale, setLocale } = useI18n();
+  const { theme, setTheme } = useAppearance();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const zh = locale === "zh";
@@ -37,6 +39,15 @@ export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: {
           >
             <option value="zh">{t("lang.zh")}</option>
             <option value="en">{t("lang.en")}</option>
+          </select>
+        </div>
+      </section>
+
+      <section className="settings-section" aria-labelledby="appearance-heading">
+        <h3 id="appearance-heading" className="section-title">{zh ? "外观" : "Appearance"}</h3>
+        <div className="field"><label className="field-label" htmlFor="settings-theme">{zh ? "主题" : "Theme"}</label>
+          <select id="settings-theme" value={theme} onChange={event => setTheme(event.target.value as "system" | "light" | "dark")}>
+            <option value="system">{zh ? "跟随系统" : "Use system setting"}</option><option value="light">{zh ? "浅色" : "Light"}</option><option value="dark">{zh ? "深色" : "Dark"}</option>
           </select>
         </div>
       </section>

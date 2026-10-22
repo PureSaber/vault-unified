@@ -8,7 +8,7 @@ import PasswordField from "../components/PasswordField";
 const emptyValues: SharedValues = { title: "", username: "", password: "", url: "", notes: "" };
 const emptyStatus: SharingStatus = { service: "", identity: "", shares: [], families: [], outbox: [] };
 
-export default function Sharing({ onDirtyChange, onSavingChange }: { onDirtyChange: (value: boolean) => void; onSavingChange: (value: boolean) => void }) {
+export default function Sharing({ onDirtyChange, onSavingChange, initialEntryId }: { initialEntryId?: string; onDirtyChange: (value: boolean) => void; onSavingChange: (value: boolean) => void }) {
   const { locale } = useI18n(); const zh = locale === "zh"; const { showToast } = useToast();
   const text = (en: string, cn: string) => zh ? cn : en;
   const [status, setStatus] = useState(emptyStatus), [server, setServer] = useState(""), [admin, setAdmin] = useState("");
@@ -22,16 +22,19 @@ export default function Sharing({ onDirtyChange, onSavingChange }: { onDirtyChan
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [revealed, setRevealed] = useState<{ value: string; invitation: boolean } | null>(null);
   const mounted = useRef(true);
+  const serverEdited = useRef(false);
+  const loadSequence = useRef(0);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; onDirtyChange(false); onSavingChange(false); }; }, [onDirtyChange, onSavingChange]);
   useEffect(() => { onDirtyChange(dirty || Boolean(preview)); }, [dirty, preview, onDirtyChange]);
   useEffect(() => { onSavingChange(busy); }, [busy, onSavingChange]);
   const load = useCallback(async () => {
+    const sequence = ++loadSequence.current;
     const value = await api.sharingStatus();
-    if (mounted.current) { setStatus(value); setServer(value.service); }
+    if (mounted.current && sequence === loadSequence.current) { setStatus(value); if (!serverEdited.current) setServer(value.service); }
   }, []);
   useEffect(() => {
     void load().catch(() => {});
-    void api.listEntries().then(values => { if (mounted.current) { setPersonal(values); setPersonalId(values[0]?.id || ""); } }).catch(() => {});
+    void api.listEntries().then(values => { if (mounted.current) { setPersonal(values); setPersonalId(values.some(entry => entry.id === initialEntryId) ? initialEntryId! : values[0]?.id || ""); } }).catch(() => {});
   }, [load]);
   useEffect(() => {
     if (!revealed) return;
@@ -84,7 +87,7 @@ export default function Sharing({ onDirtyChange, onSavingChange }: { onDirtyChan
     <details className="settings-section" open={!status.service}>
       <summary>{text("Sharing service connection", "分享服务连接")}</summary>
       <form onSubmit={event => { event.preventDefault(); const token = admin; setAdmin(""); void run(async () => { await api.configureSharing(server, token); showToast(text("Connection saved", "连接已保存"), "success"); }); }}>
-        <label>{text("Sharing service address", "分享服务地址")}<input value={server} onChange={event => setServer(event.target.value)} placeholder="https://share.example.com" required maxLength={2000} /></label>
+        <label>{text("Sharing service address", "分享服务地址")}<input value={server} onChange={event => { serverEdited.current = true; setServer(event.target.value); }} placeholder="https://share.example.com" required maxLength={2000} /></label>
         <PasswordField id="sharing-admin" label={text("Service administration token", "服务管理令牌")} value={admin} onChange={setAdmin} hint={text("Required to create links or vaults. Saved in Windows Credential Manager. Leave empty to keep the saved token.", "创建分享或共享库时需要，保存到 Windows 凭据管理器。留空会保留已保存的令牌。")}/>
         <button className="primary" disabled={busy} type="submit">{text("Save service connection", "保存服务连接")}</button>
       </form>
@@ -155,7 +158,13 @@ export default function Sharing({ onDirtyChange, onSavingChange }: { onDirtyChan
         {!item.action.includes("share") && <button type="button" className="secondary" disabled={busy || dirty} onClick={() => setPendingDiscard(item.id)}>{text("Discard pending change", "放弃待发送修改")}</button>}</div></article>)}
     </section>}
     <ConfirmDialog open={Boolean(preview)} idPrefix="sharing-review" title={preview ? title(preview.options.action) : ""}
-      message={preview ? [preview.info.title, preview.info.server, ...preview.info.details.map(field => fieldLabel(field)), preview.options.action === "share" ? `${hours} ${text("hours", "小时")} · ${views} ${text("views", "次查看")}` : preview.options.action === "remove-member" ? text("Remaining members receive a new key. Earlier copies cannot be recalled.", "剩余成员将获得新密钥，已被对方保存的旧内容不会被删除。") : ""].filter(Boolean).join(" · ") : ""}
+      message={preview?.options.action === "remove-member" ? text("Remaining members receive a new key. Earlier copies cannot be recalled.", "剩余成员将获得新密钥，已被对方保存的旧内容不会被删除。") : text("Review the details before confirming.", "请核对以下内容后确认。")}
+      details={preview ? [
+        { label: text("Item", "条目"), value: preview.info.title },
+        { label: text("Service", "服务"), value: preview.info.server },
+        { label: text("Included fields", "包含字段"), value: preview.info.details.map(field => fieldLabel(field)).join(locale === "zh" ? "、" : ", ") },
+        ...(preview.options.action === "share" ? [{ label: text("Expires in", "有效期"), value: `${hours} ${text("hours", "小时")}` }, { label: text("View limit", "查看次数"), value: String(views) }] : []),
+      ] : []}
       onConfirm={() => void confirm()} onCancel={cancelReview} />
     <ConfirmDialog open={Boolean(pendingDiscard)} idPrefix="sharing-discard" title={text("Discard pending change", "放弃待发送修改")} message={text("Refresh remote content and discard this saved proposal. An already completed server operation stays completed.", "刷新远端内容并放弃这份待发送修改。服务器上已完成的操作会保留。")} onCancel={() => setPendingDiscard(null)} onConfirm={() => { const id = pendingDiscard; setPendingDiscard(null); if (id) void run(async () => { await api.pendingSharing(id, "discard"); }); }} />
   </div>;

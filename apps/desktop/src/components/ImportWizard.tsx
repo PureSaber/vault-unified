@@ -63,6 +63,7 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
   const [uncertainOutcome, setUncertainOutcome] = useState(false);
   const [busy, setBusy] = useState(false);
   const [reviewed, setReviewed] = useState(false);
+  const [previewPage, setPreviewPage] = useState(0);
 
   useEffect(() => () => {
     operation.current += 1;
@@ -105,6 +106,7 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
       activePreviewToken.current = next.preview_token;
       setBrowserImport(next.source_format === "chromium_csv");
       setPreview(next);
+      setPreviewPage(0);
       setResolutions(defaults);
     } catch (error) {
       if (current !== operation.current) return;
@@ -215,9 +217,6 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
     }
   }
 
-  const possibleDuplicates = preview?.items.filter(
-    (item) => item.classification === "possible_duplicate",
-  ) || [];
   const selectedAdd = preview?.items.filter(
     (item) => (resolutions[item.preview_id]?.action || item.default_action) === "create",
   ).length || 0;
@@ -230,12 +229,9 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
     <div className="import-wizard" aria-labelledby="import-wizard-heading">
       <h4 id="import-wizard-heading">{zh ? "导入密码" : "Import passwords"}</h4>
       <ol className="import-steps" aria-label={zh ? "导入步骤" : "Import steps"}>
-        <li className={!preview && !result ? "is-current" : ""}>{zh ? "选择文件" : "Choose file"}</li>
-        <li>{zh ? "解析与验证" : "Parse and validate"}</li>
-        <li className={preview ? "is-current" : ""}>{zh ? "预览" : "Preview"}</li>
-        <li className={possibleDuplicates.length ? "is-current" : ""}>{zh ? "处理重复项" : "Resolve duplicates"}</li>
-        <li>{zh ? "确认应用" : "Confirm"}</li>
-        <li className={result ? "is-current" : ""}>{zh ? "结果与撤销" : "Result and undo"}</li>
+        <li className={!preview && !result ? "is-current" : ""} aria-current={!preview && !result ? "step" : undefined}>{zh ? "选择文件" : "Choose file"}</li>
+        <li className={preview ? "is-current" : ""} aria-current={preview ? "step" : undefined}>{zh ? "检查并确认" : "Review and confirm"}</li>
+        <li className={result ? "is-current" : ""} aria-current={result ? "step" : undefined}>{zh ? "查看结果" : "View result"}</li>
       </ol>
 
       {!preview && !result && !uncertainOutcome && (
@@ -315,7 +311,7 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
           </div>
 
           <ul className="import-item-list">
-            {preview.items.map((item) => (
+            {preview.items.slice(previewPage * 100, (previewPage + 1) * 100).map((item) => (
               <li key={item.preview_id} className={`import-item import-item-${item.classification}`}>
                 <div className="import-item-heading">
                   <strong>{item.title || (zh ? `第 ${item.index} 条` : `Item ${item.index}`)}</strong>
@@ -369,6 +365,12 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
               </li>
             ))}
           </ul>
+
+          {preview.items.length > 100 && <nav className="button-row" aria-label={zh ? "导入预览分页" : "Import preview pages"}>
+            <button className="secondary" type="button" disabled={previewPage === 0 || busy} onClick={() => setPreviewPage(value => value - 1)}>{zh ? "上一页" : "Previous page"}</button>
+            <span role="status">{previewPage + 1} / {Math.ceil(preview.items.length / 100)} · {preview.items.length} {zh ? "条" : "items"}</span>
+            <button className="secondary" type="button" disabled={(previewPage + 1) * 100 >= preview.items.length || busy} onClick={() => setPreviewPage(value => value + 1)}>{zh ? "下一页" : "Next page"}</button>
+          </nav>}
 
           <details className="technical-details">
             <summary>{zh ? "技术细节" : "Technical details"}</summary>

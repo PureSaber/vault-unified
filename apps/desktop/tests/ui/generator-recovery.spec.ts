@@ -48,6 +48,7 @@ for (const locale of ["en", "zh"] as const) test(`generated passwords survive di
     await expect.poll(async () => await password.inputValue() === phrase).toBe(true);
     await page.getByRole("button", { name: zh ? "保存" : "Save", exact: true }).click();
     await page.getByRole("button", { name: zh ? "打开 Generated recovered password" : "Open Generated recovered password", exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: zh ? "编辑" : "Edit", exact: true }).click();
     await expect.poll(async () => await password.inputValue() === phrase).toBe(true);
     await page.getByRole("button", { name: zh ? "密码生成高级选项" : "Password generator advanced options", exact: true }).click();
     await page.getByLabel(zh ? "包含符号" : "Include symbols", { exact: true }).uncheck();

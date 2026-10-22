@@ -6,6 +6,7 @@ interface Props {
   idPrefix?: string;
   title: string;
   message: string;
+  details?: { label: string; value: string }[];
   confirmLabel?: string;
   cancelLabel?: string;
   variant?: "danger" | "default";
@@ -18,6 +19,7 @@ export default function ConfirmDialog({
   idPrefix = "confirm",
   title,
   message,
+  details,
   confirmLabel,
   cancelLabel,
   variant = "default",
@@ -86,6 +88,7 @@ export default function ConfirmDialog({
         <p id={`${idPrefix}-message`} className="confirm-message">
           {message}
         </p>
+        {details && <dl className="confirm-details">{details.filter(item => item.value).map((item, index) => <div key={index}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}</dl>}
         <div className="button-row confirm-actions">
           <button ref={cancelRef} type="button" className="secondary" onClick={onCancel}>
             {resolvedCancel}

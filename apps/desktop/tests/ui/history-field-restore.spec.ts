@@ -19,10 +19,12 @@ test("selective history restore keeps other current fields and saves one complet
     await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("button", { name: "Open Generated old title", exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByLabel("Website or app name", { exact: true }).fill("Generated new title");
     await page.getByLabel("Password", { exact: true }).fill(testData.masterPassword);
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("button", { name: "Open Generated new title", exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
     await page.getByRole("button", { name: "More options", exact: true }).click();
     await page.getByRole("button", { name: "Preview in draft", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Compare and restore history fields" });
@@ -43,6 +45,7 @@ test("selective history restore keeps other current fields and saves one complet
     await expect(page.getByLabel("Password", { exact: true })).toHaveValue(testData.entryPassword);
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await page.getByRole("button", { name: "Open Generated new title", exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
     await expect(page.getByLabel("Password", { exact: true })).toHaveValue(testData.entryPassword);
     await page.getByRole("button", { name: "More options", exact: true }).click();
     await page.getByRole("button", { name: "Preview in draft", exact: true }).first().click();

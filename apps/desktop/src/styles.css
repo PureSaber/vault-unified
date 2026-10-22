@@ -6,7 +6,7 @@
   --color-surface-inset: #0c1016;
 
   --color-border: #2a3441;
-  --color-border-strong: #2f3b4a;
+  --color-border-strong: #6b7a92;
 
   --color-text: #e7ecf3;
   --color-text-secondary: #c5d0de;
@@ -14,7 +14,7 @@
   --color-text-faint: #8b9bb4;
 
   --color-accent: #2b6cb0;
-  --color-accent-hover: #3182ce;
+  --color-accent-hover: #2a62a3;
   --color-accent-muted: #243044;
   --color-success: #68d391;
   --color-error: #fc8181;
@@ -33,7 +33,7 @@
   --radius-md: 8px;
   --radius-lg: 12px;
 
-  --font-sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "Cascadia Mono", "Consolas", monospace;
 
   --duration-fast: 120ms;
@@ -1110,7 +1110,7 @@ button.icon-btn-lg {
 }
 
 .chip-linked {
-  color: #9db4d8;
+  color: var(--color-link);
   border-color: rgba(43, 108, 176, 0.35);
 }
 
@@ -1150,7 +1150,7 @@ button.icon-btn-lg {
   padding: 2px 8px;
   border-radius: 999px;
   background: var(--color-accent-muted);
-  color: #9db4d8;
+  color: var(--color-link);
   border: 1px solid var(--color-border);
   line-height: 1.4;
 }

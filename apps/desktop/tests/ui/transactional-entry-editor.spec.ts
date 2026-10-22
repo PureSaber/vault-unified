@@ -16,7 +16,7 @@ async function addGeneratedEntry(page: Parameters<MockAuthenticatedSidecar["inst
   await page.getByLabel("Website or app name", { exact: true }).fill(title);
   await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText(title, { exact: true })).toBeVisible();
 }
 
 test("keeps custom-field focus stable and guards navigation, cancel, and manual lock", async ({ page }) => {
@@ -69,6 +69,7 @@ test("a failed attachment batch leaves the persisted entry unchanged", async ({ 
   await addGeneratedEntry(page, title);
 
   await page.getByRole("button", { name: `Open ${title}`, exact: true }).click();
+  await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Website or app name", { exact: true }).fill("Must not partially save");
   await page.getByRole("button", { name: "More options", exact: true }).click();
   await page.getByLabel("Choose attachments").setInputFiles([
@@ -99,10 +100,11 @@ test("removing an attachment and then cancelling performs zero writes", async ({
     buffer: Buffer.from("generated retained content"),
   });
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText(title, { exact: true })).toBeVisible();
   expect(sidecar.persistedEntries[0].attachments).toHaveLength(1);
 
   await page.getByRole("button", { name: `Open ${title}`, exact: true }).click();
+  await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("button", { name: "More options", exact: true }).click();
   await page.getByRole("button", { name: "Remove on save", exact: true }).click();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -121,11 +123,13 @@ test("history restore stays in the draft and cancel preserves the current versio
   const currentTitle = "Generated current history";
   await addGeneratedEntry(page, originalTitle);
   await page.getByRole("button", { name: `Open ${originalTitle}`, exact: true }).click();
+  await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Website or app name", { exact: true }).fill(currentTitle);
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText(currentTitle, { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText(currentTitle, { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: `Open ${currentTitle}`, exact: true }).click();
+  await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByRole("button", { name: "More options", exact: true }).click();
   await page.getByRole("button", { name: "Preview in draft", exact: true }).click();
   await page.getByRole("button", { name: "Load draft", exact: true }).click();
@@ -154,7 +158,7 @@ test("navigation is blocked during save and a double click commits only once", a
   await page.getByRole("button", { name: "Connections", exact: true }).click();
   await expect(page.getByText("Save in progress; please wait", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Website or app name", { exact: true })).toHaveValue(title);
-  await expect(page.getByText(title, { exact: true })).toBeVisible({ timeout: 3_000 });
+  await expect(page.locator(".list-pane").getByText(title, { exact: true })).toBeVisible({ timeout: 3_000 });
   expect(sidecar.writes).toEqual({ create: 1, update: 0, delete: 0 });
   expect(sidecar.persistedEntries).toHaveLength(1);
 });
