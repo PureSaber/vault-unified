@@ -147,7 +147,25 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// While a request that locks the vault on the server is running (format upgrade,
+// restore, recovery), other requests wait for it. If it succeeds they are dropped
+// without reaching the closed session; background polls would otherwise see 401.
+let sessionEnding: Promise<boolean> | null = null;
+
+async function request<T>(path: string, options: RequestInit & { endsSession?: boolean } = {}): Promise<T> {
+  const { endsSession, ...init } = options;
+  if (endsSession) {
+    const result = send<T>(path, init);
+    const ending: Promise<boolean> = result.then(() => true, () => false);
+    sessionEnding = ending;
+    void ending.then(() => { if (sessionEnding === ending) sessionEnding = null; });
+    return result;
+  }
+  if (sessionEnding && await sessionEnding) throw new ApiError("The vault was locked", 401, path.split("?")[0]);
+  return send<T>(path, init);
+}
+
+async function send<T>(path: string, options: RequestInit): Promise<T> {
   const config = await runtimeConfig();
   const requestHeaders = new Headers(options.headers);
   requestHeaders.set("Content-Type", "application/json");
@@ -598,7 +616,7 @@ export const api = {
   payloadFormat: () => request<{ version: number; current_version: number }>("/personal/format"),
   previewPayloadUpgrade: () => request<{ preview_token: string; entry_count: number }>("/personal/format/preview", { method: "POST" }),
   cancelPayloadUpgrade: (preview_token: string) => request("/personal/format/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
-  applyPayloadUpgrade: (preview_token: string) => request<{ backup_path: string; locked: boolean }>("/personal/format/apply", { method: "POST", body: JSON.stringify({ preview_token, confirm_upgrade: true }) }),
+  applyPayloadUpgrade: (preview_token: string) => request<{ backup_path: string; locked: boolean }>("/personal/format/apply", { method: "POST", endsSession: true, body: JSON.stringify({ preview_token, confirm_upgrade: true }) }),
   vaultInfo: () => request<VaultInfo>("/auth/vault-info"),
   createVault: (password: string, confirmPassword: string, remember = false) =>
     request<{ token: string }>("/auth/create", {
@@ -616,7 +634,7 @@ export const api = {
     }),
   applyVaultRestore: (previewToken: string, password: string, remember = false) =>
     request<{ locked: boolean; message: string }>("/auth/restore/apply", {
-      method: "POST",
+      method: "POST", endsSession: true,
       body: JSON.stringify({ preview_token: previewToken, password, remember, confirm_restore: true }),
     }),
   cancelVaultRestore: (previewToken: string) =>
@@ -734,7 +752,7 @@ export const api = {
     request<{ restored: string; locked: boolean; message: string }>(
       "/backups/restore/apply",
       {
-        method: "POST",
+        method: "POST", endsSession: true,
         body: JSON.stringify({
           preview_token: previewToken,
           password,
@@ -821,7 +839,7 @@ export const api = {
     confirmNewPassword: string,
   ) =>
     request<{ locked: boolean; message: string }>("/auth/recover/apply", {
-      method: "POST",
+      method: "POST", endsSession: true,
       body: JSON.stringify({
         preview_token: previewToken,
         recovery_code: recoveryCode,

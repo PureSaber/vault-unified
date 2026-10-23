@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Page, Request, Response } from "@playwright/test";
+import type { Frame, Page, Request, Response } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
@@ -18,7 +18,22 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   // A reload can detach the old document before its page-level finished event.
   // Observe the response completion too; both paths require the request to finish.
   const responded = (response: Response) => { void response.finished().then(() => finished(response.request()), () => finished(response.request())); };
-  page.on("request", started);
+  // A request still waiting for its response when the document navigates (for
+  // example the reload after a format upgrade) is cancelled by the browser,
+  // sometimes without any finished event. Forget the previous document's requests.
+  let generation = 0;
+  const generations = new WeakMap<Request, number>();
+  const tracked = (request: Request) => { generations.set(request, generation); started(request); };
+  const navigated = (frame: Frame) => {
+    if (frame !== page.mainFrame()) return;
+    generation += 1;
+    for (const request of [...pending]) {
+      if (!request.isNavigationRequest() && (generations.get(request) ?? generation) < generation) pending.delete(request);
+    }
+    changed();
+  };
+  page.on("framenavigated", navigated);
+  page.on("request", tracked);
   page.on("requestfinished", finished);
   page.on("requestfailed", finished);
   page.on("response", responded);
@@ -59,7 +74,8 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
       } finally {
         child.kill();
         await exited;
-        page.off("request", started);
+        page.off("request", tracked);
+        page.off("framenavigated", navigated);
         page.off("requestfinished", finished);
         page.off("requestfailed", finished);
         page.off("response", responded);
