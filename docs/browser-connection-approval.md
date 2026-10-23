@@ -38,7 +38,7 @@ recovery path under **Other ways to connect**.
 | Enrollment | `browser_pairings.pair()` consumes a one-time code bound to the unlocked desktop session, then calls `browser_trust.enroll(binding, origin, public_key, device_name)` (`browser_pairing.py:144`). At most 16 devices (`browser_trust.py:29`). | Device trust, vault binding and the non-exportable signing key already exist. Only *starting* enrollment needs copying. |
 | Reconnection | `connectedRequest()` runs `discover()`, then `resume()` with a signed single-use challenge (`/device/challenge`, `/device/prove`). | Reconnection is already automatic once a device is enrolled. |
 | Locked vault | `trusted_resume` raises `BrowserLockedError`; `/device/challenge` answers `423` while locked, for a caller that names an enrolled device and origin. | Preserved. Today an unauthenticated caller without a device ID cannot learn the lock state. |
-| Request guard | `sidecar_security_guard` (`api/app.py:152`) exempts named browser endpoints from the bootstrap secret; everything else needs it. | New endpoints must be placed explicitly. |
+| Request guard | `sidecar_security_guard` (`api/app.py:129`) exempts named browser endpoints from the bootstrap secret; everything else needs it. | New endpoints must be placed explicitly. |
 | Discovery endpoint | `GET /api/browser/discovery` is unauthenticated and returns `instance_id`. | `instance_id` is not a secret. |
 | Desktop approvals | `PasskeyRequests.tsx` polls `GET /api/passkeys/pending` with the session token and calls `show_desktop_approval`. | Reused for polling and bringing the window forward **only**. Two differences: passkey approval also requires the master password (`PasskeyRequests.tsx:51`), and its requester already holds a browser token. A connect request comes from an unauthenticated caller, so it needs the stronger checks below. |
 
@@ -239,6 +239,47 @@ The pending store uses the same hooks as `passkey_requests`:
 - Locked denial.
 - No form submission.
 - No account data over native messaging.
+
+### 9. Implementation requirements from the second review
+
+- **Lock order:** session manager → connect store, as in `passkey_requests`.
+  The store never calls the session manager or the Windows credential store
+  while holding its own lock.
+- **Claim is idempotent and re-checked:** under the store lock, mark the
+  request *claiming*; enroll outside the lock; then re-check. If a lock or
+  "revoke all browsers" ended the request meanwhile, revoke the device that
+  was just added and report **locked** or **denied**. Once enrolled, the
+  poll-secret holder can re-read the same `device_id` until the claim
+  deadline, so a lost response does not orphan the record.
+- **Terminal states stay readable** (bounded, short-lived records), including
+  **locked** after clearing on lock.
+- **Choices are fixed per request** on the server; `/pending` returns the same
+  three codes in the same order on every poll.
+- **A wrong pick** starts the same 60-second refusal as Deny all, and the
+  desktop shows "That code did not match. If you did not start this, someone
+  else may be trying to connect." / "代码不匹配。如果不是你发起的，可能有其他程序在尝试连接。"
+- **Rate-limit position:** only requests that pass the `Origin` and nonce
+  checks count toward the 5-per-minute budget.
+- **Device limit is global:** `enroll` counts records of every vault, so the
+  request and the claim both check the global count and report
+  `device_limit`. Records of another vault (or of a moved vault file) cannot be
+  seen or revoked from the current vault; that is an existing limitation of
+  pairing, recorded here and not changed by this design.
+- **Nonce file:** created with an owner-only, non-inherited DACL from the start
+  (not renamed from a temporary file that inherits the folder's access), with a
+  permissions test.
+- **Extension:** the `alarms` permission is added; the connect message is
+  accepted only from the extension's own popup page, never from content
+  scripts; the API's CORS allowed headers include `X-Vault-Connect-Nonce`; the
+  claim window (120 seconds) exceeds the 30-second alarm period.
+- **Tests:** the live journey registers its own unique host name, as
+  `browser-trust-restart.mjs` does today; release-only startup registration is
+  covered by unit tests and release acceptance.
+- **Residual risk wording:** a user who habitually approves unexpected
+  prompts is compromised after a few attempts. Number matching protects
+  against confusion and prompt fatigue; it is not the barrier against a
+  process already running as the same Windows user, which can enroll through
+  existing paths without any prompt.
 
 ## Security analysis
 
