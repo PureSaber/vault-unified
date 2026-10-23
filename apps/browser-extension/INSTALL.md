@@ -17,7 +17,8 @@ unlocked before pairing or filling.
    whenever this vault is unlocked, until you revoke it in **Connections**.
 
 If Connect is not available (for example an older desktop, browser policy that
-blocks Native Messaging, or a vault that cannot hold device authorization),
+blocks Native Messaging, another copy of Vault Unified that owns the browser
+registration, or a vault that cannot hold device authorization),
 expand **Other ways to connect** in the popup. In Vault Unified, open
 **Connections → Browser extension**, generate a one-time pairing code, then copy
 the local address and code into the extension before the countdown reaches zero.

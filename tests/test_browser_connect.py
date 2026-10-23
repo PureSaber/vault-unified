@@ -7,8 +7,9 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 from fastapi.testclient import TestClient
 
 from vault_unified import browser_connect
@@ -19,7 +20,26 @@ from vault_unified.browser_pairing import browser_pairings
 from vault_unified.browser_trust import MAX_DEVICES, browser_trust
 from vault_unified.session import sessions
 
-from tests.test_browser_trust import MemoryCredentials, signature
+
+class MemoryCredentials:
+    """In-memory stand-in for the approved Windows Credential Manager backend."""
+
+    def __init__(self):
+        self.records = {}
+
+    def get_password(self, service, account):
+        return self.records.get((service, account))
+
+    def set_password(self, service, account, value):
+        self.records[service, account] = value
+
+    def delete_password(self, service, account):
+        del self.records[service, account]
+
+
+def signature(private, message):
+    r, s = decode_dss_signature(private.sign(message.encode(), ec.ECDSA(hashes.SHA256())))
+    return base64.b64encode(r.to_bytes(32, "big") + s.to_bytes(32, "big")).decode()
 
 ORIGIN = next(iter(EXTENSION_ORIGINS))
 OTHER = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
