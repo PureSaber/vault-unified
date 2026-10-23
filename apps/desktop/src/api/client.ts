@@ -150,18 +150,34 @@ export class ApiError extends Error {
 // While a request that locks the vault on the server is running (format upgrade,
 // restore, recovery), other requests wait for it. If it succeeds they are dropped
 // without reaching the closed session; background polls would otherwise see 401.
+// Lock is never held, and no request waits longer than a minute.
 let sessionEnding: Promise<boolean> | null = null;
+const SESSION_ENDING_WAIT_MS = 60_000;
 
 async function request<T>(path: string, options: RequestInit & { endsSession?: boolean } = {}): Promise<T> {
   const { endsSession, ...init } = options;
   if (endsSession) {
-    const result = send<T>(path, init);
-    const ending: Promise<boolean> = result.then(() => true, () => false);
+    let release = (_ended: boolean) => {};
+    const ending = new Promise<boolean>(resolve => { release = resolve; });
     sessionEnding = ending;
-    void ending.then(() => { if (sessionEnding === ending) sessionEnding = null; });
-    return result;
+    // The hold is cleared before this call returns, so the caller's next request
+    // (for example after a failed upgrade) is never held.
+    try {
+      const value = await send<T>(path, init);
+      if (sessionEnding === ending) sessionEnding = null;
+      release(true);
+      return value;
+    } catch (error) {
+      if (sessionEnding === ending) sessionEnding = null;
+      release(false);
+      throw error;
+    }
   }
-  if (sessionEnding && await sessionEnding) throw new ApiError("The vault was locked", 401, path.split("?")[0]);
+  if (sessionEnding && path !== "/auth/lock") {
+    const ended = await Promise.race([sessionEnding,
+      new Promise<boolean>(resolve => { globalThis.setTimeout(() => resolve(false), SESSION_ENDING_WAIT_MS); })]);
+    if (ended) throw new ApiError("The vault was locked", 401, path.split("?")[0]);
+  }
   return send<T>(path, init);
 }
 

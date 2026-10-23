@@ -18,17 +18,27 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   // A reload can detach the old document before its page-level finished event.
   // Observe the response completion too; both paths require the request to finish.
   const responded = (response: Response) => { void response.finished().then(() => finished(response.request()), () => finished(response.request())); };
-  // A request still waiting for its response when the document navigates (for
+  // A request still waiting for its response when a new document commits (for
   // example the reload after a format upgrade) is cancelled by the browser,
   // sometimes without any finished event. Forget the previous document's requests.
+  // Only a main-frame document request starts a new document; hash changes and
+  // history.replaceState keep the same document and its requests.
   let generation = 0;
+  let committed = 0;
   const generations = new WeakMap<Request, number>();
-  const tracked = (request: Request) => { generations.set(request, generation); started(request); };
+  const mainDocument = (request: Request) => {
+    try { return request.isNavigationRequest() && request.frame() === page.mainFrame(); } catch { return false; }
+  };
+  const tracked = (request: Request) => {
+    if (mainDocument(request)) generation += 1;
+    generations.set(request, generation);
+    started(request);
+  };
   const navigated = (frame: Frame) => {
-    if (frame !== page.mainFrame()) return;
-    generation += 1;
+    if (frame !== page.mainFrame() || committed === generation) return;
+    committed = generation;
     for (const request of [...pending]) {
-      if (!request.isNavigationRequest() && (generations.get(request) ?? generation) < generation) pending.delete(request);
+      if ((generations.get(request) ?? generation) < generation) pending.delete(request);
     }
     changed();
   };
