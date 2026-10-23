@@ -1,12 +1,15 @@
 import type { BackupSummary } from "../api/client";
 
-/** Internal atomic copies protect writes, not loss of the vault/device. */
+/** Only backups the user starts or schedules record `last_success_at`. Atomic
+ * write copies and the automatic safety copies made before imports, updates and
+ * sync joins (kind `manual`, default folder) protect operations, not the loss
+ * of this vault or device, so they do not count. */
 export function backupHealth(summary: BackupSummary) {
-  const recoveryBackups = summary.backups.filter(record => record.kind !== "local_atomic" && record.verified);
+  const lastSuccess = summary.health.last_success_at || "";
   return {
-    hasBackup: recoveryBackups.length > 0,
+    hasBackup: Boolean(lastSuccess),
     configured: Boolean(summary.health.auto_backup_enabled && summary.health.backup_location),
     failed: Boolean(summary.health.last_error_summary),
-    lastSuccess: recoveryBackups.map(record => record.modified_at).sort().reverse()[0] || "",
+    lastSuccess,
   };
 }

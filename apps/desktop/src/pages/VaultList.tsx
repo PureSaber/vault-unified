@@ -82,7 +82,13 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
     void load();
     void api.payloadFormat().then(data => setPersonalReady(data.version >= 3)).catch(() => {});
     let active = true;
-    void api.integrations().then(items => { if (active) setConnectedSources(items.filter(item => item.configured).map(item => item.source)); }).catch(() => {});
+    // The sync engine pushes every dirty entry, linked or not, to the sources
+    // that are both configured and enabled (`enabled_sources: null` = all).
+    void Promise.all([api.integrations(), api.getPrefs().catch(() => null)]).then(([items, prefs]) => {
+      if (!active) return;
+      const enabled = prefs?.enabled_sources;
+      setConnectedSources(items.filter(item => item.configured && (!Array.isArray(enabled) || enabled.includes(item.source))).map(item => item.source));
+    }).catch(() => {});
     const changed = () => { hideAllPasswords(); void load(); };
     window.addEventListener("vault-entries-changed", changed);
     return () => { active = false; ++requestSequence.current; window.removeEventListener("vault-entries-changed", changed); };
@@ -104,6 +110,14 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   }, [query, state, duplicatesOnly]);
 
   useEffect(() => { hideAllPasswords(); }, [active, selectedId]);
+  const previousSelection = useRef(selectedId);
+  useEffect(() => {
+    // Returning from a detail that replaced the list (single-pane layout) puts
+    // focus back on the row the user opened instead of the document body.
+    const previous = previousSelection.current;
+    previousSelection.current = selectedId;
+    if (previous && !selectedId) document.querySelector<HTMLButtonElement>(`[data-entry-open="${CSS.escape(previous)}"]`)?.focus();
+  }, [selectedId]);
 
   useEffect(() => {
     const handleBlur = () => hideAllPasswords();
@@ -319,7 +333,8 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
                   className="entry-open"
                   onClick={() => { hideAllPasswords(); onOpen(entry); }}
                   aria-label={t("list.openEntry", { title: entry.title })}
-                  aria-pressed={selectedId === entry.id}
+                  aria-current={selectedId === entry.id ? "true" : undefined}
+                  data-entry-open={entry.id}
                 >
                   <span className="entry-title"><span className="account-avatar" aria-hidden="true">{entry.title.slice(0, 1).toUpperCase()}</span><span>{entry.title}</span></span>
                   {entry.favorite && <span aria-label={zh ? "已收藏" : "Favorite"}>★</span>}
@@ -328,7 +343,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
                     <span className={`entry-password-preview${revealed ? " is-revealed" : ""}`} aria-label={`${t("list.passwordAria")}: ${entry.title}`}>
                       {revealed ? revealedPasswords[entry.id] || "—" : maskPassword(entry.has_password)}
                     </span>
-                    {entry.sync_status === "dirty" && connectedSources.some(source => Boolean(entry.linked_sources?.[source])) && (
+                    {entry.sync_status === "dirty" && connectedSources.length > 0 && (
                       <span className="badge badge-sync-dirty">{t("list.waitingSync")}</span>
                     )}
                     {entry.sync_status === "conflict" && (

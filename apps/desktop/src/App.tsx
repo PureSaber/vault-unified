@@ -68,6 +68,10 @@ function AppShell() {
   const idleWarningTimer = useRef<number | null>(null);
   const idleCountdownTimer = useRef<number | null>(null);
   const deliveredMaintenanceNotices = useRef(new Set<string>());
+  // Read the language at notice time; changing it must not re-run maintenance
+  // (trash purge and scheduled-backup checks).
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
 
   const lockToUnlock = useCallback(() => {
     cancelHello();
@@ -196,7 +200,7 @@ function AppShell() {
           if (notice.code.startsWith("sync-pending:")) continue;
           if (deliveredMaintenanceNotices.current.has(notice.code)) continue;
           deliveredMaintenanceNotices.current.add(notice.code);
-          showToast(maintenanceMessage(notice.code, notice.message, locale), notice.level === "error" ? "error" : "info");
+          showToast(maintenanceMessage(notice.code, notice.message, localeRef.current), notice.level === "error" ? "error" : "info");
         }
       } catch {
         // Maintenance is best-effort; ordinary vault use must remain available.
@@ -208,7 +212,7 @@ function AppShell() {
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [unlocked, showToast, locale]);
+  }, [unlocked, showToast]);
 
   const performLock = useCallback(async () => {
     try {
@@ -433,7 +437,7 @@ function AppShell() {
               key={id}
               type="button"
               className={activePage === id ? "active" : ""}
-              onClick={() => requestNavigation(id)}
+              onClick={() => { setShareEntryId(""); requestNavigation(id); }}
               aria-current={activePage === id ? "page" : undefined}
             >
               <Icon name={id} /><span>{label}</span>

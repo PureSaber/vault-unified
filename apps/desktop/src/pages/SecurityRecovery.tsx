@@ -76,7 +76,7 @@ export default function SecurityRecovery({ onOpen }: { onOpen: (entry: Entry) =>
           <div className="status-row"><dt>{zh ? "最新备份验证" : "Latest backup verification"}</dt><dd>{verification}{health?.last_verification_at ? ` · ${displayTime(health.last_verification_at, locale, "")}` : ""}</dd></div>
           <div className="status-row"><dt>{zh ? "恢复包" : "Recovery kit"}</dt><dd>{health?.recovery_kit_created_at ? `${zh ? "已创建" : "Created"} · ${displayTime(health.recovery_kit_created_at, locale, "")}` : (zh ? "尚未创建" : "Not created")}</dd></div>
         </dl>
-        {backups && !backupHealth(backups).hasBackup && <p role="status">{zh ? "尚未有成功验证的独立备份，请完成一次备份并验证。" : "No verified independent backup yet. Create and verify a backup."}</p>}
+        {backups && !backupHealth(backups).hasBackup && <p role="status">{zh ? "尚未手动或按计划完成备份。导入、更新前自动保留的副本不能代替备份；请备份到另一块磁盘或同步文件夹并验证。" : "No backup has been created by you or by a schedule yet. Safety copies kept before imports or updates do not replace it; back up to another drive or a synced folder and verify it."}</p>}
         {error && <div className="error" role="alert">{error}</div>}
         <button type="button" className="secondary" onClick={() => void load()}>{zh ? "刷新状态" : "Refresh status"}</button>
       </section>

@@ -266,13 +266,15 @@ export class MockAuthenticatedSidecar {
   }
 
   private listed(entry: StoredEntry): StoredEntry {
+    // Mirrors public_data(reveal=False): template data is omitted entirely.
     return {
       ...clone(entry),
       password: "",
       notes: "",
       custom_fields: entry.custom_fields.map((field) => ({ ...field, value: "" })),
       totp_secret: "",
-    };
+      template_data: {},
+    } as StoredEntry;
   }
 
   private async handle(route: Route): Promise<void> {

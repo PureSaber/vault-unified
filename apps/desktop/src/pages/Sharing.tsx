@@ -12,7 +12,7 @@ export default function Sharing({ onDirtyChange, onSavingChange, initialEntryId 
   const { locale } = useI18n(); const zh = locale === "zh"; const { showToast } = useToast();
   const text = (en: string, cn: string) => zh ? cn : en;
   const [status, setStatus] = useState(emptyStatus), [server, setServer] = useState(""), [admin, setAdmin] = useState("");
-  const [personal, setPersonal] = useState<Entry[]>([]), [personalId, setPersonalId] = useState("");
+  const [personal, setPersonal] = useState<Entry[]>([]), [personalId, setPersonalId] = useState(""), [missingInitial, setMissingInitial] = useState(false);
   const [fields, setFields] = useState(["username", "password", "url"]), [hours, setHours] = useState(24), [views, setViews] = useState(1);
   const [name, setName] = useState(""), [invite, setInvite] = useState(""), [role, setRole] = useState<"reader" | "editor">("reader");
   const [family, setFamily] = useState<SharedFamily | null>(null), [members, setMembers] = useState<FamilyPending | null>(null);
@@ -34,7 +34,14 @@ export default function Sharing({ onDirtyChange, onSavingChange, initialEntryId 
   }, []);
   useEffect(() => {
     void load().catch(() => {});
-    void api.listEntries().then(values => { if (mounted.current) { setPersonal(values); setPersonalId(values.some(entry => entry.id === initialEntryId) ? initialEntryId! : values[0]?.id || ""); } }).catch(() => {});
+    void api.listEntries().then(values => {
+      if (!mounted.current) return;
+      setPersonal(values);
+      // Never silently substitute another account for the one the user chose to share.
+      const found = Boolean(initialEntryId) && values.some(entry => entry.id === initialEntryId);
+      setPersonalId(found ? initialEntryId! : initialEntryId ? "" : values[0]?.id || "");
+      setMissingInitial(Boolean(initialEntryId) && !found);
+    }).catch(() => {});
   }, [load]);
   useEffect(() => {
     if (!revealed) return;
@@ -96,7 +103,8 @@ export default function Sharing({ onDirtyChange, onSavingChange, initialEntryId 
       <h3 id="limited-share-heading">{text("Limited links", "限时链接")}</h3>
       <form onSubmit={event => { event.preventDefault(); void review({ action: "share", entry_id: personalId, fields, hours, max_reads: views }); }}>
         <fieldset disabled={busy || dirty}><legend>{text("Share a saved personal account", "分享已保存的个人账号")}</legend>
-          <label>{text("Personal account", "个人账号")}<select value={personalId} onChange={event => setPersonalId(event.target.value)} required><option value="">{text("Choose an account", "选择账号")}</option>{personal.map(entry => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select></label>
+          {missingInitial && <p className="context-notice context-notice-warning" role="status">{text("The selected account is not available for sharing. Only accounts in the vault (not archived or in trash) can be shared. Choose an account below.", "所选账号当前不可分享。只有保险库中的账号（不含归档和回收站）可以分享，请在下方选择账号。")}</p>}
+          <label>{text("Personal account", "个人账号")}<select value={personalId} onChange={event => { setPersonalId(event.target.value); setMissingInitial(false); }} required><option value="">{text("Choose an account", "选择账号")}</option>{personal.map(entry => <option key={entry.id} value={entry.id}>{entry.title}</option>)}</select></label>
           <div className="button-row">{["username", "password", "url", "notes"].map(field => <label key={field} className="checkbox-label"><input type="checkbox" checked={fields.includes(field)} onChange={event => setFields(current => event.target.checked ? [...current, field] : current.filter(item => item !== field))} />{fieldLabel(field)}</label>)}</div>
           <div className="sharing-grid"><label>{text("Expires after (hours)", "有效时长（小时）")}<input type="number" min={1} max={720} value={hours} onChange={event => setHours(Number(event.target.value))} required /></label><label>{text("Maximum views", "最多查看次数")}<input type="number" min={1} max={100} value={views} onChange={event => setViews(Number(event.target.value))} required /></label></div>
           <button className="primary" type="submit" disabled={!status.service || !personalId || !fields.length}>{text("Preview share", "预览分享")}</button>
