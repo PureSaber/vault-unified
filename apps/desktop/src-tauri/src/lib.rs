@@ -309,6 +309,11 @@ fn apply_api_env(cmd: &mut Command) {
     if let (Ok(executable), Some(directory)) = (std::env::current_exe(), native_host::directory()) {
         cmd.env("VAULT_BROWSER_HOST_EXE", executable)
             .env("VAULT_BROWSER_DISCOVERY_DIR", directory);
+        // Only release builds register the fixed extension origin at startup, so a
+        // development build never takes over the installed app's native host.
+        if !cfg!(debug_assertions) {
+            cmd.env("VAULT_BROWSER_REGISTER_FIXED", "1");
+        }
     }
     // The child owns its socket and generates a fresh bootstrap secret. Never
     // inherit a static secret or a remotely bindable API configuration.
@@ -623,6 +628,16 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::{SidecarReady, READY_PREFIX};
+
+    #[test]
+    fn development_builds_never_register_the_fixed_extension_host() {
+        // Tests build with debug assertions, like `tauri dev` and portable dev builds.
+        // The discovery directory falls back to %LOCALAPPDATA%, so no env change is needed.
+        let mut command = std::process::Command::new("python");
+        super::apply_api_env(&mut command);
+        assert!(command.get_envs().any(|(key, _)| key == "VAULT_BROWSER_HOST_EXE"));
+        assert!(!command.get_envs().any(|(key, _)| key == "VAULT_BROWSER_REGISTER_FIXED"));
+    }
 
     #[test]
     fn parses_ready_payload_without_logging_secret() {

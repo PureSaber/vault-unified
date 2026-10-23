@@ -52,6 +52,10 @@ def _public_key(encoded: str) -> ec.EllipticCurvePublicKey:
         raise BrowserTrustError("Invalid browser identity") from exc
 
 
+def validate_public_key(encoded: str) -> None:
+    _public_key(encoded)
+
+
 class BrowserTrustStore:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -158,6 +162,15 @@ class BrowserTrustStore:
             records = [self._record(item) for item in self._index()]
             return [{key: item[key] for key in ("id", "name", "origin", "created_at")}
                     for item in records if item and tuple(item["binding"]) == binding]
+
+    def device_count(self) -> int:
+        """Devices of every vault count toward MAX_DEVICES, as in `enroll`."""
+        with self._lock:
+            return sum(1 for item in self._index() if self._record(item) is not None)
+
+    def origins(self) -> set[str]:
+        with self._lock:
+            return {record["origin"] for record in (self._record(item) for item in self._index()) if record}
 
     def revoke(self, binding: tuple[str, str, str], device_id: str) -> None:
         with self._lock:

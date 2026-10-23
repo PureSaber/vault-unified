@@ -4,6 +4,7 @@
   "description": "User-clicked fill from an unlocked local Vault Unified desktop app.",
   "version": "1.4.0",
   "minimum_chrome_version": "109",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAraDkf7ZTQw4t32R0V5bfcEV7lJITPJoPZE9ojQHDVOkISnrOtlU/RvEEiZTAW7+xB2ZP9MOgdCaJ0G0BSMgYyN2T29g8zJHqhQmC4dKickRM0AQTZT8wO4xzluMtCcZmE6zngr40fPKpL/wETXIkR9AmNcMhBHtnTOa7G1BI5OagbyvUKtbOwzVgAWui4YCeO58gtL86VsZVR7x1KvOmIaQ9SJzHS+Xst3vw/9rAcO9U7y8H4asroV6lkQ0+wvCmgfedDU7MWK+cLQzZOx+uiVR2bSd+OgFjBEU/awe9wwuelbLXYksJIBOhoEENooJDqTdlc/svZTUEwzIGeEz3UQIDAQAB",
   "background": {
     "service_worker": "background.js"
   },
@@ -28,7 +29,8 @@
     "scripting",
     "storage",
     "tabs",
-    "nativeMessaging"
+    "nativeMessaging",
+    "alarms"
   ],
   "host_permissions": [
     "http://127.0.0.1/*",

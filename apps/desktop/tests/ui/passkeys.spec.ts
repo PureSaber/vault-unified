@@ -50,6 +50,7 @@ for (const locale of ["en", "zh"] as const) test(`actual extension Passkey regis
     const tabs = await popup.evaluate(() => (globalThis as unknown as { chrome: { tabs: { query: (options: object) => Promise<Array<{ id: number; url?: string }>> } } }).chrome.tabs.query({}));
     const tab = tabs.find(value => value.url?.startsWith(origin))!;
     await popup.goto(`chrome-extension://${id}/popup.html?tab=${tab.id}&lang=en`);
+    await popup.locator("#manual-pair summary").click();
     await popup.locator("#sidecar-url").fill(sidecar.apiUrl.replace(/\/api$/, ""));
     await popup.locator("#pairing-code").fill(pairingCode);
     await popup.locator("#remember").uncheck();
@@ -120,6 +121,7 @@ for (const locale of ["en", "zh"] as const) test(`actual extension Passkey regis
     const newToken = (await (await unlocked).json()).token as string;
     const newCode = await page.request.post(`${sidecar.apiUrl}/browser/pairing-code`, { headers: { ...headers, Authorization: `Bearer ${newToken}` } });
     await popup.reload();
+    await popup.locator("#manual-pair summary").click();
     await popup.locator("#sidecar-url").fill(sidecar.apiUrl.replace(/\/api$/, ""));
     await popup.locator("#pairing-code").fill((await newCode.json()).pairing_code);
     await popup.locator("#remember").uncheck();

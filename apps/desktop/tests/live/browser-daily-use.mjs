@@ -70,6 +70,7 @@ try {
   await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${websiteTab.id}&lang=en`);
   step = 'real extension pairing';
   const pairing = await api('/browser/pairing-code');
+  await popup.locator('#manual-pair summary').click(); // Manual pairing is the recovery path.
   await popup.locator('#sidecar-url').fill(apiUrl);
   await popup.locator('#pairing-code').fill(pairing.pairing_code);
   await popup.locator('#pair-form button').click();
@@ -125,7 +126,7 @@ try {
   assert(!serialized.includes(firstPassword) && !serialized.includes(changedPassword), 'A password entered extension storage');
   step = 'revocation';
   await popup.locator('#forget').click();
-  await popup.locator('#pair-form').waitFor();
+  await popup.locator('#connect-start').waitFor();
   console.log(JSON.stringify({ result: 'passed', actual_chromium_extension: true, actual_isolated_api: true,
     flows: ['pair', 'capture-save', 'fill', 'generate-change-update-history', 'lock-resume', 'forget'],
     real_credentials_used: false }));

@@ -104,11 +104,51 @@ try {
   execFileSync(python, [fixture, 'register', isolated, host, executable, `chrome-extension://${browser.id}/`], { cwd: root, windowsHide: true, stdio: 'pipe' });
   step = 'native discovery and persistent enrollment';
   const discovered = await browser.popup.evaluate((name) => chrome.runtime.sendNativeMessage(name, { type: 'discover', protocol: 1 }), host);
-  assert(Object.keys(discovered).sort().join() === 'base_url,instance_id,protocol', 'Discovery returned unexpected fields');
+  // The connect nonce is released only to this allowlisted extension; nothing else is returned.
+  assert(Object.keys(discovered).sort().join() === 'base_url,connect_nonce,instance_id,protocol', 'Discovery returned unexpected fields');
   assert(discovered.instance_id === first.instance_id, 'Native host did not find the running API');
+  step = 'fixed extension identity';
+  assert(browser.id === 'llgobjolacibpkimbfgighcmblbnalpb', 'The manifest key did not fix the extension ID');
+  step = 'first contact: approve by number matching';
+  const connectOnce = async () => {
+    await browser.popup.locator('#connect-start').click();
+    await browser.popup.locator('#connect-code').waitFor();
+    const shown = (await browser.popup.locator('#connect-code').textContent()).replace(/\s/g, '');
+    assert(/^\d{6}$/.test(shown), 'The popup did not show a code');
+    let pending = [];
+    for (let i = 0; i < 50 && !pending.length; i++) {
+      pending = (await api('/browser/connect/pending', null, 'GET')).items;
+      if (!pending.length) await delay(100);
+    }
+    assert(pending.length === 1 && pending[0].choices.length === 3 && pending[0].choices.includes(shown), 'The desktop did not offer the browser code among its choices');
+    return { shown, item: pending[0] };
+  };
+  let connecting = await connectOnce();
+  assert((await api('/browser/connect/approve', { request_id: connecting.item.id, code: connecting.shown })).approved, 'The matching code was refused');
+  await browser.popup.getByText('Connected. This browser reconnects whenever Vault Unified is unlocked.').waitFor();
+  const connectedDevices = (await api('/browser/devices', null, 'GET')).devices;
+  assert(connectedDevices.length === 1 && connectedDevices[0].origin === `chrome-extension://${browser.id}`, 'Approval did not enroll this browser');
+  await browser.popup.locator('#forget').click();
+  await browser.popup.locator('#connect-start').waitFor();
+  assert((await api('/browser/devices', null, 'GET')).devices.length === 0, 'Forget did not revoke the connected browser');
+  step = 'first contact: refusal and lock';
+  connecting = await connectOnce();
+  await api('/browser/connect/deny', { request_id: connecting.item.id });
+  await browser.popup.getByText('Connection was declined.').waitFor();
+  connecting = await connectOnce();
+  await api('/auth/lock');
+  await browser.popup.getByText('Unlock Vault Unified, then connect again.').waitFor();
+  token = (await api('/auth/unlock', { password: master })).token;
+  step = 'first contact: a wrong pick denies';
+  connecting = await connectOnce();
+  const wrong = connecting.item.choices.find((code) => code !== connecting.shown);
+  assert(!(await api('/browser/connect/approve', { request_id: connecting.item.id, code: wrong })).approved, 'A wrong code was accepted');
+  await browser.popup.getByText('Connection was declined.').waitFor();
+  assert((await api('/browser/devices', null, 'GET')).devices.length === 0, 'A refused request enrolled a device');
   // Public RFC test key; the vault/master/browser credentials are generated above.
   const generatedEntry = await api('/entries', { title: 'Generated restart account', username: 'generated-user', password, url: 'https://generated.invalid', website_rules: { additional_urls: [browser.siteUrl] }, totp_secret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ' });
   const pairing = await api('/browser/pairing-code');
+  await browser.popup.locator('#manual-pair summary').click();
   await browser.popup.locator('#sidecar-url').fill(apiUrl);
   await browser.popup.locator('#pairing-code').fill(pairing.pairing_code);
   await browser.popup.locator('#device-name').fill('Generated restart browser');

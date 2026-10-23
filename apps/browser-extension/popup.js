@@ -75,6 +75,20 @@ const messages = {
   duplicate: ["同名用户名已存在，请在「保存到」中选择已有账号进行更新。", "This username already exists. Select the existing account to update."],
   unchanged: ["此账号已保存相同信息，无需再次更新。", "This account already has these details."],
   requestError: ["操作未完成，请重试。", "The request could not be completed. Try again."],
+  connectHeading: ["连接此浏览器", "Connect this browser"],
+  connectHint: ["打开并解锁 Vault Unified，然后连接。只需在桌面端批准一次。", "Open and unlock Vault Unified, then connect. You approve once in the desktop app."],
+  connectStart: ["连接到 Vault Unified", "Connect to Vault Unified"],
+  connectApprove: ["请在 Vault Unified 中批准，并选择这个代码：", "Approve in Vault Unified and choose this code:"],
+  connectWaiting: ["等待 Vault Unified 批准…", "Waiting for approval in Vault Unified…"],
+  connected: ["已连接。之后只要 Vault Unified 已解锁，此浏览器就会自动重新连接。", "Connected. This browser reconnects whenever Vault Unified is unlocked."],
+  connectDeclined: ["已拒绝连接。", "Connection was declined."],
+  connectExpired: ["请求已过期，请重试。", "Request expired; try again."],
+  connectLocked: ["请解锁 Vault Unified 后重新连接。", "Unlock Vault Unified, then connect again."],
+  connectBusy: ["请求过多，请一分钟后重试。", "Too many requests; try again in a minute."],
+  connectDeviceLimit: ["请先在 Vault Unified →“连接”中移除不再使用的浏览器。", "Remove an unused browser in Vault Unified → Connections first."],
+  connectManualOnly: ["此版本的 Vault Unified 需要手动配对，请使用“其他连接方式”。", "This Vault Unified version needs manual pairing. Use Other ways to connect."],
+  connectUnavailable: ["未找到 Vault Unified。请打开应用，或使用“其他连接方式”。", "Vault Unified was not found. Open it, or use Other ways to connect."],
+  otherWays: ["其他连接方式", "Other ways to connect"],
 };
 const t = (key) => messages[key][language === "zh" ? 0 : 1];
 
@@ -127,12 +141,18 @@ async function authFailure(error) {
     await chrome.storage.session.remove(stateKey);
     currentState = null;
   }
-  el("pair-form").hidden = Boolean(currentState);
+  showPairing(!currentState);
   el("retry").hidden = !currentState;
   el("retry-address-form").hidden = !currentState?.deviceId;
   if (currentState) el("retry-address").value = currentState.sidecarUrl;
   el("forget").hidden = !currentState;
   setStatus(remembered && error.code === 401 ? "locked" : error.key || "requestError", true);
+}
+// Unpaired: one-click connection first, manual pairing as the recovery path.
+function showPairing(visible) {
+  el("connect").hidden = !visible;
+  el("manual-pair").hidden = !visible;
+  el("pair-form").hidden = !visible;
 }
 async function action(work) {
   if (busy) return;
@@ -265,7 +285,7 @@ async function showMatches(successKey) {
   renderMatches();
   el("site").textContent = new URL(tab.url).origin;
   el("accounts").hidden = false;
-  el("pair-form").hidden = true;
+  showPairing(false);
   el("retry").hidden = true;
   el("retry-address-form").hidden = true;
   el("forget").hidden = false;
@@ -343,6 +363,48 @@ el("pair-form").addEventListener("submit", (event) => {
     await showMatches();
   });
 });
+const send = (message) => chrome.runtime.sendMessage(message).then((result) => {
+  if (!result || result.error) throw Object.assign(new Error(), { key: result?.error || "requestError" });
+  return result;
+});
+let connectTimer = null;
+function stopWatching() { clearInterval(connectTimer); connectTimer = null; }
+async function renderConnect(view) {
+  const waiting = view.state === "waiting";
+  el("connect-start").hidden = waiting;
+  el("connect-waiting").hidden = !waiting;
+  el("connect-code").textContent = waiting ? `${view.code.slice(0, 3)} ${view.code.slice(3)}` : "";
+  if (waiting) {
+    setStatus("connectWaiting");
+    // The service worker owns the request; the popup only watches it.
+    connectTimer ||= setInterval(() => {
+      void send({ type: "vault-connect-state" }).then((next) => next.state === "waiting" ? null : action(() => renderConnect(next))).catch(() => {});
+    }, 1000);
+    return;
+  }
+  stopWatching();
+  if (view.state === "approved") {
+    await send({ type: "vault-connect-ack" });
+    currentState = await vaultBrowserConnection.read();
+    el("forget").hidden = false;
+    await showMatches("connected");
+    return;
+  }
+  const failures = { denied: "connectDeclined", expired: "connectExpired", locked: "connectLocked", device_limit: "connectDeviceLimit", failed: "requestError" };
+  if (failures[view.state]) {
+    await send({ type: "vault-connect-ack" });
+    setStatus(failures[view.state], true);
+  }
+}
+el("connect-start").addEventListener("click", () => void action(async () => {
+  setStatus("loading");
+  await renderConnect(await send({ type: "vault-connect-start" }));
+}));
+el("connect-cancel").addEventListener("click", () => void action(async () => {
+  await renderConnect(await send({ type: "vault-connect-cancel" }));
+  setStatus("connectHint");
+}));
+window.addEventListener("pagehide", stopWatching);
 el("retry").addEventListener("click", () => void action(() => showMatches()));
 el("retry-address-form").addEventListener("submit", (event) => {
   event.preventDefault();
@@ -466,7 +528,7 @@ el("forget").addEventListener("click", () => void action(async () => {
   el("retry").hidden = true;
   el("retry-address-form").hidden = true;
   el("forget").hidden = true;
-  el("pair-form").hidden = false;
+  showPairing(true);
   setStatus("forgotten");
 }));
 el("language").addEventListener("change", () => { language = el("language").value; localize(); });
@@ -494,15 +556,19 @@ void action(async () => {
       const identity = await vaultBrowserIdentity.read();
       if (identity) currentState = { deviceId: identity.deviceId, sidecarUrl: normalizeAddress(identity.sidecarUrl) };
     } catch {
+      // Without identity storage only a session pairing is possible.
       el("remember").checked = false;
-      el("pair-form").hidden = false;
+      showPairing(true);
+      el("connect").hidden = true;
+      el("manual-pair").open = true;
       setStatus("identityUnavailable", true);
       return;
     }
   }
   if (!currentState) {
-    el("pair-form").hidden = false;
-    setStatus("pairHint");
+    showPairing(true);
+    setStatus("connectHint");
+    await renderConnect(await send({ type: "vault-connect-state" }));
     return;
   }
   el("forget").hidden = false;

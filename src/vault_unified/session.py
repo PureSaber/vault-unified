@@ -212,6 +212,7 @@ class SessionManager:
                     connections.clear_scope(token)
                     from vault_unified.passkey_requests import requests
                     requests.clear(token)
+                    self._retain_connect_requests()
                 raise PermissionError("Session expired or invalid")
             if touch:
                 session.touch()
@@ -250,6 +251,7 @@ class SessionManager:
             connections.clear_scope(token)
             from vault_unified.passkey_requests import requests
             requests.clear(token)
+            self._retain_connect_requests()
 
     def lock_all(self) -> None:
         with self._guard:
@@ -259,6 +261,17 @@ class SessionManager:
             connections.clear_scope(None)
             from vault_unified.passkey_requests import requests
             requests.clear()
+            self._retain_connect_requests()
+
+    def live_browser_bindings(self) -> set:
+        """Bindings of unlocked sessions; `None` stands for a vault before v3."""
+        with self._guard:
+            return {session.browser_binding for session in self._sessions.values() if not session.expired()}
+
+    def _retain_connect_requests(self) -> None:
+        # Called with the guard held: session manager -> connect store, never the reverse.
+        from vault_unified.browser_connect import browser_connects
+        browser_connects.retain(self.live_browser_bindings())
 
     def is_unlocked(self, token: str) -> bool:
         session = self._sessions.get(token)

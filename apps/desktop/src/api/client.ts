@@ -277,6 +277,9 @@ export interface BrowserPairing {
   message: string;
 }
 
+/** A browser asking for its first connection; `choices` holds its code and two decoys. */
+export interface BrowserConnectRequest { id: string; device_name: string; choices: string[]; remaining_seconds: number }
+
 export interface BrowserDevice {
   id: string;
   name: string;
@@ -846,6 +849,10 @@ export const api = {
     request<{ cancelled: boolean }>("/browser/pairing/cancel", { method: "POST" }),
   browserDevices: () => request<{ available: boolean; devices: BrowserDevice[] }>("/browser/devices"),
   revokeBrowserDevice: (id: string) => request<{ revoked: boolean }>(`/browser/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pendingBrowserConnections: (signal?: AbortSignal) => request<{ items: BrowserConnectRequest[] }>("/browser/connect/pending", { signal }),
+  approveBrowserConnection: (request_id: string, code: string) => request<{ approved: boolean }>("/browser/connect/approve", { method: "POST", body: JSON.stringify({ request_id, code }) }),
+  denyBrowserConnection: (request_id: string) => request<{ denied: boolean }>("/browser/connect/deny", { method: "POST", body: JSON.stringify({ request_id }) }),
+  denyAllBrowserConnections: () => request<{ denied: number }>("/browser/connect/deny-all", { method: "POST", body: "{}" }),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
   savePrefs: (prefs: Partial<SyncPrefs>) =>
     request<SyncPrefs>("/sync/preferences", {

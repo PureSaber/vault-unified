@@ -43,6 +43,9 @@ async function loadPopup(
     injectedReason?: string;
     resumeLocked?: boolean;
     saveConflict?: boolean;
+    // Worker replies for the connect flow: start, then each state poll in turn.
+    connect?: Array<{ state?: string; code?: string; error?: string }>;
+    language?: "en" | "zh";
   } = {},
 ) {
   await page.setContent(popupHtml);
@@ -86,12 +89,23 @@ async function loadPopup(
       set: async () => { calls.sync += 1; },
       remove: async () => { calls.sync += 1; },
     };
-    const mockState = { session, calls, locked: false, tabUrl: "https://example.invalid/login" };
+    const connectReplies = [...(config.connect || [])];
+    const connectMessages: string[] = [];
+    const mockState = { session, calls, locked: false, tabUrl: "https://example.invalid/login", connectMessages };
     Object.defineProperty(window, "chrome", {
       configurable: true,
       value: {
         storage: { session: area, local: forbiddenArea, sync: forbiddenSync },
-        runtime: { getURL: (path: string) => `chrome-extension://generated/${path}` },
+        runtime: {
+          getURL: (path: string) => `chrome-extension://generated/${path}`,
+          sendMessage: async (message: { type: string }) => {
+            connectMessages.push(message.type);
+            if (message.type === "vault-connect-cancel" || message.type === "vault-connect-ack") return { state: "idle" };
+            const reply = connectReplies.length > 1 ? connectReplies.shift()! : connectReplies[0] || { state: "idle" };
+            if (reply.state === "approved") session.vaultUnifiedBrowserPairing = { sidecarUrl: "http://127.0.0.1:43129", browserToken: config.browserToken };
+            return reply;
+          },
+        },
         windows: { create: async ({ url }: { url: string }) => { calls.openedWindows.push(url); } },
         tabs: { query: async () => [{ id: 7, url: mockState.tabUrl }] },
         scripting: {
@@ -190,6 +204,7 @@ test("requests a verification code only after the explicit account action", asyn
 
 test("pairs only into session storage and reports no matching login", async ({ page }) => {
   await loadPopup(page);
+  await page.getByText("Other ways to connect", { exact: true }).click();
   await page.locator("#remember").uncheck();
   await page.locator("#sidecar-url").fill("http://127.0.0.1:43129/api/");
   await page.locator("#pairing-code").fill(testData.bootstrapSecret);
@@ -214,6 +229,7 @@ test("pairs only into session storage and reports no matching login", async ({ p
 
 test("rejects unexpected local paths before sending a pairing code", async ({ page }) => {
   await loadPopup(page);
+  await page.getByText("Other ways to connect", { exact: true }).click();
   await page.locator("#sidecar-url").fill("http://127.0.0.1:43129/unexpected");
   await page.locator("#pairing-code").fill(testData.bootstrapSecret);
   await page.getByRole("button", { name: "Pair this browser" }).click();
@@ -231,7 +247,8 @@ test("removes session pairing immediately when the desktop reports locked", asyn
     matchesError: "Desktop vault is locked",
   });
   await expect(page.getByText("Pairing expired. Create a new pairing code in the desktop app.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pair this browser" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Connect to Vault Unified" })).toBeVisible();
+  await expect(page.getByText("Other ways to connect", { exact: true })).toBeVisible();
   const state = await page.evaluate(() => (window as unknown as {
     __extensionMock: ExtensionMockState;
   }).__extensionMock);
@@ -439,3 +456,74 @@ test("reads only matching new-password fields and preserves the current password
   }).vaultUnifiedFillInputs({ capture: true, pageOrigin: "https://other.invalid" }));
   expect(changed).toEqual({ username: false, password: false, reason: "page-changed" });
 });
+
+const connectMessages = (page: Page) => page.evaluate(() => (window as unknown as { __extensionMock: { connectMessages: string[] } }).__extensionMock.connectMessages);
+
+test("an unpaired browser offers one-click connection first and keeps manual pairing as recovery", async ({ page }) => {
+  await loadPopup(page);
+  await expect(page.getByRole("button", { name: "Connect to Vault Unified", exact: true })).toBeVisible();
+  await expect(page.getByText("Open and unlock Vault Unified, then connect. You approve once in the desktop app.", { exact: true })).toBeVisible();
+  await expect(page.locator("#pair-form")).toBeHidden();
+  await page.getByText("Other ways to connect", { exact: true }).click();
+  await expect(page.getByRole("button", { name: "Pair this browser" })).toBeVisible();
+  const accessibility = await new AxeBuilder({ page }).analyze();
+  expect(accessibility.violations.filter(item => ["serious", "critical"].includes(item.impact || "")).map(item => item.id)).toEqual([]);
+  expect(await connectMessages(page)).toEqual(["vault-connect-state"]);
+});
+
+test("connecting shows the matching code until the desktop approves, then lists accounts", async ({ page }) => {
+  await loadPopup(page, { connect: [{ state: "idle" }, { state: "waiting", code: "482913" }, { state: "waiting", code: "482913" }, { state: "approved" }],
+    matches: [{ id: "generated-entry", title: "Generated account", username: "generated-user" }] });
+  await page.getByRole("button", { name: "Connect to Vault Unified", exact: true }).click();
+  await expect(page.locator("#connect-code")).toHaveText("482 913");
+  await expect(page.getByText("Approve in Vault Unified and choose this code:", { exact: true })).toBeVisible();
+  await expect(page.getByText("Connected. This browser reconnects whenever Vault Unified is unlocked.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Generated account/ }).first()).toBeVisible();
+  await expect(page.locator("#connect")).toBeHidden();
+  const messages = await connectMessages(page);
+  expect(messages.slice(0, 2)).toEqual(["vault-connect-state", "vault-connect-start"]);
+  expect(messages).toContain("vault-connect-ack");
+  const state = await page.evaluate(() => (window as unknown as { __extensionMock: ExtensionMockState }).__extensionMock);
+  expect(state.calls.local + state.calls.sync).toBe(0);
+});
+
+test("reopening the popup while waiting shows the same code, and Cancel returns to Connect", async ({ page }) => {
+  await loadPopup(page, { connect: [{ state: "waiting", code: "105377" }] });
+  await expect(page.locator("#connect-code")).toHaveText("105 377");
+  await expect(page.getByText("Waiting for approval in Vault Unified…", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Connect to Vault Unified", exact: true })).toBeVisible();
+  await expect(page.locator("#connect-code")).toHaveText("");
+  expect(await connectMessages(page)).toContain("vault-connect-cancel");
+});
+
+for (const [state, english, chinese] of [
+  ["denied", "Connection was declined.", "已拒绝连接。"],
+  ["expired", "Request expired; try again.", "请求已过期，请重试。"],
+  ["locked", "Unlock Vault Unified, then connect again.", "请解锁 Vault Unified 后重新连接。"],
+  ["device_limit", "Remove an unused browser in Vault Unified → Connections first.", "请先在 Vault Unified →“连接”中移除不再使用的浏览器。"],
+] as const) {
+  test(`a ${state} connection explains the result in both languages`, async ({ page }) => {
+    await loadPopup(page, { connect: [{ state: "idle" }, { state: "waiting", code: "730264" }, { state }] });
+    await page.getByRole("button", { name: "Connect to Vault Unified", exact: true }).click();
+    await expect(page.getByText(english, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect to Vault Unified", exact: true })).toBeVisible();
+    await page.locator("#language").selectOption("zh");
+    await expect(page.getByText(chinese, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "连接到 Vault Unified", exact: true })).toBeVisible();
+    await expect(page.getByText("其他连接方式", { exact: true })).toBeVisible();
+  });
+}
+
+for (const [error, english] of [
+  ["connectManualOnly", "This Vault Unified version needs manual pairing. Use Other ways to connect."],
+  ["connectUnavailable", "Vault Unified was not found. Open it, or use Other ways to connect."],
+  ["connectBusy", "Too many requests; try again in a minute."],
+] as const) {
+  test(`a refused start (${error}) points to the next step`, async ({ page }) => {
+    await loadPopup(page, { connect: [{ state: "idle" }, { error }] });
+    await page.getByRole("button", { name: "Connect to Vault Unified", exact: true }).click();
+    await expect(page.getByText(english, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Connect to Vault Unified", exact: true })).toBeEnabled();
+  });
+}

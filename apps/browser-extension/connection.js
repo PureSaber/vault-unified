@@ -45,12 +45,23 @@ const vaultBrowserConnection = (() => {
     const signature = await vaultBrowserIdentity.sign(identity, challenge, action);
     return post(state, "/device/prove", { body: JSON.stringify({ device_id: identity.deviceId, action, challenge_id: challenge.challenge_id, signature }) });
   }
-  async function discover(state) {
-    if (!chrome.runtime.sendNativeMessage || !state) return;
+  // Works without saved state, so an unpaired extension can find the desktop.
+  // The connect nonce is present only for allowlisted extensions of a live desktop.
+  async function locate() {
+    if (!chrome.runtime.sendNativeMessage) return null;
     try {
       const response = await chrome.runtime.sendNativeMessage("org.vaultunified.desktop", { type: "discover", protocol: 1 });
-      if (response?.protocol !== 1 || !response.base_url) return;
-      const address = normalizeAddress(response.base_url);
+      if (response?.protocol !== 1 || !response.base_url) return null;
+      const nonce = typeof response.connect_nonce === "string" && response.connect_nonce.length <= 128 ? response.connect_nonce : "";
+      return { address: normalizeAddress(response.base_url), nonce };
+    } catch { return null; }
+  }
+  async function discover(state) {
+    if (!state) return;
+    try {
+      const found = await locate();
+      if (!found) return;
+      const address = found.address;
       if (address !== state.sidecarUrl) {
         state.sidecarUrl = address; delete state.browserToken;
         if (state.deviceId) {
@@ -78,5 +89,5 @@ const vaultBrowserConnection = (() => {
       return post(state, path, { body: JSON.stringify(body) });
     }
   }
-  return { normalizeAddress, post, read, prove, discover, connectedRequest };
+  return { normalizeAddress, post, read, prove, locate, discover, connectedRequest };
 })();

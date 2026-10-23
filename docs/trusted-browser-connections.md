@@ -30,7 +30,9 @@ the device's authorization. Discovery never opens a vault or launches the app.
   `chrome.storage.session`; account data and draft passwords are never persisted
   by the extension. Non-exportability does not protect a compromised extension
   or operating-system account from invoking the key.
-- A one-time pairing code authorizes enrollment. The public key, extension
+- Enrollment is authorized either by choosing the matching code in the desktop
+  approval dialog ([browser connection approval](browser-connection-approval.md))
+  or by a one-time pairing code. The public key, extension
   origin, vault path/identity/key identity and device name are protected by the
   approved Windows Credential Manager backend. There is no plaintext fallback.
   The store supports up to 16 browser identities per configuration directory.
@@ -45,9 +47,10 @@ the device's authorization. Discovery never opens a vault or launches the app.
   index update cannot restore access. Invalid/missing credentials and storage
   failures deny authorization. Authorization is local to this Windows account;
   migrating a vault requires pairing again on the new computer.
-- Native messaging exposes only protocol, loopback address and process instance
-  ID. It never receives or returns bootstrap secrets, pairing codes, browser
-  tokens or vault passwords. Bounded length-prefixed JSON and exact registered
+- Native messaging exposes only protocol, loopback address, process instance
+  ID and a per-run connect nonce, which only lets an allowlisted extension ask
+  for desktop approval. It never receives or returns bootstrap secrets, pairing
+  codes, browser tokens or vault passwords. Bounded length-prefixed JSON and exact registered
   extension origins are enforced. The host checks the running instance before
   returning an address, rejecting stale runtime files.
 - Chrome/Edge native-host registration uses the current user's registry and

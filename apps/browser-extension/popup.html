@@ -4,6 +4,17 @@
 <body><main>
   <header><h1>Vault Unified</h1><label class="language"><span class="sr-only" data-i18n="language">Language</span><select id="language"><option value="zh">中文</option><option value="en">English</option></select></label></header>
   <p id="status" role="status">Loading…</p>
+  <section id="connect" hidden aria-labelledby="connect-heading">
+    <h2 id="connect-heading" data-i18n="connectHeading">Connect this browser</h2>
+    <button id="connect-start" type="button" data-i18n="connectStart">Connect to Vault Unified</button>
+    <div id="connect-waiting" hidden>
+      <p data-i18n="connectApprove">Approve in Vault Unified and choose this code:</p>
+      <p id="connect-code" class="connect-code"></p>
+      <button id="connect-cancel" type="button" class="secondary" data-i18n="cancel">Cancel</button>
+    </div>
+  </section>
+  <details id="manual-pair" hidden><summary data-i18n="otherWays">Other ways to connect</summary>
+  <p class="hint" data-i18n="pairHint">Create a one-time pairing code in Vault Unified Connections.</p>
   <form id="pair-form" hidden autocomplete="off">
     <label><span data-i18n="address">Local address</span><input id="sidecar-url" type="url" placeholder="http://127.0.0.1:12345" required></label>
     <label><span data-i18n="code">One-time pairing code</span><input id="pairing-code" type="password" required autocomplete="off"></label>
@@ -11,6 +22,7 @@
     <label><span data-i18n="deviceName">Browser name</span><input id="device-name" maxlength="64" value="My browser" autocomplete="off"></label>
     <button type="submit" data-i18n="pair">Pair this browser</button>
   </form>
+  </details>
   <button id="retry" type="button" hidden data-i18n="retry">I've unlocked — reconnect</button>
   <form id="retry-address-form" hidden autocomplete="off">
     <label><span data-i18n="newAddress">If the desktop address changed, enter its new local address</span><input id="retry-address" type="url" required></label>

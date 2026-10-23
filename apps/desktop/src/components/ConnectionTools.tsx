@@ -5,6 +5,9 @@ import ConfirmDialog from "./ConfirmDialog";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 
+/** The extension's fixed ID (manifest `key`); see docs/browser-connection-approval.md. */
+export const EXTENSION_ORIGIN = "chrome-extension://llgobjolacibpkimbfgighcmblbnalpb";
+
 export default function ConnectionTools() {
   const { locale } = useI18n();
   const { showToast } = useToast();
@@ -108,6 +111,11 @@ export default function ConnectionTools() {
           <p>{zh ? "在支持的网站上填充账号，读取或手动输入密码，核对后保存或更新。" : "Fill accounts on supported sites, then review and save new or updated passwords."}</p>
           <p className="field-hint">
             {zh
+              ? "在扩展中点击“连接到 Vault Unified”，然后在这里选择浏览器显示的代码即可，无需复制。下面的一次性配对码是备用方式。"
+              : "In the extension, click Connect to Vault Unified, then choose the code the browser shows here. Nothing needs copying. The one-time pairing code below is the recovery option."}
+          </p>
+          <p className="field-hint">
+            {zh
               ? "配对时可授权浏览器在重启后恢复连接。保险库仍需在桌面端解锁；锁定后不能读取或保存密码。你可以在下方随时撤销设备授权。"
               : "Authorize a browser when pairing to reconnect after restarting. Unlock the vault on the desktop first; locked vaults cannot read or save passwords. Revoke device authorization below at any time."}
           </p>
@@ -155,6 +163,10 @@ export default function ConnectionTools() {
           <ul>{devices.map((device) => <li key={device.id}>
             <strong>{device.name}</strong>
             <span> · {new Date(device.created_at).toLocaleDateString(zh ? "zh-CN" : "en-US")}</span>
+            {device.origin !== EXTENSION_ORIGIN && <p className="field-hint">
+              <strong>{zh ? "旧扩展标识" : "Previous extension ID"}</strong>
+              {zh ? "：此授权属于扩展更新前的标识，已无法使用，也不能从浏览器中撤销。请在这里撤销。" : ": this authorization belongs to the extension's earlier ID. It can no longer be used or revoked from the browser; revoke it here."}
+            </p>}
             <details><summary>{zh ? "设备详情" : "Device details"}</summary><p className="path-break">{device.origin}</p></details>
             <button className="danger" type="button" disabled={busy} onClick={() => setRevokeTarget(device)}>
               {zh ? `撤销 ${device.name}` : `Revoke ${device.name}`}

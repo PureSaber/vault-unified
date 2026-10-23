@@ -195,7 +195,22 @@ fn discover(origin: &str, dir: &std::path::Path) -> Result<Value, ()> {
     if live.get("instance_id").and_then(Value::as_str) != Some(instance) {
         return Err(());
     }
-    Ok(json!({"protocol": 1, "base_url": url, "instance_id": instance}))
+    let mut reply = json!({"protocol": 1, "base_url": url, "instance_id": instance});
+    // The connect nonce only lets an extension ask for a desktop-approved
+    // connection. It is released after the allowed_origins check above, never
+    // to other callers (docs/browser-connection-approval.md).
+    if let Ok(connect) = read_json(&dir.join("connect.json")) {
+        let nonce = connect
+            .get("connect_nonce")
+            .and_then(Value::as_str)
+            .filter(|v| !v.is_empty() && v.len() <= 128);
+        if connect.get("instance_id").and_then(Value::as_str) == Some(instance) {
+            if let Some(nonce) = nonce {
+                reply["connect_nonce"] = Value::from(nonce);
+            }
+        }
+    }
+    Ok(reply)
 }
 
 fn read_request(input: &mut impl Read) -> Result<(), ()> {
@@ -270,6 +285,33 @@ mod tests {
             );
             bytes.clear();
         }
+    }
+    #[test]
+    fn releases_the_connect_nonce_only_to_allowed_origins_of_the_live_instance() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let mut stream = stream.unwrap();
+                let mut request = [0u8; 1024];
+                let _ = stream.read(&mut request);
+                let body = r#"{"protocol":1,"instance_id":"generated-instance"}"#;
+                let _ = write!(stream, "HTTP/1.1 200 OK
+Content-Length: {}
+
+{body}", body.len());
+            }
+        });
+        let temp = tempfile::tempdir().unwrap();
+        let allowed = "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let write = |name: &str, value: Value| std::fs::write(temp.path().join(name), value.to_string()).unwrap();
+        write("native-host.json", json!({"name": "org.vaultunified.desktop", "allowed_origins": [format!("{allowed}/")]}));
+        write("runtime.json", json!({"protocol": 1, "base_url": format!("http://127.0.0.1:{port}/api"), "instance_id": "generated-instance"}));
+        write("connect.json", json!({"instance_id": "generated-instance", "connect_nonce": "generated-nonce"}));
+        assert!(discover("chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", temp.path()).is_err());
+        assert_eq!(discover(allowed, temp.path()).unwrap()["connect_nonce"], "generated-nonce");
+        write("connect.json", json!({"instance_id": "older-instance", "connect_nonce": "stale-nonce"}));
+        assert!(discover(allowed, temp.path()).unwrap().get("connect_nonce").is_none());
     }
     #[test]
     fn validates_chromium_origins() {
