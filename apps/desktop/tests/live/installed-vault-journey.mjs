@@ -46,7 +46,8 @@ try {
   page.setDefaultTimeout(30000);
   await page.waitForFunction(() => Boolean(window.__TAURI_INTERNALS__));
   assert(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:app|version')) === expectedVersion, 'Installed version differs from installer');
-  await page.evaluate(() => localStorage.setItem('vault_locale', 'en')); await page.reload();
+  // The post-unlock Windows Hello offer is covered by renderer journeys and owner acceptance.
+  await page.evaluate(() => { localStorage.setItem('vault_locale', 'en'); localStorage.setItem('vault_hello_prompt', 'off'); }); await page.reload();
   await page.getByLabel('Master password', { exact: true }).waitFor();
   const runtime = await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('get_api_runtime_config'));
   let token;

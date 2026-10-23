@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type HelloStatus } from "../api/client";
 import { helloError } from "../desktop";
 import { useI18n } from "../i18n";
+import { HELLO_PROMPT_EVENT, helloPromptEnabled, setHelloPromptEnabled } from "./hello-prompt";
 
 export default function HelloSettings() {
   const { locale } = useI18n();
@@ -9,6 +10,12 @@ export default function HelloSettings() {
   const [status, setStatus] = useState<HelloStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [offer, setOffer] = useState(helloPromptEnabled);
+  useEffect(() => {
+    const changed = () => setOffer(helloPromptEnabled());
+    window.addEventListener(HELLO_PROMPT_EVENT, changed);
+    return () => window.removeEventListener(HELLO_PROMPT_EVENT, changed);
+  }, []);
   useEffect(() => {
     let active = true;
     void api.helloStatus().then(value => { if (active) setStatus(value); }).catch(reason => { if (active) { setStatus({ supported: false, ready: false, busy: false }); setError(helloError(reason, zh)); } });
@@ -28,5 +35,6 @@ export default function HelloSettings() {
     <p role="status">{!status ? (zh ? "正在检查 Windows Hello…" : "Checking Windows Hello…") : status.ready ? (zh ? "本次运行已启用快速解锁。" : "Quick unlock is enabled for this run.") : status.supported ? (zh ? "本次运行尚未启用。" : "Quick unlock is not enabled for this run.") : (zh ? "请先在 Windows 设置 → 账户 → 登录选项中配置 Windows Hello。" : "Set up Windows Hello in Windows Settings → Accounts → Sign-in options.")}</p>
     <button type="button" className="secondary" disabled={busy || !status?.supported || status.busy} onClick={() => void change()}>{busy ? (zh ? "等待 Windows Hello…" : "Waiting for Windows Hello…") : status?.ready ? (zh ? "关闭本次快速解锁" : "Disable quick unlock") : (zh ? "为本次运行启用 Windows Hello" : "Enable Windows Hello for this run")}</button>
     {error && <p className="error" role="alert">{error}</p>}
+    {status?.supported && <label className="checkbox-field"><input type="checkbox" checked={offer} onChange={event => setHelloPromptEnabled(event.target.checked)} /><span>{zh ? "使用主密码解锁后，询问是否为本次运行启用 Windows Hello" : "After I unlock with the master password, offer to turn on Windows Hello for that run"}</span></label>}
   </section>;
 }

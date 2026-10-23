@@ -7,8 +7,12 @@ import { isTauri } from "@tauri-apps/api/core";
 import { helloError } from "../desktop";
 import { authenticationError } from "../i18n/errors";
 
+/** "master" means the master password was typed in this unlock (or vault
+ * creation); only such a session may enable Windows Hello. */
+export type UnlockMethod = "master" | "saved" | "hello";
+
 interface Props {
-  onUnlock: () => void;
+  onUnlock: (method: UnlockMethod) => void;
 }
 
 type SetupMode = "create" | "restore";
@@ -124,7 +128,7 @@ export default function Unlock({ onUnlock }: Props) {
 
   async function handleHello() {
     setError(""); setLoading(true);
-    try { finish((await api.unlockHello()).token); }
+    try { finish((await api.unlockHello()).token, "hello"); }
     catch (reason) {
       setError(helloError(reason, zh));
       if (String(reason).includes("hello_needs_master")) setHelloReady(false);
@@ -177,9 +181,9 @@ export default function Unlock({ onUnlock }: Props) {
     return authenticationError(err, locale);
   }
 
-  function finish(token: string) {
+  function finish(token: string, method: UnlockMethod) {
     setToken(token);
-    onUnlock();
+    onUnlock(method);
   }
 
   async function handleUnlock(e: React.FormEvent) {
@@ -188,7 +192,9 @@ export default function Unlock({ onUnlock }: Props) {
     setLoading(true);
     try {
       const res = await api.unlock(password, remember);
-      finish(res.token);
+      // An empty field unlocks with the saved credential; the API then marks the
+      // session as not master-verified (`bool(password)`), so it cannot enroll Hello.
+      finish(res.token, password ? "master" : "saved");
     } catch (err) {
       setError(normalizeError(err));
     } finally {
@@ -210,7 +216,7 @@ export default function Unlock({ onUnlock }: Props) {
     setLoading(true);
     try {
       const res = await api.createVault(password, confirmPassword, remember);
-      finish(res.token);
+      finish(res.token, "master");
     } catch (err) {
       setError(normalizeError(err));
     } finally {
@@ -260,7 +266,7 @@ export default function Unlock({ onUnlock }: Props) {
     setLoading(true);
     try {
       const res = await api.unlockKeyring();
-      finish(res.token);
+      finish(res.token, "saved");
     } catch (err) {
       setError(normalizeError(err));
     } finally {
@@ -534,7 +540,8 @@ export default function Unlock({ onUnlock }: Props) {
               </div>
             )}
             <div className="button-row">
-              <button className="primary" type="submit" disabled={loading}>
+              {helloReady && <button type="button" className="primary" disabled={loading} onClick={() => void handleHello()}>{zh ? "使用 Windows Hello 解锁" : "Unlock with Windows Hello"}</button>}
+              <button className={helloReady ? "secondary" : "primary"} type="submit" disabled={loading}>
                 {loading ? t("unlock.unlocking") : t("unlock.submit")}
               </button>
               {keyringChecked && hasKeyring && (
@@ -547,7 +554,6 @@ export default function Unlock({ onUnlock }: Props) {
                   {t("unlock.useSaved")}
                 </button>
               )}
-              {helloReady && <button type="button" className="secondary" disabled={loading} onClick={() => void handleHello()}>{zh ? "使用 Windows Hello 解锁" : "Unlock with Windows Hello"}</button>}
             </div>
           </form>
         )}

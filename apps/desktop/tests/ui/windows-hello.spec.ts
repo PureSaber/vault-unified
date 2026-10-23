@@ -38,6 +38,8 @@ for (const locale of ["en", "zh"] as const) test(`Hello enrollment, cancellation
   await page.getByLabel(zh ? "主密码" : "Master password", { exact: true }).fill(testData.masterPassword);
   await page.getByLabel(zh ? "再次输入主密码" : "Confirm master password", { exact: true }).fill(testData.masterPassword);
   await page.getByRole("button", { name: zh ? "创建并解锁" : "Create and unlock", exact: true }).click();
+  // This journey enrolls through Settings; the post-unlock offer is covered by windows-hello-prompt.spec.ts.
+  await page.getByRole("dialog", { name: zh ? "使用 Windows Hello 快速解锁？" : "Unlock with Windows Hello?" }).getByRole("button", { name: zh ? "暂不" : "Not now", exact: true }).click();
   await page.getByRole("button", { name: zh ? "设置" : "Settings", exact: true }).click();
   const section = page.locator("section", { has: page.getByRole("heading", { name: "Windows Hello", exact: true }) });
   const enable = section.getByRole("button", { name: zh ? "为本次运行启用 Windows Hello" : "Enable Windows Hello for this run", exact: true });
