@@ -44,12 +44,18 @@ export default function ItemDetail({ entry, onEdit, onBack, onShare }: {
   }
   useEffect(() => {
     let active = true; let request = 0;
-    const needsMetadata = TEMPLATE_TYPES.includes(entry.entry_type) || (entry.custom_fields?.length || 0) > 0;
     const load = () => {
       const stamp = ++request;
       hide(); setItem(null); setError(false);
-      void api.getEntry(entry.id, needsMetadata)
-        .then(value => { if (active && stamp === request) setItem(needsMetadata ? metadataOnly(value) : value); })
+      // Decide from the current unrevealed entry, not the possibly stale prop
+      // (for example the pre-edit object shown again after saving).
+      void api.getEntry(entry.id, false)
+        .then(async value => {
+          if (!active || stamp !== request) return;
+          if (!TEMPLATE_TYPES.includes(value.entry_type) && !value.custom_fields.length) { setItem(value); return; }
+          const full = await api.getEntry(entry.id, true);
+          if (active && stamp === request) setItem(metadataOnly(full));
+        })
         .catch(() => { if (active && stamp === request) setError(true); });
     };
     load();

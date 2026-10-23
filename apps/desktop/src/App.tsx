@@ -10,7 +10,7 @@ import {
   type BackupSummary,
 } from "./api/client";
 import { maintenanceMessage } from "./i18n/errors";
-import { backupHealth } from "./components/backup-health";
+import { backupHealth, withStoredBackupStatus } from "./components/backup-health";
 import { I18nProvider, useI18n } from "./i18n";
 import { ToastProvider } from "./components/Toast";
 import SkipLink from "./components/SkipLink";
@@ -150,7 +150,10 @@ function AppShell() {
     let sequence = 0;
     const load = () => {
       const request = ++sequence;
-      void api.backups().then(summary => { if (!cancelled && request === sequence) setBackupSummary(summary); })
+      // The summary's last_success_at falls back to any verified file, including
+      // per-write atomic copies; the stored status records only real backups.
+      void Promise.all([api.backups(), api.getPersonalSettings()])
+        .then(([summary, settings]) => { if (!cancelled && request === sequence) setBackupSummary(withStoredBackupStatus(summary, settings)); })
         .catch(() => { if (!cancelled && request === sequence) setBackupSummary(null); });
     };
     load();

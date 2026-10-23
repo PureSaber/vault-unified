@@ -76,24 +76,60 @@ test("read-only details show template metadata, recovery codes and plain custom 
   } finally { await sidecar.stop(); }
 });
 
-for (const [name, health, visible] of [
-  ["an automatic pre-import copy does not satisfy the backup reminder", { last_success_at: "" }, true],
-  ["a user-created backup clears the backup reminder", { last_success_at: "2026-10-22T08:00:00+00:00" }, false],
-] as const) test(name, async ({ page }) => {
-  const sidecar = new MockAuthenticatedSidecar(900, 0, "empty", 0, 1);
-  await sidecar.install(page);
-  await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
-  await page.route("http://127.0.0.1:43129/backups", async route => {
-    if (route.request().method() === "OPTIONS") return route.fallback();
-    await route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "http://127.0.0.1:1420" }, body: JSON.stringify({
-      backups: [{ path: "generated/pre-import", kind: "manual", verified: true, modified_at: "2026-10-22T07:00:00+00:00" }], count: 1,
-      health: { auto_backup_enabled: false, backup_location: "", last_error_summary: "", last_verification_status: "unverified", ...health },
-    }) });
-  });
-  await page.goto("/");
-  await createVault(page);
-  await expect(page.getByRole("button", { name: "Open Generated account 0001", exact: true })).toBeVisible();
-  await expect(page.getByText("Backup has not been set up.", { exact: false })).toHaveCount(visible ? 1 : 0);
+test("only a user-created backup clears the reminder; per-write copies do not (real API)", async ({ page }) => {
+  const sidecar = await startGeneratedSidecar(page);
+  try {
+    await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
+    await page.goto("/");
+    const token = await createVault(page);
+    const headers = { "X-Vault-Bootstrap": testData.bootstrapSecret, "X-Vault-Client": "vault-unified-desktop", Authorization: `Bearer ${token}` };
+    const reminder = page.getByText("Backup has not been set up.", { exact: false });
+    await expect(reminder).toBeVisible();
+    const refresh = () => page.evaluate(() => window.dispatchEvent(new Event("vault-security-status-changed")));
+
+    await page.getByRole("button", { name: "Add password", exact: true }).click();
+    await page.getByLabel("Website or app name", { exact: true }).fill("Generated backup subject");
+    await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Open Generated backup subject", exact: true })).toBeVisible();
+    await sidecar.drain();
+    const summary = await (await page.request.get(`${sidecar.apiUrl}/backups`, { headers })).json();
+    // The precondition that hid the reminder before: the summary reports a time from an atomic copy.
+    expect(summary.backups.map((record: { kind: string }) => record.kind)).toContain("local_atomic");
+    expect(summary.health.last_success_at).not.toBe("");
+    await refresh(); await sidecar.drain();
+    await expect(reminder).toBeVisible();
+
+    // A user-started backup (the "Create encrypted backup now" action) to its default folder.
+    const created = await page.request.post(`${sidecar.apiUrl}/backups/create`, { headers, data: {} });
+    expect(created.ok()).toBe(true);
+    await refresh(); await sidecar.drain();
+    await expect(reminder).toHaveCount(0);
+  } finally { await sidecar.stop(); }
+});
+
+test("details reflect a custom field added in the editor without reselecting (real API)", async ({ page }) => {
+  const sidecar = await startGeneratedSidecar(page);
+  try {
+    await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
+    await page.goto("/");
+    await createVault(page);
+    await page.getByRole("button", { name: "Add password", exact: true }).click();
+    await page.getByLabel("Website or app name", { exact: true }).fill("Generated field later");
+    await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByRole("button", { name: "Open Generated field later", exact: true }).click();
+    const detail = page.getByRole("article", { name: "Account details" });
+    await detail.getByRole("button", { name: "Edit", exact: true }).click();
+    await page.getByRole("button", { name: "More options", exact: true }).click();
+    await page.getByRole("button", { name: "Add custom field", exact: true }).click();
+    await page.getByLabel("Field name", { exact: true }).fill("Generated added field");
+    await page.getByLabel("Field content", { exact: true }).fill("generated-added-value");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(detail.getByRole("heading", { name: "Generated field later" })).toBeVisible();
+    await expect(detail.locator(".detail-fields > div").filter({ hasText: "Generated added field" }).locator("dd")).toHaveText("generated-added-value");
+    await sidecar.drain();
+  } finally { await sidecar.stop(); }
 });
 
 test("sharing never preselects a stale or substituted account", async ({ page }) => {

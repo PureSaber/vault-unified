@@ -5,7 +5,7 @@ import PersonalCenter from "../components/PersonalCenter";
 import PayloadUpgrade from "../components/PayloadUpgrade";
 import { useI18n } from "../i18n";
 import PasswordHealth from "../components/PasswordHealth";
-import { backupHealth } from "../components/backup-health";
+import { backupHealth, withStoredBackupStatus } from "../components/backup-health";
 
 const SECURITY_STATUS_EVENT = "vault-security-status-changed";
 
@@ -34,7 +34,7 @@ export default function SecurityRecovery({ onOpen }: { onOpen: (entry: Entry) =>
         api.backups(),
       ]);
       setSettings(nextSettings);
-      setBackups(nextBackups);
+      setBackups(withStoredBackupStatus(nextBackups, nextSettings));
     } catch {
       setError(zh ? "无法读取安全与备份状态，请重试。" : "Security and backup status could not be loaded. Try again.");
     }

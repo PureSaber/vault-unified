@@ -26,7 +26,7 @@ export function maintenanceMessage(code: string, fallback: string, locale: Local
     "scheduled-backup": ["已完成自动加密备份，可在安全与恢复中查看。", "Automatic encrypted backup completed. View it in Security & recovery."],
     "scheduled-backup-status-error": ["加密备份已创建，但计划状态未能保存。请在安全与恢复中检查。", "An encrypted backup was created, but its schedule status could not be saved. Check Security & recovery."],
     "scheduled-backup-error": ["自动备份未完成，请在安全与恢复中检查备份位置。", "Automatic backup failed. Check the destination in Security & recovery."],
-    "sync-conflicts": [`有 ${count} 处同步冲突需要处理。`, `${count} synchronization conflicts need review.`],
+    "sync-conflicts": [`有 ${count} 处同步冲突需要处理。`, count === "1" ? "1 synchronization conflict needs review." : `${count} synchronization conflicts need review.`],
   };
   return messages[kind]?.[zh ? 0 : 1] ?? fallback;
 }
