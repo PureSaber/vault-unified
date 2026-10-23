@@ -22,7 +22,9 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 sha2 = "0.10"
 zeroize = "1"
-tauri-plugin-updater = "~2.13.3"
+# Release assets are plain NSIS/MSI installers (see `allowed_asset` in
+# src/updates.rs), so the plugin's default `zip` archive support is unused.
+tauri-plugin-updater = { version = "~2.13.3", default-features = false, features = ["rustls-tls", "system-proxy"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
