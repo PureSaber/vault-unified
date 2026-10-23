@@ -81,6 +81,31 @@ def test_startup_never_registers_new_or_unowned_browser_manifest(tmp_path, monke
     assert called == []
 
 
+def _dacl(path) -> str:
+    """The file's DACL as SDDL, read through Win32 (independent of PowerShell and display language)."""
+    import ctypes
+    from ctypes import wintypes
+
+    advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    advapi32.GetNamedSecurityInfoW.argtypes = [wintypes.LPCWSTR, ctypes.c_int, wintypes.DWORD, ctypes.c_void_p, ctypes.c_void_p,
+                                               ctypes.c_void_p, ctypes.c_void_p, ctypes.POINTER(wintypes.LPVOID)]
+    advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+        wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(wintypes.LPWSTR), ctypes.POINTER(wintypes.ULONG)]
+    kernel32.LocalFree.argtypes = [wintypes.LPVOID]
+    descriptor, text = wintypes.LPVOID(), wintypes.LPWSTR()
+    # SE_FILE_OBJECT = 1, DACL_SECURITY_INFORMATION = 4, SDDL_REVISION_1 = 1.
+    assert advapi32.GetNamedSecurityInfoW(str(path), 1, 4, None, None, None, None, ctypes.byref(descriptor)) == 0
+    try:
+        assert advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(descriptor, 1, 4, ctypes.byref(text), None)
+        try:
+            return text.value
+        finally:
+            kernel32.LocalFree(ctypes.cast(text, wintypes.LPVOID))
+    finally:
+        kernel32.LocalFree(descriptor)
+
+
 def test_connect_nonce_is_owner_only_never_public_and_cleaned_with_its_run(tmp_path, monkeypatch):
     monkeypatch.setenv("VAULT_BROWSER_DISCOVERY_DIR", str(tmp_path))
     assert discovery.publish(43210, "generated-instance", "generated-connect-nonce")
@@ -89,11 +114,8 @@ def test_connect_nonce_is_owner_only_never_public_and_cleaned_with_its_run(tmp_p
     assert json.loads(path.read_text()) == {"instance_id": "generated-instance", "connect_nonce": "generated-connect-nonce"}
     assert {item.name for item in tmp_path.iterdir()} == {"runtime.json", discovery.CONNECT_FILE}
     if discovery.os.name == "nt":
-        import subprocess
-        sddl = subprocess.run(["powershell", "-NoProfile", "-Command", f"(Get-Acl -LiteralPath '{path}').Sddl"],
-                              capture_output=True, text=True, check=True).stdout.strip()
         # Protected DACL with a single owner-only entry: no inherited, group or Everyone entries.
-        assert sddl.split("D:", 1)[1] == "P(A;;FA;;;OW)", sddl
+        assert _dacl(path) == "D:P(A;;FA;;;OW)"
     with TestClient(create_app(instance_id="generated-instance", connect_nonce="generated-connect-nonce")) as client:
         assert "connect_nonce" not in client.get("/api/browser/discovery").text
     discovery.clear("older-process")

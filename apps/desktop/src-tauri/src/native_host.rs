@@ -293,10 +293,18 @@ mod tests {
         std::thread::spawn(move || {
             for stream in listener.incoming().take(2) {
                 let mut stream = stream.unwrap();
-                let mut request = [0u8; 1024];
-                let _ = stream.read(&mut request);
+                // Read the whole request: closing a socket with unread data resets it on Windows.
+                let mut request = Vec::new();
+                let mut chunk = [0u8; 256];
+                while !request.windows(4).any(|w: &[u8]| w == b"\r\n\r\n") {
+                    match stream.read(&mut chunk) {
+                        Ok(0) | Err(_) => break,
+                        Ok(n) => request.extend_from_slice(&chunk[..n]),
+                    }
+                }
                 let body = r#"{"protocol":1,"instance_id":"generated-instance"}"#;
                 let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+                let _ = stream.shutdown(std::net::Shutdown::Write);
             }
         });
         let temp = tempfile::tempdir().unwrap();
