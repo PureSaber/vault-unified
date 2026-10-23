@@ -232,7 +232,7 @@ try {
   await api(`/browser/devices/${identityCheck.deviceId}`, {}, 'DELETE');
   await browser.popup.evaluate(() => chrome.storage.session.clear());
   await browser.popup.reload();
-  await browser.popup.locator('#pair-form').waitFor();
+  await browser.popup.locator('#connect-start').waitFor();
   assert(await browser.popup.locator('#accounts').isHidden(), 'Revoked browser regained access');
   assert((await api('/browser/devices', null, 'GET')).devices.length === 0, 'Revoked device remained listed');
   console.log(JSON.stringify({ result: 'passed', actual_native_executable: true, actual_windows_credentials: true,
