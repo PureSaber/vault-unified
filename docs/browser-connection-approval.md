@@ -227,8 +227,6 @@ The pending store uses the same hooks as `passkey_requests`:
 - `lock_all()`: used by system lock/suspend, renderer reset, and restore or
   recovery apply; everything is cleared.
 - Lazy idle expiry inside `SessionManager.get()`: treated like `lock(token)`.
-- Disabling the browser bridge or revoking all devices also clears pending
-  requests.
 
 ### 8. Unchanged
 
@@ -246,9 +244,10 @@ The pending store uses the same hooks as `passkey_requests`:
   The store never calls the session manager or the Windows credential store
   while holding its own lock.
 - **Claim is idempotent and re-checked:** under the store lock, mark the
-  request *claiming*; enroll outside the lock; then re-check. If a lock or
-  "revoke all browsers" ended the request meanwhile, revoke the device that
-  was just added and report **locked** or **denied**. Once enrolled, the
+  request *claiming*; enroll outside the lock; then re-check. If a lock ended
+  the request meanwhile, revoke the device that was just added and report
+  **locked**. (There is no "revoke all browsers" action; a device that is not
+  yet listed cannot be revoked individually.) Once enrolled, the
   poll-secret holder can re-read the same `device_id` until the claim
   deadline, so a lost response does not orphan the record.
 - **Terminal states stay readable** (bounded, short-lived records), including
