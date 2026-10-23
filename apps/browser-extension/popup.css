@@ -1,22 +1,30 @@
-:root { color-scheme: dark; font-family: system-ui, sans-serif; }
-body { width: 360px; margin: 0; background: #151b24; color: #e7ecf3; }
+/* Keep popup controls aligned with the desktop's neutral surfaces and blue actions. */
+:root { color-scheme: dark; font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+  --bg: #10151d; --surface: #171e29; --inset: #111823; --text: #ecf0f7; --muted: #c4cddc;
+  --border: #6b7a92; --accent: #285fac; --focus: #a2c7ff; --error: #ffaaaa;
+}
+@media (prefers-color-scheme: light) {
+  :root { color-scheme: light; --bg: #f3f5f8; --surface: #fff; --inset: #f8fafc; --text: #162238; --muted: #3e4b62; --border: #77849a; --focus: #225ba8; --error: #b32c39; }
+}
+body { width: 360px; margin: 0; background: var(--bg); color: var(--text); }
 body.standalone { width: auto; min-width: 300px; }
 main { padding: 16px; }
 header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 h1 { font-size: 18px; margin: 0; }
 h2 { font-size: 15px; overflow-wrap: anywhere; }
 h3 { font-size: 14px; }
-p { color: #c5d0de; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
-label { display: block; font-size: 13px; margin: 10px 0; color: #c5d0de; }
+p { color: var(--muted); font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+label { display: block; font-size: 13px; margin: 10px 0; color: var(--muted); }
 input, button, select { box-sizing: border-box; width: 100%; margin-top: 4px; border-radius: 6px; font: inherit; }
-input, select { border: 1px solid #718096; background: #0c1016; color: #e7ecf3; padding: 8px; }
-button { border: 1px solid #2b6cb0; background: #2b6cb0; color: white; padding: 9px; cursor: pointer; }
-button.secondary { margin-top: 8px; background: transparent; border-color: #718096; }
+input, select { border: 1px solid var(--border); background: var(--inset); color: var(--text); padding: 8px; }
+button { border: 1px solid var(--accent); background: var(--accent); color: white; padding: 9px; cursor: pointer; }
+button.secondary { margin-top: 8px; background: var(--surface); border-color: var(--border); color: var(--text); }
 button:disabled, input:disabled, select:disabled { opacity: .6; cursor: wait; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid #90cdf4; outline-offset: 2px; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .match-row { display: flex; gap: 8px; align-items: stretch; margin: 10px 0; }
-.match { text-align: left; overflow-wrap: anywhere; }
-.match small { display: block; margin-top: 4px; color: #e7ecf3; overflow-wrap: anywhere; }
+.match { text-align: left; overflow-wrap: anywhere; background: var(--surface); color: var(--text); border-color: var(--border); padding: 12px; }
+.match:hover { border-color: var(--focus); }
+.match small { display: block; margin-top: 4px; color: var(--muted); overflow-wrap: anywhere; }
 .match-row .update { width: auto; min-width: 68px; margin-top: 4px; }
 .button-row { display: flex; gap: 8px; align-items: stretch; }
 .button-row > button { flex: 1; margin-top: 8px; }
@@ -25,7 +33,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px s
 .language { margin: 0; }
 .language select { width: auto; }
 .hint { font-size: 12px; }
-.error { color: #feb2b2; }
+.error { color: var(--error); }
 fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
 details { margin-top: 16px; }
 summary { cursor: pointer; }
@@ -33,3 +41,9 @@ dd { margin: 4px 0 12px; overflow-wrap: anywhere; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 [hidden] { display: none !important; }
 @media (forced-colors: active) { button, input, select { border: 1px solid ButtonText; } }
+
+#status { padding: 10px 12px; border-left: 3px solid var(--border); border-radius: 4px; background: var(--surface); }
+#status.error { border-left-color: var(--error); }
+button, input, select { min-height: 36px; }
+input[type="checkbox"] { min-height: 0; }
+summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }

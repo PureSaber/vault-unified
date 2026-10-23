@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
@@ -408,7 +409,7 @@ function readStoredLocale(): Locale {
   } catch {
     /* ignore */
   }
-  return "zh";
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 
 function interpolate(template: string, vars?: Record<string, string | number>) {
@@ -428,6 +429,10 @@ const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(readStoredLocale);
+
+  useEffect(() => {
+    document.documentElement.lang = locale === "zh" ? "zh-CN" : "en";
+  }, [locale]);
 
   const setLocale = useCallback((next: Locale) => {
     setLocaleState(next);

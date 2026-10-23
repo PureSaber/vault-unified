@@ -39,6 +39,13 @@ test("local QR setup persists, renders a timed code and hides it on blur", async
     await expect(key).toHaveAttribute("type", "password");
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await page.getByRole("button", { name: "打开 Generated OTP account", exact: true }).click();
+    const detail = page.getByRole("article", { name: "账号详情" });
+    await detail.getByRole("button", { name: "显示验证码", exact: true }).click();
+    await expect(detail.locator(".code-reveal")).toHaveText(/^\d{6}$/);
+    await expect(key).toHaveCount(0);
+    await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+    await expect(detail.locator(".code-reveal")).toHaveText("••• •••");
+    await page.getByRole("article").getByRole("button", { name: "编辑", exact: true }).click();
     await page.getByRole("button", { name: "更多选项", exact: true }).click();
     await expect(key).toHaveValue(/^otpauth:\/\/totp\/RFC/);
     await expect(page.getByRole("button", { name: "复制验证码", exact: true })).toBeEnabled();
@@ -52,6 +59,7 @@ test("local QR setup persists, renders a timed code and hides it on blur", async
     await page.getByRole("button", { name: "取消", exact: true }).click();
     await page.getByRole("button", { name: "放弃更改", exact: true }).click();
     await page.getByRole("button", { name: "打开 Generated OTP account", exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: "编辑", exact: true }).click();
     await page.getByRole("button", { name: "更多选项", exact: true }).click();
     await expect(key).toHaveValue(/^otpauth:\/\/totp\/RFC/);
   } finally { await sidecar.stop(); }

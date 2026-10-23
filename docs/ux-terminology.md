@@ -1,4 +1,4 @@
-# Vault Unified v1.3 UX terminology
+# Vault Unified UX terminology
 
 ## Default-language contract
 
@@ -25,7 +25,9 @@ Default screens describe the user's object, location, outcome, and next action. 
 - Say which side a deletion affects: **Will be deleted from this device** or **Will be deleted from Bitwarden**, for example.
 - A pending or unavailable result is never called success. State what remains unknown and the next action.
 - Destructive confirmation states the object, count, destination, and consequence. Color is supplementary, not the only signal.
-- TOTP is **Authenticator key** or **TOTP key**. Do not call it a built-in authenticator until the product actually generates and times codes.
+- The TOTP seed is **Authenticator key / 验证器密钥**; the generated timed value is **Verification code / 验证码**. Never use the two labels interchangeably.
+- Use **Vault / 保险库**, **Recovery codes / 恢复码**, and **Passkeys / 通行密钥** consistently in new copy.
+- Errors remain visible until dismissed. Successful copy feedback describes the actual clipboard expiry returned by the service.
 
 ## Entry labels
 
@@ -38,9 +40,11 @@ Internal entry enums are translated before display:
 | `card` | Card (compatibility) | 卡片（兼容） |
 | `identity` | Identity (compatibility) | 身份信息（兼容） |
 | `ssh_key` | SSH key (compatibility) | SSH 密钥（兼容） |
-| `recovery_code` | Recovery code (compatibility) | 恢复代码（兼容） |
+| `recovery_code` | Recovery codes | 恢复码 |
+| `software_license` | Software license | 软件许可证 |
+| `api_credential` | API credential | API 凭据 |
 
-Compatibility types remain losslessly readable and editable, but are not offered as ordinary new-item choices before dedicated forms exist.
+Card, identity and SSH compatibility types remain losslessly readable and editable. Recovery codes, software licenses and API credentials have dedicated forms and are normal creation choices.
 
 ## Secret-safe wording and diagnostics
 

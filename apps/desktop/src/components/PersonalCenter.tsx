@@ -58,6 +58,7 @@ export default function PersonalCenter() {
   const [createdRecoveryPath, setCreatedRecoveryPath] = useState("");
   const [pendingExport, setPendingExport] = useState<"json" | "csv" | null>(null);
   const [destinationResult, setDestinationResult] = useState("");
+  const [restoreConfirm, setRestoreConfirm] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
 
   useEffect(() => {
@@ -314,7 +315,7 @@ export default function PersonalCenter() {
               ? (zh ? "重新生成恢复码" : "Generate a new recovery code")
               : (zh ? "创建恢复包" : "Create recovery kit")}
           </button>
-          <button className="secondary" type="button" onClick={() => void openRecoveryKitRestore()}>
+          <button className="secondary" type="button" onClick={() => setRestoreConfirm(true)}>
             {zh ? "从恢复包恢复" : "Restore from recovery kit"}
           </button>
         </div>
@@ -344,6 +345,9 @@ export default function PersonalCenter() {
         <RecoveryRehearsal suggestedPath={createdRecoveryPath} />
       </section>
 
+      <ConfirmDialog open={restoreConfirm} idPrefix="open-recovery" title={zh ? "锁定并打开恢复？" : "Lock and open recovery?"}
+        message={zh ? "当前保险库将锁定，未保存的设置会丢弃。之后选择恢复包并预览，确认后才会恢复数据。" : "The vault will lock and unsaved settings will be discarded. Choose a recovery kit and review its preview before confirming a restore."}
+        confirmLabel={zh ? "锁定并继续" : "Lock and continue"} onCancel={() => setRestoreConfirm(false)} onConfirm={() => void openRecoveryKitRestore()} />
       <ConfirmDialog
         open={pendingExport !== null}
         idPrefix="plaintext-export-confirm"

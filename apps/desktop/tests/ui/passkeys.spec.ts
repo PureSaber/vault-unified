@@ -143,6 +143,7 @@ for (const locale of ["en", "zh"] as const) test(`actual extension Passkey regis
     const stored = await page.request.get(`${sidecar.apiUrl}/entries`, { headers: { ...headers, Authorization: `Bearer ${newToken}` } });
     expect((await stored.json()).length).toBe(1);
     await page.getByRole("button", { name: text("Open Generated Passkey website", "打开 Generated Passkey website"), exact: true }).click();
+    await page.getByRole("article").getByRole("button", { name: text("Edit", "编辑"), exact: true }).click();
     await expect(page.getByRole("region", { name: text("Passkeys", "通行密钥"), exact: true })).toContainText("localhost");
     await page.getByRole("button", { name: text("Lock now", "立即锁定"), exact: true }).click();
   } finally {

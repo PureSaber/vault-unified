@@ -55,7 +55,8 @@ for (const locale of ["en", "zh"] as const) test(`quick search copies with the k
   await page.keyboard.press("Control+k");
   await dialog.getByRole("button", { name: zh ? "打开条目" : "Open entry", exact: true }).click();
   await page.getByRole("button", { name: zh ? "放弃更改" : "Discard changes", exact: true }).click();
-  await expect(title).toHaveValue("Generated second");
+  await expect(page.getByRole("article").getByRole("heading", { name: "Generated second", exact: true })).toBeVisible();
+  await expect(title).toHaveCount(0);
   expect(sidecar.writes).toEqual({ create: 2, update: 0, delete: 0 });
 });
 

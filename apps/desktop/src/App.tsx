@@ -7,7 +7,10 @@ import {
   Entry,
   hasToken,
   setUnauthorizedHandler,
+  type BackupSummary,
 } from "./api/client";
+import { maintenanceMessage } from "./i18n/errors";
+import { backupHealth, withStoredBackupStatus } from "./components/backup-health";
 import { I18nProvider, useI18n } from "./i18n";
 import { ToastProvider } from "./components/Toast";
 import SkipLink from "./components/SkipLink";
@@ -25,10 +28,13 @@ import QuickSearch from "./components/QuickSearch";
 import PersonalSyncRunner from "./components/PersonalSyncRunner";
 import PasskeyRequests from "./components/PasskeyRequests";
 import Sharing from "./pages/Sharing";
+import ItemDetail from "./components/ItemDetail";
+import Icon from "./components/Icon";
+import { AppearanceProvider } from "./components/Appearance";
 import { cancelHello, desktopReady, desktopStatus, exitDesktop, saveDesktopPreferences, type DesktopStatus } from "./desktop";
 
 type TopPage = "passwords" | "security" | "connections" | "sharing" | "settings";
-type Page = TopPage | "editor" | "conflicts" | "import";
+type Page = TopPage | "details" | "editor" | "conflicts" | "import";
 type PendingAction =
   | { kind: "navigate"; page: Page; entry?: Entry }
   | { kind: "lock" }
@@ -44,8 +50,9 @@ function AppShell() {
   const [unlocked, setUnlocked] = useState(hasToken());
   const [page, setPage] = useState<Page>("passwords");
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
+  const [shareEntryId, setShareEntryId] = useState("");
   const [conflictCount, setConflictCount] = useState(0);
-  const [backupCount, setBackupCount] = useState<number | null>(null);
+  const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null);
   const [lockAfterSeconds, setLockAfterSeconds] = useState(DEFAULT_IDLE_SECONDS);
   const [editorDirty, setEditorDirty] = useState(false);
   const [editorSaving, setEditorSaving] = useState(false);
@@ -61,6 +68,10 @@ function AppShell() {
   const idleWarningTimer = useRef<number | null>(null);
   const idleCountdownTimer = useRef<number | null>(null);
   const deliveredMaintenanceNotices = useRef(new Set<string>());
+  // Read the language at notice time; changing it must not re-run maintenance
+  // (trash purge and scheduled-backup checks).
+  const localeRef = useRef(locale);
+  localeRef.current = locale;
 
   const lockToUnlock = useCallback(() => {
     cancelHello();
@@ -75,6 +86,9 @@ function AppShell() {
     setIdleCountdown(null);
     setQuickSearch(false);
     setPasskeyPending(false);
+    setBackupSummary(null);
+    setShareEntryId("");
+    window.dispatchEvent(new Event("vault-ui-locked"));
   }, []);
 
   useEffect(() => {
@@ -131,19 +145,21 @@ function AppShell() {
   }, [unlocked, refreshConflicts, page]);
 
   useEffect(() => {
-    if (!unlocked || page !== "passwords") return;
+    if (!unlocked) return;
     let cancelled = false;
-    api.backups()
-      .then((summary) => {
-        if (!cancelled) setBackupCount(summary.count);
-      })
-      .catch(() => {
-        if (!cancelled) setBackupCount(null);
-      });
-    return () => {
-      cancelled = true;
+    let sequence = 0;
+    const load = () => {
+      const request = ++sequence;
+      // The summary's last_success_at falls back to any verified file, including
+      // per-write atomic copies; the stored status records only real backups.
+      void Promise.all([api.backups(), api.getPersonalSettings()])
+        .then(([summary, settings]) => { if (!cancelled && request === sequence) setBackupSummary(withStoredBackupStatus(summary, settings)); })
+        .catch(() => { if (!cancelled && request === sequence) setBackupSummary(null); });
     };
-  }, [unlocked, page]);
+    load();
+    window.addEventListener("vault-security-status-changed", load);
+    return () => { cancelled = true; window.removeEventListener("vault-security-status-changed", load); };
+  }, [unlocked]);
 
   useEffect(() => {
     if (!unlocked) return;
@@ -182,10 +198,12 @@ function AppShell() {
         setLockAfterSeconds(result.settings.lock_after_seconds);
         const conflicts = Number(result.components.conflicts || "0");
         if (Number.isFinite(conflicts)) setConflictCount(conflicts);
+        if (result.notices.some(notice => notice.code.startsWith("scheduled-backup"))) window.dispatchEvent(new Event("vault-security-status-changed"));
         for (const notice of result.notices) {
+          if (notice.code.startsWith("sync-pending:")) continue;
           if (deliveredMaintenanceNotices.current.has(notice.code)) continue;
           deliveredMaintenanceNotices.current.add(notice.code);
-          showToast(notice.message, notice.level === "error" ? "error" : "info");
+          showToast(maintenanceMessage(notice.code, notice.message, localeRef.current), notice.level === "error" ? "error" : "info");
         }
       } catch {
         // Maintenance is best-effort; ordinary vault use must remain available.
@@ -312,17 +330,17 @@ function AppShell() {
     if (unlocked && pendingQuickSearch.current) { pendingQuickSearch.current = false; setQuickSearch(true); }
   }, [unlocked]);
 
-  function requestNavigation(target: Page, force = false) {
+  function requestNavigation(target: Page, force = false, entry?: Entry) {
     if (editorSaving && !force) {
       showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info");
       return;
     }
     if (editorDirty && !force) {
-      setPendingAction({ kind: "navigate", page: target });
+      setPendingAction({ kind: "navigate", page: target, entry });
       return;
     }
     setEditorDirty(false);
-    setEditEntry(null);
+    setEditEntry(entry || null);
     setPage(target);
     if (target === "conflicts" || target === "connections") void refreshConflicts();
   }
@@ -353,11 +371,19 @@ function AppShell() {
     exit: requestExit,
   };
 
-  function openSearchEntry(entry: Entry) {
+  function openEntry(entry: Entry, mode: "details" | "editor" = "details") {
     setQuickSearch(false);
-    if (editorSaving) { showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info"); return; }
-    if (editorDirty) { setPendingAction({ kind: "navigate", page: "editor", entry }); return; }
-    setEditEntry(entry); setEditorDirty(false); setPage("editor");
+    requestNavigation(mode, false, entry);
+  }
+
+  function openSearchEntry(entry: Entry) { openEntry(entry); }
+
+  function finishEditor(saved?: boolean) {
+    if (saved) {
+      window.dispatchEvent(new Event("vault-entries-changed"));
+      setEditorSaving(false);
+    }
+    requestNavigation(editEntry ? "details" : "passwords", Boolean(saved), editEntry || undefined);
   }
 
   async function confirmDiscard() {
@@ -393,6 +419,8 @@ function AppShell() {
     { id: "settings", label: t("nav.settings") },
   ];
 
+  const activePage = ["editor", "details", "import", "conflicts"].includes(page) ? "passwords" : page;
+
   if (!unlocked) {
     return (
       <div className="app">
@@ -402,56 +430,67 @@ function AppShell() {
   }
 
   return (
-    <div className="app">
+    <div className="app app-workbench">
       <SkipLink />
       <header className="header">
-        <h1>{t("app.title")}</h1>
+        <h1><span className="brand-icon"><Icon name="vault" /></span><span>{t("app.title")}</span></h1>
         <nav className="nav" aria-label={t("nav.main")}>
           {navItems.map(({ id, label }) => (
             <button
               key={id}
               type="button"
-              className={page === id ? "active" : ""}
-              onClick={() => requestNavigation(id)}
-              aria-current={page === id ? "page" : undefined}
+              className={activePage === id ? "active" : ""}
+              onClick={() => { setShareEntryId(""); requestNavigation(id); }}
+              aria-current={activePage === id ? "page" : undefined}
             >
-              {label}
+              <Icon name={id} /><span>{label}</span>
             </button>
           ))}
-          <button type="button" onClick={() => setQuickSearch(true)} title="Ctrl+K">{locale === "zh" ? "快捷搜索" : "Quick search"}</button>
+          <button type="button" onClick={() => setQuickSearch(true)} title="Ctrl+K"><Icon name="search" /><span>{locale === "zh" ? "快捷搜索" : "Quick search"}</span><kbd aria-hidden="true">Ctrl K</kbd></button>
           <button type="button" className="nav-lock" onClick={handleLock}>
-            {t("nav.lockNow")}
+            <Icon name="lock" /><span>{t("nav.lockNow")}</span>
           </button>
         </nav>
       </header>
-      <main className="main" id="main-content">
-        {page === "passwords" && (
+      <main className={`main ${["passwords", "details", "editor"].includes(page) ? "main-passwords" : ""}`} id="main-content">
+        {["passwords", "details", "editor"].includes(page) && (
           <>
             {conflictCount > 0 && (
               <div className="context-notice context-notice-warning" role="status">
                 <span>{t("conflicts.contextNotice", { count: conflictCount })}</span>
-                <button type="button" className="secondary" onClick={() => setPage("conflicts")}>
+                <button type="button" className="secondary" onClick={() => requestNavigation("conflicts")}>
                   {t("conflicts.review")}
                 </button>
               </div>
             )}
-            {backupCount === 0 && (
-              <div className="context-notice" role="status">
-                <span>{t("security.noBackupReminder")}</span>
+            {backupSummary && !backupHealth(backupSummary).hasBackup && (
+              <div className="context-notice context-notice-warning" role="status">
+                <span>{backupHealth(backupSummary).configured
+                  ? (locale === "zh" ? "自动备份已开启，尚未完成第一次成功备份。" : "Automatic backup is on; the first successful backup is still needed.")
+                  : t("security.noBackupReminder")}</span>
                 <button type="button" className="secondary" onClick={() => requestNavigation("security")}>
                   {t("security.setBackup")}
                 </button>
               </div>
             )}
-            <VaultList
-              onAdd={() => requestNavigation("editor")}
-              onImport={() => requestNavigation("import")}
-              onEdit={(e) => {
-                setEditEntry(e);
-                setEditorDirty(false);
-                setPage("editor");
-              }}
-            />
+            <div className={`password-workspace ${page === "editor" ? "workspace-editing" : ""} ${editEntry ? "has-selection" : ""}`}>
+              <section className="list-pane" aria-label={locale === "zh" ? "密码列表" : "Password list"}>
+                <VaultList
+                  selectedId={editEntry?.id}
+                  active={page !== "editor"}
+                  onAdd={() => requestNavigation("editor")}
+                  onImport={() => requestNavigation("import")}
+                  onOpen={entry => openEntry(entry)}
+                  onEdit={entry => openEntry(entry, "editor")}
+                />
+              </section>
+              <section className="detail-pane">
+                {page === "editor" ? <EntryForm entry={editEntry} onDirtyChange={setEditorDirty} onSavingChange={setEditorSaving} onDone={finishEditor} />
+                  : editEntry ? <ItemDetail key={editEntry.id} entry={editEntry} onEdit={entry => openEntry(entry, "editor")} onBack={() => requestNavigation("passwords")}
+                    onShare={entry => { setShareEntryId(entry.id); requestNavigation("sharing"); }} />
+                  : <div className="detail-empty"><span className="detail-empty-icon"><Icon name="vault" size={36} /></span><h2>{locale === "zh" ? "你的账号，井然有序" : "Your accounts, in one place"}</h2><p>{locale === "zh" ? "选择一个账号，查看详情并复制所需内容。" : "Select an account to view its details and copy what you need."}</p><span className="field-hint">{locale === "zh" ? "使用 Ctrl+K 快速查找" : "Use Ctrl+K to find an account quickly"}</span></div>}
+              </section>
+            </div>
           </>
         )}
         <PasskeyRequests onPendingChange={setPasskeyPending} />
@@ -465,15 +504,7 @@ function AppShell() {
             <ImportWizard initialSource="chrome" onDone={() => requestNavigation("passwords")} />
           </div>
         )}
-        {page === "editor" && (
-          <EntryForm
-            entry={editEntry}
-            onDirtyChange={setEditorDirty}
-            onSavingChange={setEditorSaving}
-            onDone={(saved) => requestNavigation("passwords", Boolean(saved))}
-          />
-        )}
-        {page === "security" && <SecurityRecovery onOpen={entry => { setEditEntry(entry); setEditorDirty(false); setPage("editor"); }} />}
+        {page === "security" && <SecurityRecovery onOpen={entry => openEntry(entry, "editor")} />}
         {page === "connections" && (
           <Connections
             conflictCount={conflictCount}
@@ -482,7 +513,7 @@ function AppShell() {
           />
         )}
         {page === "settings" && <Settings desktop={desktop} onDesktopChange={setDesktop} onExit={requestExit} onBusy={setEditorSaving} />}
-        {page === "sharing" && <Sharing onDirtyChange={setEditorDirty} onSavingChange={setEditorSaving} />}
+        {page === "sharing" && <Sharing initialEntryId={shareEntryId} onDirtyChange={setEditorDirty} onSavingChange={setEditorSaving} />}
         {page === "conflicts" && (
           <>
             <button type="button" className="ghost page-back" onClick={() => setPage("passwords")}>
@@ -522,9 +553,9 @@ function AppShell() {
 export default function App() {
   return (
     <I18nProvider>
-      <ToastProvider>
+      <AppearanceProvider><ToastProvider>
         <AppShell />
-      </ToastProvider>
+      </ToastProvider></AppearanceProvider>
     </I18nProvider>
   );
 }

@@ -40,7 +40,7 @@ for (const locale of ["en", "zh"] as const) test(`website rules test exact, extr
     await page.getByRole("region", { name: zh ? "网站匹配规则" : "Website matching rules", exact: true }).screenshot({ path: testInfo.outputPath(`website-rules-${locale}.png`) });
     await page.getByLabel(zh ? "测试网址" : "Test website", { exact: true }).fill("invalid test does not block saving unrelated fields");
     await page.getByRole("button", { name: zh ? "保存" : "Save", exact: true }).click();
-    const open = () => page.getByRole("button", { name: zh ? "打开 Generated site rules" : "Open Generated site rules", exact: true }).click();
+    const open = async () => { await page.getByRole("button", { name: zh ? "打开 Generated site rules" : "Open Generated site rules", exact: true }).click(); await page.getByRole("article").getByRole("button", { name: zh ? "编辑" : "Edit", exact: true }).click(); };
     await open();
     await page.getByRole("button", { name: zh ? "更多选项" : "More options", exact: true }).click();
     await expect(mode).toHaveValue("base_domain");

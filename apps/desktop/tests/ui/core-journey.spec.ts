@@ -31,14 +31,15 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   await page.getByLabel("Notes", { exact: true }).fill("Generated UI journey data only");
   await page.getByRole("button", { name: "Save", exact: true }).click();
 
-  await expect(page.getByText(accountTitle, { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText(accountTitle, { exact: true })).toBeVisible();
   expect(sidecar.writes).toEqual({ create: 1, update: 0, delete: 0 });
 
   const search = page.getByLabel("Search vault");
   await search.fill("beginner@example.invalid");
-  await expect(page.getByText(accountTitle, { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText(accountTitle, { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: `Open ${accountTitle}`, exact: true }).click();
+  await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
   const titleField = page.getByLabel("Website or app name", { exact: true });
   await expect(titleField).toHaveValue(accountTitle);
   await titleField.fill(`${accountTitle} cancelled draft`);
@@ -46,7 +47,7 @@ test("creates, unlocks, edits a draft, searches, cancels, and locks", async ({ p
   await expect(page.getByRole("alertdialog", { name: "Discard unsaved changes?" })).toBeVisible();
   await page.getByRole("button", { name: "Discard changes", exact: true }).click();
 
-  await expect(page.getByText(accountTitle, { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText(accountTitle, { exact: true })).toBeVisible();
   await expect(page.getByText(`${accountTitle} cancelled draft`, { exact: true })).toHaveCount(0);
   expect(sidecar.writes).toEqual({ create: 1, update: 0, delete: 0 });
   expect(sidecar.persistedEntries).toHaveLength(1);

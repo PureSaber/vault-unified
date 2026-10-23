@@ -140,6 +140,13 @@ function formatDetail(detail: unknown, fallback: string): string {
   return fallback;
 }
 
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly path: string) {
+    super(message);
+    this.name = "Error";
+  }
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const config = await runtimeConfig();
   const requestHeaders = new Headers(options.headers);
@@ -158,7 +165,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       onUnauthorized?.();
     }
     const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(formatDetail(err.detail, res.statusText));
+    throw new ApiError(formatDetail(err.detail, res.statusText), res.status, path.split("?")[0]);
   }
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -648,10 +655,11 @@ export const api = {
   previewEntryHistory: (id: string, historyId: string) =>
     request<{ history_id: string; entry: Entry }>(`/entries/${id}/history/${historyId}`),
   copy: (id: string, field = "password") =>
-    request(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
+    request<{ clears_in_seconds: number }>(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
   copyRecoveryCode: (id: string, codeId: string) => request(`/entries/${encodeURIComponent(id)}/recovery-codes/${encodeURIComponent(codeId)}/copy`, { method: "POST" }),
   previewTotp: (value: string) => request<({ valid: true } & TotpCode) | { valid: false }>("/entries/tools/totp/preview", { method: "POST", body: JSON.stringify({ value }) }),
   copyTotp: (id: string) => request<{ clears_in_seconds: number }>(`/entries/${encodeURIComponent(id)}/totp/copy`, { method: "POST" }),
+  getTotp: (id: string) => request<TotpCode>(`/entries/${encodeURIComponent(id)}/totp`),
   generate: (length = 20, symbols = true) =>
     request<{ password: string }>(
       `/entries/tools/generate?length=${length}&symbols=${symbols}`

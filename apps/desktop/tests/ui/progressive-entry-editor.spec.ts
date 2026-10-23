@@ -124,6 +124,7 @@ test("preserves an existing compatibility type without exposing its internal enu
   await createVault(page, "zh");
 
   await page.getByRole("button", { name: "打开 Generated compatibility item", exact: true }).click();
+  await page.getByRole("article").getByRole("button", { name: "编辑", exact: true }).click();
   await expect(page.getByText("SSH 密钥（兼容）", { exact: true })).toBeVisible();
   expect(await page.locator("body").innerText()).not.toContain("ssh_key");
   await expect(page.getByLabel("网站或应用名称", { exact: true })).toHaveValue("Generated compatibility item");

@@ -66,6 +66,7 @@ for (const locale of ["en", "zh"] as const) test(`rehearse and move to an indepe
     await nextPage.getByLabel(zh ? "主密码" : "Master password", { exact: true }).fill(testData.entryPassword);
     await nextPage.getByRole("button", { name: zh ? "解锁" : "Unlock", exact: true }).click();
     await nextPage.getByRole("button", { name: zh ? "打开 Generated portable account" : "Open Generated portable account", exact: true }).click();
+    await nextPage.getByRole("article").getByRole("button", { name: zh ? "编辑" : "Edit", exact: true }).click();
     await expect.poll(async () => await nextPage.getByLabel(zh ? "密码" : "Password", { exact: true }).inputValue() === testData.entryPassword).toBe(true);
     await page.getByRole("button", { name: zh ? "密码" : "Passwords", exact: true }).click();
     await expect(page.getByRole("button", { name: zh ? "打开 Generated portable account" : "Open Generated portable account", exact: true })).toBeVisible();

@@ -38,9 +38,9 @@ export default function Connections({ conflictCount, onOpenConflicts, onSyncDone
         </div>
       )}
 
+      <ConnectionTools />
       <PersonalSync />
       <IntegrationManager />
-      <ConnectionTools />
 
       <section className="settings-section" aria-labelledby="sync-details-heading">
         <h3 id="sync-details-heading" className="section-title">

@@ -5,6 +5,7 @@ import PathPicker from "../components/PathPicker";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { isTauri } from "@tauri-apps/api/core";
 import { helloError } from "../desktop";
+import { authenticationError } from "../i18n/errors";
 
 interface Props {
   onUnlock: () => void;
@@ -88,7 +89,7 @@ const firstRunCopy = {
 } as const;
 
 export default function Unlock({ onUnlock }: Props) {
-  const { t, locale } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const zh = locale === "zh";
   const copy = firstRunCopy[locale];
   const [info, setInfo] = useState<VaultInfo | null>(null);
@@ -173,10 +174,7 @@ export default function Unlock({ onUnlock }: Props) {
   }, [t]);
 
   function normalizeError(err: unknown) {
-    const msg = String(err);
-    return msg.includes("Failed to fetch") || msg.includes("NetworkError")
-      ? t("unlock.apiUnreachable")
-      : msg.replace(/^Error:\s*/, "");
+    return authenticationError(err, locale);
   }
 
   function finish(token: string) {
@@ -328,39 +326,17 @@ export default function Unlock({ onUnlock }: Props) {
 
   return (
     <div className="unlock-shell">
+      <div className="unlock-language">
+        <label htmlFor="unlock-language">Language / 语言</label>
+        <select id="unlock-language" value={locale} onChange={event => setLocale(event.target.value as "zh" | "en")}>
+          <option value="zh">中文</option><option value="en">English</option>
+        </select>
+      </div>
       <div className="unlock-card card">
         <h1>{vaultMissing ? copy.missingTitle : t("app.title")}</h1>
         <p className="unlock-subtitle">
           {vaultMissing ? copy.missingHint : t("unlock.subtitle")}
         </p>
-
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => setShowTechnical((value) => !value)}
-          aria-expanded={showTechnical}
-        >
-          {showTechnical ? copy.hideTechnicalDetails : copy.technicalDetails}
-        </button>
-
-        {info && showTechnical && (
-          <div className="field-hint" style={{ marginBottom: "var(--space-lg)" }}>
-            <div><strong>{copy.currentFormat}:</strong> {info.format}</div>
-            <div className="mono"><strong>{copy.currentPath}:</strong> {info.path}</div>
-            {vaultMissing && <div>{copy.technicalCreate}</div>}
-          </div>
-        )}
-
-        {!showRecovery && (
-          <div className="button-row" style={{ marginBottom: "var(--space-lg)" }}>
-            {!vaultMissing && <button type="button" className="secondary" onClick={() => { setMigration(false); setShowRecovery(true); setError(""); }}>
-              {copy.recovery}
-            </button>}
-            <button type="button" className="secondary" onClick={() => { setMigration(true); setShowRecovery(true); setError(""); }}>
-              {zh ? "从另一台电脑迁入" : "Bring a vault from another computer"}
-            </button>
-          </div>
-        )}
 
         {showRecovery ? (
           <form onSubmit={handleRecovery} noValidate>
@@ -408,6 +384,7 @@ export default function Unlock({ onUnlock }: Props) {
               <button
                 type="button"
                 className={mode === "create" ? "primary" : "secondary"}
+                aria-pressed={mode === "create"}
                 onClick={() => {
                   setMode("create");
                   setError("");
@@ -419,6 +396,7 @@ export default function Unlock({ onUnlock }: Props) {
               <button
                 type="button"
                 className={mode === "restore" ? "primary" : "secondary"}
+                aria-pressed={mode === "restore"}
                 onClick={() => {
                   setMode("restore");
                   setError("");
@@ -573,6 +551,36 @@ export default function Unlock({ onUnlock }: Props) {
             </div>
           </form>
         )}
+        <div className="unlock-support">
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => setShowTechnical((value) => !value)}
+          aria-expanded={showTechnical}
+        >
+          {showTechnical ? copy.hideTechnicalDetails : copy.technicalDetails}
+        </button>
+
+        {info && showTechnical && (
+          <div className="field-hint" style={{ marginBottom: "var(--space-lg)" }}>
+            <div><strong>{copy.currentFormat}:</strong> {info.format}</div>
+            <div className="mono"><strong>{copy.currentPath}:</strong> {info.path}</div>
+            {vaultMissing && <div>{copy.technicalCreate}</div>}
+          </div>
+        )}
+
+        {!showRecovery && (
+          <div className="button-row" style={{ marginBottom: "var(--space-lg)" }}>
+            {!vaultMissing && <button type="button" className="secondary" onClick={() => { setMigration(false); setShowRecovery(true); setError(""); }}>
+              {copy.recovery}
+            </button>}
+            <button type="button" className="secondary" onClick={() => { setMigration(true); setShowRecovery(true); setError(""); }}>
+              {zh ? "从另一台电脑迁入" : "Bring a vault from another computer"}
+            </button>
+          </div>
+        )}
+
+        </div>
       </div>
       <ConfirmDialog
         open={restorePreview !== null}

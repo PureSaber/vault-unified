@@ -49,7 +49,7 @@ test("one-entry path copies, auto-hides a reveal, edits, and searches", async ({
   await row.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Website or app name", { exact: true }).fill("Generated account edited");
   await page.getByRole("button", { name: "Save", exact: true }).click();
-  await expect(page.getByText("Generated account edited", { exact: true })).toBeVisible();
+  await expect(page.locator(".list-pane").getByText("Generated account edited", { exact: true })).toBeVisible();
   expect(sidecar.writes.update).toBe(1);
 
   await page.getByLabel("Search vault").fill("account edited");
