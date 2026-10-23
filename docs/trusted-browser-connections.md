@@ -30,7 +30,9 @@ the device's authorization. Discovery never opens a vault or launches the app.
   `chrome.storage.session`; account data and draft passwords are never persisted
   by the extension. Non-exportability does not protect a compromised extension
   or operating-system account from invoking the key.
-- A one-time pairing code authorizes enrollment. The public key, extension
+- Enrollment is authorized either by choosing the matching code in the desktop
+  approval dialog ([browser connection approval](browser-connection-approval.md))
+  or by a one-time pairing code. The public key, extension
   origin, vault path/identity/key identity and device name are protected by the
   approved Windows Credential Manager backend. There is no plaintext fallback.
   The store supports up to 16 browser identities per configuration directory.
@@ -45,13 +47,24 @@ the device's authorization. Discovery never opens a vault or launches the app.
   index update cannot restore access. Invalid/missing credentials and storage
   failures deny authorization. Authorization is local to this Windows account;
   migrating a vault requires pairing again on the new computer.
-- Native messaging exposes only protocol, loopback address and process instance
-  ID. It never receives or returns bootstrap secrets, pairing codes, browser
-  tokens or vault passwords. Bounded length-prefixed JSON and exact registered
+- Native messaging exposes only protocol, loopback address, process instance
+  ID and a per-run connect nonce, which only lets an allowlisted extension ask
+  for desktop approval. It never receives or returns bootstrap secrets, pairing
+  codes, browser tokens or vault passwords. Bounded length-prefixed JSON and exact registered
   extension origins are enforced. The host checks the running instance before
   returning an address, rejecting stale runtime files.
 - Chrome/Edge native-host registration uses the current user's registry and
-  points at the desktop executable. Existing production browser profiles are
+  points at the desktop executable. Vault Unified never replaces a registration
+  that belongs to another copy whose executable still exists, so a development
+  or portable copy cannot take over the installed app. If an older copy took it
+  over before this rule existed, the extension reports that Vault Unified was
+  not found: run that copy with `--unregister-browser-host`, or delete
+  `HKCU\Software\Google\Chrome\NativeMessagingHosts\org.vaultunified.desktop`
+  and the matching `Microsoft\Edge` key, then restart the installed app.
+- The connect file is created owner-only. If Vault Unified runs elevated, its
+  owner is the Administrators group and the browser's native host cannot read
+  it, so Connect falls back to manual pairing; run Vault Unified normally.
+- Existing production browser profiles are
   never used in tests. Removing credentials revokes access independently of host
   registration; complete installer registration cleanup is tracked with the
   distribution/upgrade work in row 12 of the product plan.

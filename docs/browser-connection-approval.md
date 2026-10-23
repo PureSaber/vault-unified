@@ -1,8 +1,7 @@
 # Browser connection approval (design)
 
-Status: **proposed design**, revised after independent security review;
-implementation follows in a separate pull request. This document changes no
-code or data format. It extends
+Status: **implemented**; the design was revised after two independent security
+reviews and the implementation followed it. It extends
 [trusted browser connections](trusted-browser-connections.md).
 
 ## Goal

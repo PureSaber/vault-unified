@@ -29,6 +29,7 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
         if (phase === 'restart') assert(Boolean(identity), 'Browser authorization was lost after installed restart');
         if (!identity) {
           const pairing = await api('/browser/pairing-code');
+          await popup.locator('#manual-pair summary').click();
           await popup.locator('#sidecar-url').fill(runtime.base_url.replace(/\/api$/, ''));
           await popup.locator('#pairing-code').fill(pairing.pairing_code);
           await popup.locator('#device-name').fill(`Generated installed ${channel}`);
@@ -130,7 +131,7 @@ export async function installedBrowsers({ root, data, desktop, api, runtime, mas
           const deviceId = await popup.evaluate(() => vaultBrowserIdentity.read().then(value => value.deviceId));
           await api(`/browser/devices/${deviceId}`, {}, 'DELETE');
           await popup.evaluate(() => chrome.storage.session.clear()); await popup.reload();
-          await popup.locator('#pair-form').waitFor();
+          await popup.locator('#connect-start').waitFor();
           assert(await popup.locator('#accounts').isHidden(), 'Revoked installed browser retained access');
         }
         console.log(JSON.stringify({ browser: version.product, packagedExtension: true, phase, fill: true, totp: true, saveAndChange: true, passkey: phase === 'initial', revoked: phase === 'restart' }));

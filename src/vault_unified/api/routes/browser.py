@@ -18,9 +18,11 @@ from vault_unified.browser_pairing import (
     matches_for_url,
 )
 from vault_unified.session import sessions
+from vault_unified.browser_connect import BrowserConnectError, browser_connects
 from vault_unified.browser_save import BrowserSaveError, browser_saves
 from vault_unified.generation_history import generate_saved
 from pydantic import BaseModel, Field
+import hmac
 from uuid import UUID
 from vault_unified.local_store import EntryTransactionConflict
 
@@ -141,6 +143,94 @@ def browser_device_proof(body: BrowserProofIn, request: Request) -> dict:
         raise HTTPException(status_code=423, detail=str(exc)) from exc
     except BrowserPairingError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+class BrowserConnectIn(BaseModel):
+    public_key: str = Field(min_length=1, max_length=512)
+    device_name: str = Field(default="Browser", max_length=64)
+
+
+class BrowserConnectStatusIn(BaseModel):
+    request_id: str = Field(min_length=1, max_length=64)
+    poll_secret: str = Field(min_length=1, max_length=128)
+
+
+class BrowserConnectDecisionIn(BaseModel):
+    request_id: str = Field(min_length=1, max_length=64)
+    code: str = Field(default="", max_length=6)
+
+
+def _connect_error(exc: BrowserConnectError) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail={"code": exc.code, "message": str(exc)})
+
+
+@router.post("/connect/request")
+def request_connection(
+    body: BrowserConnectIn,
+    request: Request,
+    connect_nonce: str | None = Header(default=None, alias="X-Vault-Connect-Nonce"),
+) -> dict:
+    """Ask the desktop owner to approve this browser; see docs/browser-connection-approval.md."""
+    origin = _origin(request)
+    expected = request.app.state.connect_nonce
+    # The nonce is checked before anything else, so only an allowlisted extension
+    # that reached the native host can even learn whether the vault is unlocked.
+    if (origin not in browser_discovery.EXTENSION_ORIGINS or not expected or not connect_nonce
+            or not hmac.compare_digest(connect_nonce.encode(), expected.encode())):
+        raise HTTPException(status_code=403, detail={"code": "origin", "message": "This extension cannot request a connection"})
+    try:
+        return browser_connects.request(origin, body.public_key, body.device_name)
+    except BrowserConnectError as exc:
+        raise _connect_error(exc) from exc
+    except BrowserTrustError as exc:
+        raise _trust_error(exc) from exc
+
+
+@router.post("/connect/status")
+def connection_status(body: BrowserConnectStatusIn, request: Request) -> dict:
+    try:
+        return browser_connects.status(_origin(request), body.request_id, body.poll_secret)
+    except BrowserConnectError as exc:
+        raise _connect_error(exc) from exc
+    except BrowserTrustError as exc:
+        raise _trust_error(exc) from exc
+
+
+@router.get("/connect/pending")
+def pending_connections(token: str = Depends(get_token)) -> dict:
+    try:
+        return {"items": browser_connects.pending_for(token)}
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Desktop vault is locked") from exc
+
+
+@router.post("/connect/approve")
+def approve_connection(body: BrowserConnectDecisionIn, token: str = Depends(get_token)) -> dict:
+    try:
+        return browser_connects.approve(token, body.request_id, body.code)
+    except BrowserConnectError as exc:
+        raise _connect_error(exc) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Desktop vault is locked") from exc
+
+
+@router.post("/connect/deny")
+def deny_connection(body: BrowserConnectDecisionIn, token: str = Depends(get_token)) -> dict:
+    try:
+        browser_connects.deny(token, body.request_id)
+    except BrowserConnectError as exc:
+        raise _connect_error(exc) from exc
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Desktop vault is locked") from exc
+    return {"denied": True}
+
+
+@router.post("/connect/deny-all")
+def deny_all_connections(token: str = Depends(get_token)) -> dict:
+    try:
+        return {"denied": browser_connects.deny_all(token)}
+    except PermissionError as exc:
+        raise HTTPException(status_code=401, detail="Desktop vault is locked") from exc
 
 
 @router.post("/resume")

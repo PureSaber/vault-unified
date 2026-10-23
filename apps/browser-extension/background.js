@@ -1,4 +1,4 @@
-importScripts("identity.js", "connection.js", "passkey-worker.js");
+importScripts("identity.js", "connection.js", "connect.js", "passkey-worker.js");
 
 const inlineKey = "vaultUnifiedInlinePreferences";
 const scriptId = "vault-unified-inline";
@@ -136,6 +136,11 @@ async function handle(message, sender) {
       return settingsUpdates;
     }
     if (message.type === "vault-inline-status") { const settings = await preferences(); return { enabled: await allowed(originOf(message.origin)), all: settings.all, passkeys: settings.passkeys }; }
+    // Only the extension's own popup can start or watch a connection request.
+    if (message.type === "vault-connect-start") return vaultBrowserConnect.start();
+    if (message.type === "vault-connect-state") return vaultBrowserConnect.poll();
+    if (message.type === "vault-connect-cancel") return vaultBrowserConnect.cancel();
+    if (message.type === "vault-connect-ack") return vaultBrowserConnect.acknowledge();
   }
   if (extensionPage(sender, "frame-confirm.html")) {
     const pending = pendingFrames.get(message.id);
@@ -193,4 +198,7 @@ chrome.permissions.onRemoved.addListener(() => {
   void chrome.tabs.query({}).then(tabs => Promise.all(tabs.map(tab => chrome.tabs.sendMessage(tab.id, { type: "vault-inline-reset" }).catch(() => {})))).catch(() => {});
 });
 chrome.runtime.onInstalled.addListener(() => { void synchronizeScripts().catch(() => {}); });
+chrome.alarms.onAlarm.addListener(value => { if (value.name === vaultBrowserConnect.alarm) void vaultBrowserConnect.poll().catch(() => {}); });
+// A restarted worker continues a request that is still waiting for approval.
+void vaultBrowserConnect.poll().catch(() => {});
 chrome.runtime.onStartup.addListener(() => { void synchronizeScripts().catch(() => {}); });

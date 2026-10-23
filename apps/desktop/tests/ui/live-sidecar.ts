@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Page, Request, Response } from "@playwright/test";
+import type { Frame, Page, Request, Response } from "@playwright/test";
 import { testData } from "./test-data";
 
 /** Real isolated API, with only Tauri's runtime-config handoff substituted. */
@@ -10,6 +10,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   const root = resolve(process.cwd(), "../..");
   const directory = await mkdtemp(join(tmpdir(), "vault-renderer-generated-"));
   let child: ChildProcess | undefined;
+  let apiOrigin = "";
   const pending = new Set<Request>();
   let changed = () => {};
   const started = (request: Request) => { pending.add(request); changed(); };
@@ -17,7 +18,32 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
   // A reload can detach the old document before its page-level finished event.
   // Observe the response completion too; both paths require the request to finish.
   const responded = (response: Response) => { void response.finished().then(() => finished(response.request()), () => finished(response.request())); };
-  page.on("request", started);
+  // A request still waiting for its response when a new document commits (for
+  // example the reload after a format upgrade) is cancelled by the browser,
+  // sometimes without any finished event. Forget the previous document's requests.
+  // Only a main-frame document request starts a new document; hash changes and
+  // history.replaceState keep the same document and its requests.
+  let generation = 0;
+  let committed = 0;
+  const generations = new WeakMap<Request, number>();
+  const mainDocument = (request: Request) => {
+    try { return request.isNavigationRequest() && request.frame() === page.mainFrame(); } catch { return false; }
+  };
+  const tracked = (request: Request) => {
+    if (mainDocument(request)) generation += 1;
+    generations.set(request, generation);
+    started(request);
+  };
+  const navigated = (frame: Frame) => {
+    if (frame !== page.mainFrame() || committed === generation) return;
+    committed = generation;
+    for (const request of [...pending]) {
+      if ((generations.get(request) ?? generation) < generation) pending.delete(request);
+    }
+    changed();
+  };
+  page.on("framenavigated", navigated);
+  page.on("request", tracked);
   page.on("requestfinished", finished);
   page.on("requestfailed", finished);
   page.on("response", responded);
@@ -49,12 +75,17 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
       const exited = new Promise<void>((accept) => child!.once("exit", () => accept()));
       try {
         await drain();
+        // Background polls (passkey and browser-connect approvals) can start right
+        // after the final quiet period. Hold them unanswered instead of letting
+        // them reach the exiting process, where a reset would read as an app error.
+        if (!page.isClosed() && apiOrigin) await page.route(`${apiOrigin}/**`, () => {}).catch(() => {});
       } catch (error) {
         stopError = error;
       } finally {
         child.kill();
         await exited;
-        page.off("request", started);
+        page.off("request", tracked);
+        page.off("framenavigated", navigated);
         page.off("requestfinished", finished);
         page.off("requestfailed", finished);
         page.off("response", responded);
@@ -104,6 +135,7 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
         }
       });
     });
+    apiOrigin = `http://127.0.0.1:${port}`;
     await page.addInitScript((config) => {
       Object.defineProperty(window, "__TAURI_INTERNALS__", { value: {
         invoke: async (command: string) => {

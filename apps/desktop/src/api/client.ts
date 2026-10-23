@@ -147,7 +147,41 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// While a request that locks the vault on the server is running (format upgrade,
+// restore, recovery), other requests wait for it. If it succeeds they are dropped
+// without reaching the closed session; background polls would otherwise see 401.
+// Lock is never held, and no request waits longer than a minute.
+let sessionEnding: Promise<boolean> | null = null;
+const SESSION_ENDING_WAIT_MS = 60_000;
+
+async function request<T>(path: string, options: RequestInit & { endsSession?: boolean } = {}): Promise<T> {
+  const { endsSession, ...init } = options;
+  if (endsSession) {
+    let release = (_ended: boolean) => {};
+    const ending = new Promise<boolean>(resolve => { release = resolve; });
+    sessionEnding = ending;
+    // The hold is cleared before this call returns, so the caller's next request
+    // (for example after a failed upgrade) is never held.
+    try {
+      const value = await send<T>(path, init);
+      if (sessionEnding === ending) sessionEnding = null;
+      release(true);
+      return value;
+    } catch (error) {
+      if (sessionEnding === ending) sessionEnding = null;
+      release(false);
+      throw error;
+    }
+  }
+  if (sessionEnding && path !== "/auth/lock") {
+    const ended = await Promise.race([sessionEnding,
+      new Promise<boolean>(resolve => { globalThis.setTimeout(() => resolve(false), SESSION_ENDING_WAIT_MS); })]);
+    if (ended) throw new ApiError("The vault was locked", 401, path.split("?")[0]);
+  }
+  return send<T>(path, init);
+}
+
+async function send<T>(path: string, options: RequestInit): Promise<T> {
   const config = await runtimeConfig();
   const requestHeaders = new Headers(options.headers);
   requestHeaders.set("Content-Type", "application/json");
@@ -276,6 +310,9 @@ export interface BrowserPairing {
   expires_in_seconds: number;
   message: string;
 }
+
+/** A browser asking for its first connection; `choices` holds its code and two decoys. */
+export interface BrowserConnectRequest { id: string; device_name: string; choices: string[]; remaining_seconds: number }
 
 export interface BrowserDevice {
   id: string;
@@ -595,7 +632,7 @@ export const api = {
   payloadFormat: () => request<{ version: number; current_version: number }>("/personal/format"),
   previewPayloadUpgrade: () => request<{ preview_token: string; entry_count: number }>("/personal/format/preview", { method: "POST" }),
   cancelPayloadUpgrade: (preview_token: string) => request("/personal/format/cancel", { method: "POST", body: JSON.stringify({ preview_token }) }),
-  applyPayloadUpgrade: (preview_token: string) => request<{ backup_path: string; locked: boolean }>("/personal/format/apply", { method: "POST", body: JSON.stringify({ preview_token, confirm_upgrade: true }) }),
+  applyPayloadUpgrade: (preview_token: string) => request<{ backup_path: string; locked: boolean }>("/personal/format/apply", { method: "POST", endsSession: true, body: JSON.stringify({ preview_token, confirm_upgrade: true }) }),
   vaultInfo: () => request<VaultInfo>("/auth/vault-info"),
   createVault: (password: string, confirmPassword: string, remember = false) =>
     request<{ token: string }>("/auth/create", {
@@ -613,7 +650,7 @@ export const api = {
     }),
   applyVaultRestore: (previewToken: string, password: string, remember = false) =>
     request<{ locked: boolean; message: string }>("/auth/restore/apply", {
-      method: "POST",
+      method: "POST", endsSession: true,
       body: JSON.stringify({ preview_token: previewToken, password, remember, confirm_restore: true }),
     }),
   cancelVaultRestore: (previewToken: string) =>
@@ -731,7 +768,7 @@ export const api = {
     request<{ restored: string; locked: boolean; message: string }>(
       "/backups/restore/apply",
       {
-        method: "POST",
+        method: "POST", endsSession: true,
         body: JSON.stringify({
           preview_token: previewToken,
           password,
@@ -818,7 +855,7 @@ export const api = {
     confirmNewPassword: string,
   ) =>
     request<{ locked: boolean; message: string }>("/auth/recover/apply", {
-      method: "POST",
+      method: "POST", endsSession: true,
       body: JSON.stringify({
         preview_token: previewToken,
         recovery_code: recoveryCode,
@@ -846,6 +883,10 @@ export const api = {
     request<{ cancelled: boolean }>("/browser/pairing/cancel", { method: "POST" }),
   browserDevices: () => request<{ available: boolean; devices: BrowserDevice[] }>("/browser/devices"),
   revokeBrowserDevice: (id: string) => request<{ revoked: boolean }>(`/browser/devices/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  pendingBrowserConnections: (signal?: AbortSignal) => request<{ items: BrowserConnectRequest[] }>("/browser/connect/pending", { signal }),
+  approveBrowserConnection: (request_id: string, code: string) => request<{ approved: boolean }>("/browser/connect/approve", { method: "POST", body: JSON.stringify({ request_id, code }) }),
+  denyBrowserConnection: (request_id: string) => request<{ denied: boolean }>("/browser/connect/deny", { method: "POST", body: JSON.stringify({ request_id }) }),
+  denyAllBrowserConnections: () => request<{ denied: number }>("/browser/connect/deny-all", { method: "POST", body: "{}" }),
   getPrefs: () => request<SyncPrefs>("/sync/preferences"),
   savePrefs: (prefs: Partial<SyncPrefs>) =>
     request<SyncPrefs>("/sync/preferences", {

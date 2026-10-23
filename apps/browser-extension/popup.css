@@ -47,3 +47,5 @@ dd { margin: 4px 0 12px; overflow-wrap: anywhere; }
 button, input, select { min-height: 36px; }
 input[type="checkbox"] { min-height: 0; }
 summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.connect-code { font: 600 1.6rem/1.2 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .08em; margin: .25rem 0 .75rem; }
+#manual-pair { margin-top: .75rem; }

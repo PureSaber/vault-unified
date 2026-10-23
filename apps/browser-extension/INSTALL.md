@@ -10,9 +10,23 @@ unlocked before pairing or filling.
 3. Open `chrome://extensions` in Chrome or `edge://extensions` in Edge.
 4. Turn on **Developer mode**, choose **Load unpacked**, and select the
    extracted folder containing `manifest.json`.
-5. In Vault Unified, open **Connections → Browser extension**, generate a
-   one-time pairing code, then copy the local address and code into the
-   extension popup before the countdown reaches zero.
+5. Open and unlock Vault Unified, open the extension popup and click
+   **Connect to Vault Unified**. The popup shows a 6-digit code. Vault Unified
+   comes forward and shows three codes: choose the one the browser shows.
+   Nothing is typed or copied. From then on the browser reconnects by itself
+   whenever this vault is unlocked, until you revoke it in **Connections**.
+
+If Connect is not available (for example an older desktop, browser policy that
+blocks Native Messaging, another copy of Vault Unified that owns the browser
+registration, or a vault that cannot hold device authorization),
+expand **Other ways to connect** in the popup. In Vault Unified, open
+**Connections → Browser extension**, generate a one-time pairing code, then copy
+the local address and code into the extension before the countdown reaches zero.
+
+The extension's ID is fixed by its manifest key, so every extracted copy has the
+same ID. A browser paired with an earlier copy (whose ID came from its folder)
+must connect once more; Connections labels the old record **Previous extension
+ID** so you can revoke it.
 
 Vault Unified fills only after you open the extension and choose an account.
 If a page has multiple login forms, several password fields, a change-password
@@ -32,9 +46,11 @@ non-exportable signing identity is stored in the extension's IndexedDB; access
 tokens stay session-only. Revoke authorized browsers in desktop Connections.
 Uncheck authorization for temporary pairing instead.
 
-The matching desktop configures Native Messaging after first pairing so the
-extension can find its current address. This channel returns public connection
-information only. Browser policy may disable it; manual pairing remains available.
+The installed desktop registers Native Messaging for this extension's fixed ID
+when it starts, so the extension can find its current address, also before the
+first connection. This channel returns public connection information plus a
+per-run connect nonce that only lets this extension *ask* for your approval.
+Browser policy may disable it; manual pairing remains available.
 
 Choose **Read login from this page** or **Add manually**, review the account and
 website, then confirm saving. Updates retain the previous password in history and

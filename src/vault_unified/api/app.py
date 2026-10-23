@@ -41,6 +41,7 @@ def create_app(
     bootstrap_secret: str | None = None,
     instance_id: str | None = None,
     native_secret: str | None = None,
+    connect_nonce: str = "",
 ) -> FastAPI:
     docs_url = None if os.environ.get("VAULT_API_DISABLE_DOCS", "1") == "1" else "/docs"
     secret = _resolve_bootstrap_secret(bootstrap_secret)
@@ -55,6 +56,8 @@ def create_app(
     app.state.bootstrap_secret = secret
     app.state.instance_id = runtime_instance_id
     app.state.native_secret = native_secret or secrets.token_urlsafe(32)
+    # Empty until the owner-only connect file is written: connect requests are then refused.
+    app.state.connect_nonce = connect_nonce
 
     app.add_middleware(
         CORSMiddleware,
@@ -76,6 +79,7 @@ def create_app(
             "X-Vault-Browser-Token",
             "X-Vault-Browser-Connection",
             "X-Vault-Extension-Version",
+            "X-Vault-Connect-Nonce",
         ],
     )
     app.include_router(auth.router, prefix="/api")
@@ -176,7 +180,12 @@ def create_app(
             and request.url.path in {"/api/browser/device/challenge", "/api/browser/device/prove"}
         )
         discovery = request.method == "GET" and request.url.path == "/api/browser/discovery"
-        if browser_pair or browser_token or browser_connection or browser_proof or discovery:
+        # Only asking and polling skip the bootstrap secret; pending/approve/deny need it plus a session.
+        browser_connect = (
+            request.method == "POST"
+            and request.url.path in {"/api/browser/connect/request", "/api/browser/connect/status"}
+        )
+        if browser_pair or browser_token or browser_connection or browser_proof or discovery or browser_connect:
             return await guarded_response()
         if not provided or not hmac.compare_digest(provided, secret):
             return JSONResponse(
@@ -231,6 +240,7 @@ def main() -> None:
 
     secret = _resolve_bootstrap_secret()
     native_secret = secrets.token_urlsafe(32)
+    connect_nonce = secrets.token_urlsafe(32)
     instance_id = os.environ.get("VAULT_API_INSTANCE_ID", "").strip()
     if not instance_id:
         instance_id = secrets.token_urlsafe(18)
@@ -265,8 +275,14 @@ def main() -> None:
     server = uvicorn.Server(config)
     try:
         if host == "127.0.0.1":
-            browser_discovery.publish(actual_port, instance_id)
-            browser_discovery.restore_registration()
+            if browser_discovery.publish(actual_port, instance_id, connect_nonce):
+                runtime_app.state.connect_nonce = connect_nonce
+            # Only release builds register the fixed extension origin at start, so
+            # development builds never take over the installed app's host.
+            if os.environ.get("VAULT_BROWSER_REGISTER_FIXED") == "1":
+                browser_discovery.register_fixed()
+            else:
+                browser_discovery.restore_registration()
         server.run(sockets=[server_socket])
     finally:
         browser_discovery.clear(instance_id)

@@ -17,6 +17,7 @@ except ImportError:
 ARCHIVE_FILES = (
     "INSTALL.md",
     "background.js",
+    "connect.js",
     "connection.js",
     "fill.js",
     "frame-confirm.html",

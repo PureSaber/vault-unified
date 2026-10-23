@@ -67,6 +67,9 @@ function body(route: Route): Record<string, unknown> {
 export class MockAuthenticatedSidecar {
   browserDevices = [{ id: "generated-browser", name: "Generated Chrome", origin: "chrome-extension://abcdefghijklmnopabcdefghijklmnop", created_at: "2026-10-05T00:00:00Z" }];
   browserRevocations = 0;
+  // First-connection requests awaiting number matching; `code` is what the browser shows.
+  connectRequests: Array<{ id: string; device_name: string; choices: string[]; remaining_seconds: number; code: string }> = [];
+  connectDecisions: string[] = [];
   private vaultExists = false;
   private unlocked = false;
   private masterPassword = "";
@@ -344,6 +347,7 @@ export class MockAuthenticatedSidecar {
 
     if (method === "POST" && url.pathname === "/auth/lock") {
       this.unlocked = false;
+      this.connectRequests = [];
       await this.respond(route, 200, { locked: true });
       return;
     }
@@ -365,6 +369,27 @@ export class MockAuthenticatedSidecar {
       return;
     }
 
+    if (method === "GET" && url.pathname === "/browser/connect/pending") {
+      await this.respond(route, 200, { items: this.connectRequests.map(({ code: _code, ...item }) => clone(item)) });
+      return;
+    }
+    if (method === "POST" && ["/browser/connect/approve", "/browser/connect/deny"].includes(url.pathname)) {
+      const value = body(route) as { request_id: string; code?: string };
+      const item = this.connectRequests.find(candidate => candidate.id === value.request_id);
+      if (!item) { await this.respond(route, 404, { detail: { code: "missing", message: "Connection request is no longer pending" } }); return; }
+      this.connectRequests = this.connectRequests.filter(candidate => candidate !== item);
+      const approve = url.pathname.endsWith("/approve");
+      this.connectDecisions.push(approve ? `approve:${value.code}` : `deny:${item.id}`);
+      await this.respond(route, 200, approve ? { approved: value.code === item.code } : { denied: true });
+      return;
+    }
+    if (method === "POST" && url.pathname === "/browser/connect/deny-all") {
+      const denied = this.connectRequests.length;
+      this.connectRequests = [];
+      this.connectDecisions.push("deny-all");
+      await this.respond(route, 200, { denied });
+      return;
+    }
     if (method === "GET" && url.pathname === "/browser/devices") {
       await this.respond(route, 200, { available: true, devices: clone(this.browserDevices) });
       return;

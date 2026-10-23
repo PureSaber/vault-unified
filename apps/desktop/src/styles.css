@@ -1842,6 +1842,8 @@ button.conflict-chip-btn:hover:not(:disabled) {
 .passkey-dialog label { display: grid; gap: var(--space-sm); margin-block: var(--space-md); }
 .passkey-dialog dd { margin-inline-start: 0; overflow-wrap: anywhere; font-weight: 600; }
 .passkey-dialog dt { margin-top: var(--space-md); color: var(--color-text-muted); }
+.browser-connect-codes { display: flex; flex-wrap: wrap; gap: var(--space-sm); margin-block: var(--space-md); }
+.browser-connect-code { font: 600 1.25rem/1.2 ui-monospace, "Cascadia Mono", Consolas, monospace; letter-spacing: .06em; min-width: 8.5rem; }
 .passkey-dialog .button-row { flex-wrap: wrap; margin-block: var(--space-lg); }
 .sharing-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(230px,1fr)); gap: 18px; margin: 16px 0; }
 .sharing-page label { display: block; margin: 12px 0; }

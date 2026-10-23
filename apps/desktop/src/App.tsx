@@ -28,6 +28,7 @@ import QuickSearch from "./components/QuickSearch";
 import PersonalSyncRunner from "./components/PersonalSyncRunner";
 import PasskeyRequests from "./components/PasskeyRequests";
 import HelloOffer from "./components/HelloOffer";
+import BrowserConnectRequests from "./components/BrowserConnectRequests";
 import Sharing from "./pages/Sharing";
 import ItemDetail from "./components/ItemDetail";
 import Icon from "./components/Icon";
@@ -63,6 +64,7 @@ function AppShell() {
   const [passkeyPending, setPasskeyPending] = useState(false);
   const [helloOffer, setHelloOffer] = useState(false);
   const closeHelloOffer = useCallback(() => setHelloOffer(false), []);
+  const [connectPending, setConnectPending] = useState(false);
   const [desktop, setDesktop] = useState<DesktopStatus | null>(null);
   const pendingQuickSearch = useRef(false);
   const nativeHandlers = useRef({ search: () => {}, lock: () => {}, exit: () => {} });
@@ -370,7 +372,7 @@ function AppShell() {
   }
 
   nativeHandlers.current = {
-    search: () => { if (!unlocked) pendingQuickSearch.current = true; else if (!pendingAction) setQuickSearch(true); },
+    search: () => { if (!unlocked) pendingQuickSearch.current = true; else if (!pendingAction && !connectPending) setQuickSearch(true); },
     lock: handleLock,
     exit: requestExit,
   };
@@ -498,6 +500,7 @@ function AppShell() {
           </>
         )}
         <PasskeyRequests onPendingChange={setPasskeyPending} />
+        <BrowserConnectRequests paused={passkeyPending} onPendingChange={setConnectPending} />
         <PersonalSyncRunner paused={editorSaving || passkeyPending || ["editor", "import", "connections", "conflicts", "sharing"].includes(page)} onOpen={() => requestNavigation("connections")} />
         {page === "import" && (
           <div className="card">
@@ -528,7 +531,7 @@ function AppShell() {
         )}
       </main>
       {quickSearch && <QuickSearch onClose={() => setQuickSearch(false)} onOpen={openSearchEntry} />}
-      {helloOffer && <HelloOffer active={!quickSearch && !passkeyPending && !pendingAction && idleCountdown === null} onDone={closeHelloOffer} />}
+      {helloOffer && <HelloOffer active={!quickSearch && !passkeyPending && !connectPending && !pendingAction && idleCountdown === null} onDone={closeHelloOffer} />}
       {idleCountdown !== null && editorDirty && (
         <div className="idle-lock-warning" role="alert" aria-live="assertive">
           {locale === "zh"

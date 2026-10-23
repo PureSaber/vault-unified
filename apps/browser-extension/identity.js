@@ -33,6 +33,14 @@ const vaultBrowserIdentity = (() => {
   }
   const read = () => transact("readonly", (store) => store.get("current"));
   const remove = () => transact("readwrite", (store) => store.delete("current"));
+  // A connect request awaiting desktop approval. Its key stays non-exportable and
+  // becomes the identity only if the desktop approves; otherwise it is deleted.
+  async function savePending(identity, pending) {
+    if (identity.privateKey.extractable) throw new Error("Invalid browser identity");
+    await transact("readwrite", (store) => store.put({ privateKey: identity.privateKey, publicKey: identity.publicKey, ...pending }, "pending"));
+  }
+  const readPending = () => transact("readonly", (store) => store.get("pending"));
+  const removePending = () => transact("readwrite", (store) => store.delete("pending"));
   async function sign(identity, challenge, action) {
     const origin = `chrome-extension://${chrome.runtime.id}`;
     const expected = `VaultUnified browser authorization v1\n${action}\n${identity.deviceId}\n${origin}\n${challenge.challenge_id}`;
@@ -42,5 +50,5 @@ const vaultBrowserIdentity = (() => {
     return encode(await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, identity.privateKey,
       new TextEncoder().encode(expected)));
   }
-  return { create, save, read, remove, sign };
+  return { create, save, read, remove, sign, savePending, readPending, removePending };
 })();

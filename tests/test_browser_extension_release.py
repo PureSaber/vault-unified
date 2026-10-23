@@ -31,7 +31,8 @@ def test_extension_manifest_requires_explicit_website_authorization() -> None:
         (REPO_ROOT / "apps/browser-extension/manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["manifest_version"] == 3
-    assert manifest["permissions"] == ["activeTab", "scripting", "storage", "tabs", "nativeMessaging"]
+    # `alarms` only resumes a pending desktop-approved connection (connect.js).
+    assert manifest["permissions"] == ["activeTab", "scripting", "storage", "tabs", "nativeMessaging", "alarms"]
     assert manifest["host_permissions"] == [
         "http://127.0.0.1/*",
         "http://localhost/*",

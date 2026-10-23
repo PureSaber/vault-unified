@@ -8,11 +8,16 @@ the same Windows computer as Vault Unified.
 2. Extract the ZIP. In `chrome://extensions` or `edge://extensions`, enable
    **Developer mode**, choose **Load unpacked**, and select the extracted
    directory containing `manifest.json`.
-3. Unlock Vault Unified and open **Connections → Browser extension**.
-4. Copy the local address and one-time pairing code into the extension popup
-   before the five-minute countdown ends.
+3. Unlock Vault Unified, open the extension popup and click **Connect to Vault
+   Unified**. Vault Unified comes forward; choose the code the browser shows
+   among three. Nothing is copied, and the browser reconnects by itself whenever
+   this vault is unlocked until you revoke it.
+4. If Connect is unavailable, expand **Other ways to connect** in the popup.
+   Then open **Connections → Browser extension** in Vault Unified and copy the
+   local address and one-time pairing code before the five-minute countdown ends.
 
-The token is session-only. Locking or exiting Vault Unified, cancelling or
+See [browser connection approval](browser-connection-approval.md) for the
+design and its security analysis. A manual pairing token is session-only. Locking or exiting Vault Unified, cancelling or
 regenerating pairing, or waiting for expiry invalidates it. The extension does
 not silently fill ambiguous multi-form, change-password, iframe, or Shadow DOM
 pages.
