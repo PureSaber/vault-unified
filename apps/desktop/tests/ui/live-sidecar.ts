@@ -49,6 +49,15 @@ export async function startGeneratedSidecar(page: Page, options: { oldPayload?: 
       const exited = new Promise<void>((accept) => child!.once("exit", () => accept()));
       try {
         await drain();
+        // Background polls (passkey and browser-connect approvals) must not reach
+        // a closing API. Clearing timers stops them and keeps the final page for
+        // the harness's DOM checks.
+        if (!page.isClosed()) {
+          await page.evaluate(() => {
+            const last = window.setTimeout(() => {}, 0);
+            for (let id = 0; id <= last; id += 1) { window.clearTimeout(id); window.clearInterval(id); }
+          }).catch(() => {});
+        }
       } catch (error) {
         stopError = error;
       } finally {
