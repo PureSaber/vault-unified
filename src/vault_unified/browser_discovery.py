@@ -163,6 +163,32 @@ def _valid_origins(value) -> set[str]:
     return {item for item in value if isinstance(item, str) and item.endswith("/") and _ORIGIN.fullmatch(item[:-1])}         if isinstance(value, list) else set()
 
 
+def _owned_by_another(executable: Path) -> bool:
+    """A manifest here, or the one Chrome/Edge are registered to, belongs to another existing executable."""
+    import winreg
+
+    candidates = []
+    directory = discovery_dir()
+    if directory is not None:
+        candidates.append(directory / "native-host.json")
+    for browser in REGISTRY_BROWSERS:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, browser + "\\" + HOST_NAME) as key:
+                candidates.append(Path(winreg.QueryValueEx(key, "")[0]))
+        except OSError:
+            continue
+    for manifest in candidates:
+        try:
+            if manifest.is_symlink() or not manifest.is_file() or manifest.stat().st_size > 8192:
+                continue
+            previous = Path(json.loads(manifest.read_text(encoding="utf-8")).get("path", ""))
+            if previous.is_absolute() and previous.is_file() and previous.resolve() != executable.resolve():
+                return True
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    return False
+
+
 def _install(allowed: set[str]) -> bool:
     directory = discovery_dir()
     executable = os.environ.get("VAULT_BROWSER_HOST_EXE")
@@ -171,6 +197,10 @@ def _install(allowed: set[str]) -> bool:
     if not 1 <= len(allowed) <= 32:
         return False
     import winreg
+
+    # Never take over another installation, whichever folder its manifest is in.
+    if _owned_by_another(Path(executable)):
+        return False
 
     path = directory / "native-host.json"
     try:

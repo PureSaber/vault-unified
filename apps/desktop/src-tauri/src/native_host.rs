@@ -296,10 +296,7 @@ mod tests {
                 let mut request = [0u8; 1024];
                 let _ = stream.read(&mut request);
                 let body = r#"{"protocol":1,"instance_id":"generated-instance"}"#;
-                let _ = write!(stream, "HTTP/1.1 200 OK
-Content-Length: {}
-
-{body}", body.len());
+                let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}", body.len());
             }
         });
         let temp = tempfile::tempdir().unwrap();

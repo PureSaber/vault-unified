@@ -15,6 +15,8 @@ function Approval({ item, many, onDone }: { item: BrowserConnectRequest; many: b
   const dialog = useRef<HTMLDialogElement>(null);
   const deny = useRef<HTMLButtonElement>(null);
   const [busy, setBusy] = useState(false);
+  // A ref, not state: a fast double click must not send a second decision.
+  const deciding = useRef(false);
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     dialog.current?.showModal(); deny.current?.focus();
@@ -26,7 +28,8 @@ function Approval({ item, many, onDone }: { item: BrowserConnectRequest; many: b
     return () => previous?.focus();
   }, []);
   async function decide(work: () => Promise<void>) {
-    if (busy) return;
+    if (deciding.current) return;
+    deciding.current = true;
     setBusy(true);
     try { await work(); }
     catch { showToast(zh ? "请求已过期或已处理，请回到浏览器重试。" : "The request expired or was already handled. Retry from the browser.", "error"); }

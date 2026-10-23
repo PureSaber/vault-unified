@@ -8,6 +8,7 @@ const vaultBrowserConnect = (() => {
   const alarm = "vault-connect";
   let timer = null;
   let inflight = null;
+  let starting = null;
   const fail = (key, code = 0) => { throw Object.assign(new Error(), { key, code }); };
 
   function browserName() {
@@ -57,16 +58,24 @@ const vaultBrowserConnect = (() => {
     const stored = (await chrome.storage.session.get(resultKey))[resultKey];
     return stored ? { state: stored.state } : { state: "idle" };
   }
-  async function start() {
+  async function begin() {
     const current = await view();
     if (current.state === "waiting") { schedule(); return current; }
     await chrome.storage.session.remove(resultKey);
-    const found = await vaultBrowserConnection.locate();
-    if (!found) fail("connectUnavailable");
-    if (!found.nonce) fail("connectManualOnly");
     const identity = await vaultBrowserIdentity.create();
-    const started = await call(found.address, "/connect/request", { public_key: identity.publicKey, device_name: browserName() },
-      { "X-Vault-Connect-Nonce": found.nonce });
+    let found, started;
+    for (let attempt = 0; !started; attempt += 1) {
+      found = await vaultBrowserConnection.locate();
+      if (!found) fail("connectUnavailable");
+      if (!found.nonce) fail("connectManualOnly");
+      try {
+        started = await call(found.address, "/connect/request", { public_key: identity.publicKey, device_name: browserName() },
+          { "X-Vault-Connect-Nonce": found.nonce });
+      } catch (error) {
+        // A nonce from before a desktop restart: discover once more.
+        if (error.code !== 403 || attempt) throw error;
+      }
+    }
     if (!/^\d{6}$/.test(started.code || "") || typeof started.request_id !== "string" || typeof started.poll_secret !== "string") fail("requestError");
     await vaultBrowserIdentity.savePending(identity, { requestId: started.request_id, pollSecret: started.poll_secret, code: started.code,
       expiresAt: Date.now() + Number(started.expires_in_seconds || 120) * 1000, sidecarUrl: found.address });
@@ -93,6 +102,11 @@ const vaultBrowserConnect = (() => {
       return finish("approved");
     }
     return finish(["denied", "expired", "locked", "device_limit"].includes(result.state) ? result.state : "failed");
+  }
+  // Two popup windows clicking Connect share one request.
+  function start() {
+    starting ||= begin().finally(() => { starting = null; });
+    return starting;
   }
   function poll() {
     inflight ||= check().finally(() => { inflight = null; });

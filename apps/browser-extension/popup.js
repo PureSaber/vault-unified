@@ -386,6 +386,7 @@ async function renderConnect(view) {
   if (view.state === "approved") {
     await send({ type: "vault-connect-ack" });
     currentState = await vaultBrowserConnection.read();
+    if (!currentState) { showPairing(true); setStatus("connectHint"); return; }
     el("forget").hidden = false;
     await showMatches("connected");
     return;
@@ -521,6 +522,7 @@ el("forget").addEventListener("click", () => void action(async () => {
     catch (error) { if (error.code !== 401) { setStatus("forgetFailed", true); return; } }
   }
   await chrome.storage.session.remove(stateKey);
+  await send({ type: "vault-connect-ack" }).catch(() => {});
   currentState = null;
   matches = [];
   renderMatches();
@@ -571,6 +573,8 @@ void action(async () => {
     await renderConnect(await send({ type: "vault-connect-state" }));
     return;
   }
+  // An approval finished while the popup was closed; its result is no longer news.
+  void send({ type: "vault-connect-ack" }).catch(() => {});
   el("forget").hidden = false;
   await showMatches();
 });

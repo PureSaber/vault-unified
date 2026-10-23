@@ -16,6 +16,7 @@ import hashlib
 import secrets
 import threading
 import time
+import unicodedata
 from dataclasses import dataclass
 
 from vault_unified import browser_discovery
@@ -47,7 +48,8 @@ def _digest(value: str) -> str:
 
 
 def _device_name(value: str) -> str:
-    name = (value or "").strip() or "Browser"
+    # Format characters (for example bidirectional overrides) could disguise the name.
+    name = "".join(char for char in (value or "") if unicodedata.category(char) != "Cf").strip() or "Browser"
     if len(name) > 64 or any(ord(char) < 32 for char in name):
         raise BrowserConnectError(422, "invalid", "Invalid browser device name")
     return name
@@ -124,6 +126,12 @@ class BrowserConnectStore:
         if len(bindings) != 1:
             raise BrowserConnectError(409, "ambiguous", "More than one vault is unlocked")
         binding = next(iter(bindings))
+        with self._lock:
+            # Refuse cheaply before reading the credential store.
+            now = time.monotonic()
+            self._clean(now)
+            if now < self._refuse_until or len(self._pending()) >= MAX_PENDING or len(self._created) >= RATE_LIMIT:
+                raise BrowserConnectError(429, "busy", "Too many connection requests")
         if browser_trust.device_count() >= MAX_DEVICES:
             raise BrowserConnectError(409, "device_limit", "Revoke an existing browser before adding another")
         with self._lock:
@@ -232,17 +240,25 @@ class BrowserConnectStore:
             with self._lock:
                 self._end(item, "device_limit" if "Revoke an existing browser" in str(exc) else "failed", time.monotonic())
                 return {"state": item.state}
+        except Exception:
+            with self._lock:
+                self._end(item, "failed", time.monotonic())
+            raise
         with self._lock:
             ended = item.state != "claiming"
-            if not ended:
-                item.state = "enrolled"
-                item.device_id = device_id
-                item.ends = time.monotonic() + TERMINAL_TTL_SECONDS
         if ended:
             # A lock ended the request while it was being enrolled.
-            browser_trust.revoke(binding, device_id)
-            return {"state": "locked"}
-        browser_discovery.register(item.origin)
+            try:
+                browser_trust.revoke(binding, device_id)
+                return {"state": "locked"}
+            except BrowserTrustError:
+                pass  # The device exists and cannot be removed now; hand it over instead of orphaning it.
+        with self._lock:
+            item.state = "enrolled"
+            item.device_id = device_id
+            item.ends = time.monotonic() + TERMINAL_TTL_SECONDS
+        # Native host registration is left to release-build startup, so a
+        # development build can never take over the installed app's host.
         return {"state": "approved", "device_id": device_id}
 
     def retain(self, bindings: set) -> None:

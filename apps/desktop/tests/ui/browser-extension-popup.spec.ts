@@ -527,3 +527,12 @@ for (const [error, english] of [
     await expect(page.getByRole("button", { name: "Connect to Vault Unified", exact: true })).toBeEnabled();
   });
 }
+
+test("a connection finished while the popup was closed is acknowledged, and Forget clears it too", async ({ page }) => {
+  await loadPopup(page, { initialState: { sidecarUrl: "http://127.0.0.1:43129", browserToken: testData.bearerToken }, connect: [{ state: "approved" }] });
+  await expect(page.getByRole("button", { name: "Forget pairing", exact: true })).toBeVisible();
+  await expect.poll(() => connectMessages(page)).toContain("vault-connect-ack");
+  await page.getByRole("button", { name: "Forget pairing", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Connect to Vault Unified", exact: true })).toBeVisible();
+  expect((await connectMessages(page)).filter(type => type === "vault-connect-ack")).toHaveLength(2);
+});

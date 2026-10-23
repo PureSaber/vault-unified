@@ -213,9 +213,9 @@ def test_rate_limit_counts_only_accepted_requests(app, monkeypatch):
 def test_expiry_and_device_limit(app, monkeypatch):
     started = ask(app).json()
     now = time.monotonic()
-    monkeypatch.setattr(browser_connect, "time", SimpleNamespace(monotonic=lambda: now + browser_connect.CONNECT_TTL_SECONDS + 1))
-    assert status(app, started).json() == {"state": "expired"}
-    monkeypatch.undo()
+    with monkeypatch.context() as later:
+        later.setattr(browser_connect, "time", SimpleNamespace(monotonic=lambda: now + browser_connect.CONNECT_TTL_SECONDS + 1))
+        assert status(app, started).json() == {"state": "expired"}
     monkeypatch.setattr(browser_trust, "device_count", lambda: MAX_DEVICES)
     response = ask(app)
     assert response.status_code == 409 and response.json()["detail"]["code"] == "device_limit"
@@ -224,3 +224,69 @@ def test_expiry_and_device_limit(app, monkeypatch):
 def test_invalid_input_is_rejected_without_detail(app):
     assert ask(app, public="not-a-key").status_code == 422
     assert ask(app, name="bad\nname").status_code == 422
+
+
+def approved(app):
+    started = ask(app).json()
+    [item] = pending(app)
+    assert decide(app, "approve", item["id"], started["code"]).json()["approved"]
+    return started
+
+
+def test_a_concurrent_status_during_the_claim_waits_and_enrolls_once(app, monkeypatch):
+    started = approved(app)
+    enroll, nested = browser_trust.enroll, []
+
+    def enroll_while_polled(*args):
+        nested.append(status(app, started).json())
+        return enroll(*args)
+
+    monkeypatch.setattr(browser_trust, "enroll", enroll_while_polled)
+    claimed = status(app, started).json()
+    assert nested == [{"state": "pending", "remaining_seconds": nested[0]["remaining_seconds"]}]
+    assert claimed["state"] == "approved" and browser_trust.device_count() == 1
+
+
+def test_claim_never_registers_the_native_host(app, monkeypatch):
+    calls = []
+    monkeypatch.setattr("vault_unified.browser_discovery.register", lambda origin: calls.append(origin) or True)
+    monkeypatch.setattr("vault_unified.browser_discovery.register_fixed", lambda: calls.append("fixed") or True)
+    assert status(app, approved(app)).json()["state"] == "approved"
+    assert calls == [], "only release-build startup registers, so a development build cannot take over"
+
+
+def test_a_failed_revocation_after_a_lock_hands_the_device_over(app, monkeypatch):
+    from vault_unified.browser_trust import BrowserTrustUnavailable
+    started = approved(app)
+    enroll = browser_trust.enroll
+
+    def enroll_then_lock(*args):
+        record = enroll(*args)
+        sessions.lock_all()
+        return record
+
+    def unavailable(*args):
+        raise BrowserTrustUnavailable("generated failure")
+
+    monkeypatch.setattr(browser_trust, "enroll", enroll_then_lock)
+    monkeypatch.setattr(browser_trust, "revoke", unavailable)
+    claimed = status(app, started).json()
+    assert claimed["state"] == "approved", "the extension keeps the key of the device that exists"
+    assert status(app, started).json() == claimed
+
+
+def test_single_session_lock_and_idle_expiry_end_requests(app, monkeypatch):
+    started = ask(app).json()
+    sessions.lock(app.token)
+    assert status(app, started).json() == {"state": "locked"}
+    token, _ = sessions.unlock(app.master, vault_path=app.path)
+    started = ask(app).json()
+    sessions._sessions[token].last_active -= 31 * 60
+    with pytest.raises(PermissionError):
+        sessions.get(token)
+    assert status(app, started).json() == {"state": "locked"}
+
+
+def test_format_characters_never_reach_the_desktop_name(app):
+    ask(app, name="Generated\u202e emorhC")
+    assert pending(app)[0]["device_name"] == "Generated emorhC"

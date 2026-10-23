@@ -37,8 +37,10 @@ def test_registration_uses_only_exact_authorized_extension_origins(tmp_path, mon
     class Key:
         def __enter__(self): return self
         def __exit__(self, *args): return False
+    def unregistered(*args):
+        raise FileNotFoundError
     fake = SimpleNamespace(HKEY_CURRENT_USER=1, KEY_SET_VALUE=2, REG_SZ=3,
-                           CreateKeyEx=lambda *args: Key(),
+                           CreateKeyEx=lambda *args: Key(), OpenKey=unregistered,
                            SetValueEx=lambda *args: writes.append(args[-1]))
     monkeypatch.setitem(sys.modules, "winreg", fake)
     if discovery.os.name != "nt":
@@ -88,10 +90,10 @@ def test_connect_nonce_is_owner_only_never_public_and_cleaned_with_its_run(tmp_p
     assert {item.name for item in tmp_path.iterdir()} == {"runtime.json", discovery.CONNECT_FILE}
     if discovery.os.name == "nt":
         import subprocess
-        acl = subprocess.run(["icacls", str(path)], capture_output=True, text=True, check=True).stdout
-        entries = [line.strip() for line in acl.replace(str(path), "").splitlines() if ":(" in line]
-        # Only the owner, granted on the file itself: no inherited or group entries.
-        assert entries == ["OWNER RIGHTS:(F)"], acl
+        sddl = subprocess.run(["powershell", "-NoProfile", "-Command", f"(Get-Acl -LiteralPath '{path}').Sddl"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        # Protected DACL with a single owner-only entry: no inherited, group or Everyone entries.
+        assert sddl.split("D:", 1)[1] == "P(A;;FA;;;OW)", sddl
     with TestClient(create_app(instance_id="generated-instance", connect_nonce="generated-connect-nonce")) as client:
         assert "connect_nonce" not in client.get("/api/browser/discovery").text
     discovery.clear("older-process")
@@ -108,9 +110,17 @@ def test_fixed_registration_keeps_the_fixed_origin_prunes_unused_and_never_takes
     class Key:
         def __enter__(self): return self
         def __exit__(self, *args): return False
-    writes = []
+    writes, registered = [], {}
+    class Opened:
+        def __init__(self, path): self.path = path
+        def __enter__(self):
+            if self.path not in registered:
+                raise FileNotFoundError
+            return self
+        def __exit__(self, *args): return False
     monkeypatch.setitem(sys.modules, "winreg", SimpleNamespace(HKEY_CURRENT_USER=1, KEY_SET_VALUE=2, REG_SZ=3,
-                        CreateKeyEx=lambda *args: Key(), SetValueEx=lambda *args: writes.append(args[-1])))
+                        CreateKeyEx=lambda *args: Key(), SetValueEx=lambda *args: writes.append(args[-1]),
+                        OpenKey=lambda root, path: Opened(path), QueryValueEx=lambda key, name: (registered[key.path], 1)))
     if discovery.os.name != "nt":
         assert not discovery.register_fixed()
         return
@@ -130,6 +140,16 @@ def test_fixed_registration_keeps_the_fixed_origin_prunes_unused_and_never_takes
     path.unlink()
     assert discovery.register_fixed(), "a new installation registers the fixed origin"
     assert json.loads(path.read_text())["allowed_origins"] == [fixed]
+    # The browsers may point at another installation's manifest in a different folder.
+    elsewhere = tmp_path / "elsewhere"; elsewhere.mkdir()
+    (elsewhere / "native-host.json").write_text(json.dumps({**manifest, "path": str(other)}))
+    for browser in discovery.REGISTRY_BROWSERS:
+        registered[browser + "\\" + discovery.HOST_NAME] = str(elsewhere / "native-host.json")
+    writes.clear()
+    assert not discovery.register_fixed() and not discovery.register(fixed[:-1])
+    assert writes == []
+    other.unlink()  # An uninstalled executable no longer owns its stale registration.
+    assert discovery.register_fixed()
 
 
 def test_fixed_extension_id_matches_the_manifest_public_key_and_the_desktop():
