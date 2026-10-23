@@ -6,16 +6,16 @@ import { testData } from "./test-data";
 
 test.use({ trace: "off", screenshot: "off" });
 
-type Harness = { failNext: () => void; enables: () => number; emit: (event: string) => void };
+type Harness = { failNext: () => void; enables: () => number; helloUnlocks: () => number; emit: (event: string) => void };
 
 /** Native Hello is replaced by a per-page stub: a new page is a new app run,
  * so its quick-unlock grant starts empty exactly like the real process memory. */
 async function installNative(page: Page, locale: "en" | "zh", supported = true) {
   await page.addInitScript(({ locale, supported, bootstrap, password }) => {
     localStorage.setItem("vault_locale", locale);
-    let ready = false, cancelled = false, enables = 0, counter = 0;
+    let ready = false, cancelled = false, enables = 0, helloUnlocks = 0, counter = 0;
     const callbacks = new Map<number, (value: unknown) => void>(), events = new Map<string, number>();
-    const harness = { failNext: () => { cancelled = true; }, enables: () => enables,
+    const harness = { failNext: () => { cancelled = true; }, enables: () => enables, helloUnlocks: () => helloUnlocks,
       emit: (event: string) => callbacks.get(events.get(event)!)?.({ event, payload: null }) };
     Object.assign(window, { isTauri: true, helloHarness: harness, __TAURI_EVENT_PLUGIN_INTERNALS__: { unregisterListener: () => {} }, __TAURI_INTERNALS__: {
       transformCallback: (callback: (value: unknown) => void) => { callbacks.set(++counter, callback); return counter; },
@@ -30,6 +30,7 @@ async function installNative(page: Page, locale: "en" | "zh", supported = true) 
         if (["enable_windows_hello", "unlock_windows_hello"].includes(command)) {
           if (cancelled) { cancelled = false; throw "hello_cancelled"; }
           if (command === "enable_windows_hello") { enables++; ready = true; return { supported: true, ready, busy: false }; }
+          helloUnlocks++;
           return (await fetch("http://127.0.0.1:43129/auth/unlock", { method: "POST", headers: { "Content-Type": "application/json", "X-Vault-Bootstrap": bootstrap }, body: JSON.stringify({ password }) })).json();
         }
         throw new Error("Outside the native Hello UI fixture");
@@ -41,6 +42,7 @@ async function installNative(page: Page, locale: "en" | "zh", supported = true) 
 const harness = (page: Page) => ({
   failNext: () => page.evaluate(() => (window as unknown as { helloHarness: Harness }).helloHarness.failNext()),
   enables: () => page.evaluate(() => (window as unknown as { helloHarness: Harness }).helloHarness.enables()),
+  helloUnlocks: () => page.evaluate(() => (window as unknown as { helloHarness: Harness }).helloHarness.helloUnlocks()),
   emit: (event: string) => page.evaluate(value => (window as unknown as { helloHarness: Harness }).helloHarness.emit(value), event),
 });
 
@@ -212,8 +214,11 @@ for (const locale of ["en", "zh"] as const) test.describe(`Windows Hello setup o
     await lock(page);
     await expect(helloUnlock(page)).toHaveClass(/primary/);
     await page.getByLabel(text("Master password", "主密码"), { exact: true }).fill(testData.masterPassword);
+    const typed = page.waitForRequest(request => request.url().endsWith("/auth/unlock") && request.postDataJSON().password === testData.masterPassword);
     await page.getByLabel(text("Master password", "主密码"), { exact: true }).press("Enter");
+    await typed;
     await expect(page.getByRole("button", { name: text("Lock now", "立即锁定"), exact: true })).toBeVisible();
+    expect(await harness(page).helloUnlocks()).toBe(0);
     expect(await harness(page).enables()).toBe(1);
   });
 });
