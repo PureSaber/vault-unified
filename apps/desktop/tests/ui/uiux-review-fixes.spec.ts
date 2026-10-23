@@ -85,7 +85,12 @@ test("only a user-created backup clears the reminder; per-write copies do not (r
     const headers = { "X-Vault-Bootstrap": testData.bootstrapSecret, "X-Vault-Client": "vault-unified-desktop", Authorization: `Bearer ${token}` };
     const reminder = page.getByText("Backup has not been set up.", { exact: false });
     await expect(reminder).toBeVisible();
-    const refresh = () => page.evaluate(() => window.dispatchEvent(new Event("vault-security-status-changed")));
+    // The reminder text never changes, so wait for the reload it triggers to land.
+    const refresh = async () => {
+      const settings = page.waitForResponse(response => response.url().endsWith("/personal/settings") && response.ok());
+      await page.evaluate(() => window.dispatchEvent(new Event("vault-security-status-changed")));
+      await settings;
+    };
 
     await page.getByRole("button", { name: "Add password", exact: true }).click();
     await page.getByLabel("Website or app name", { exact: true }).fill("Generated backup subject");
@@ -105,6 +110,34 @@ test("only a user-created backup clears the reminder; per-write copies do not (r
     expect(created.ok()).toBe(true);
     await refresh(); await sidecar.drain();
     await expect(reminder).toHaveCount(0);
+  } finally { await sidecar.stop(); }
+});
+
+test("a background list refresh keeps the bulk selection; changing location clears it (real API)", async ({ page }) => {
+  const sidecar = await startGeneratedSidecar(page);
+  try {
+    await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
+    await page.goto("/");
+    await createVault(page);
+    for (const name of ["Generated keep A", "Generated keep B"]) {
+      await page.getByRole("button", { name: "Add password", exact: true }).click();
+      await page.getByLabel("Website or app name", { exact: true }).fill(name);
+      await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.getByRole("button", { name: `Open ${name}`, exact: true })).toBeVisible();
+    }
+    await sidecar.drain();
+    const first = page.getByLabel("Select Generated keep A", { exact: true });
+    await first.check();
+    const reloaded = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/entries") && response.ok());
+    await page.evaluate(() => window.dispatchEvent(new Event("vault-entries-changed")));
+    await reloaded; await sidecar.drain();
+    await expect(first).toBeChecked();
+    await expect(page.getByLabel("Select Generated keep B", { exact: true })).not.toBeChecked();
+    await page.getByLabel("Entry location").selectOption("archived");
+    await page.getByLabel("Entry location").selectOption("active");
+    await expect(first).not.toBeChecked();
+    await sidecar.drain();
   } finally { await sidecar.stop(); }
 });
 

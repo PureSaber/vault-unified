@@ -62,7 +62,9 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
       if (sequence !== requestSequence.current || criteria.query !== criteriaRef.current.query || criteria.state !== criteriaRef.current.state || criteria.duplicatesOnly !== criteriaRef.current.duplicatesOnly) return;
       setEntries(nextEntries);
       setDuplicateIds(duplicates?.groups.flat() || []);
-      setSelected([]);
+      // A refresh of the same view keeps a selection that is still listed.
+      const listed = new Set(nextEntries.map(entry => entry.id));
+      setSelected(current => current.filter(id => listed.has(id)));
     } catch (err) {
       if (sequence !== requestSequence.current) return;
       setError(String(err).replace(/^Error:\s*/, ""));
@@ -95,12 +97,20 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   }, []);
 
   const initialSearch = useRef(true);
+  const debouncedQuery = useRef(query);
   useEffect(() => {
     if (initialSearch.current) {
       initialSearch.current = false;
       return;
     }
     if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    // Only typing is debounced. A location or filter change loads at once, so a
+    // reload already in flight (for example after a bulk action) cannot land later.
+    if (debouncedQuery.current === query) {
+      void load();
+      return;
+    }
+    debouncedQuery.current = query;
     debounceRef.current = window.setTimeout(() => {
       void load();
     }, 250);
