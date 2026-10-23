@@ -22,7 +22,10 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
 sha2 = "0.10"
 zeroize = "1"
-tauri-plugin-updater = "~2.13.3"
+# Releases sign and publish only plain NSIS/MSI installers
+# (scripts/build_release_assets.py, `allowed_asset` in src/updates.rs), so the
+# plugin's default `zip` feature (ZIP on Windows, tar.gz elsewhere) is unused.
+tauri-plugin-updater = { version = "~2.13.3", default-features = false, features = ["rustls-tls", "system-proxy"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }
