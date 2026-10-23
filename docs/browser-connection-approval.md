@@ -37,7 +37,7 @@ recovery path under **Other ways to connect**.
 | Connect UI | Pairing runs in the action popup (`popup.js:324`), and a new key lives only in popup memory until `/pair` answers. | Chromium closes an action popup when it loses focus, so any flow that sends the user to the desktop must not live in the popup. |
 | Enrollment | `browser_pairings.pair()` consumes a one-time code bound to the unlocked desktop session, then calls `browser_trust.enroll(binding, origin, public_key, device_name)` (`browser_pairing.py:144`). At most 16 devices (`browser_trust.py:29`). | Device trust, vault binding and the non-exportable signing key already exist. Only *starting* enrollment needs copying. |
 | Reconnection | `connectedRequest()` runs `discover()`, then `resume()` with a signed single-use challenge (`/device/challenge`, `/device/prove`). | Reconnection is already automatic once a device is enrolled. |
-| Locked vault | `trusted_resume` raises `BrowserLockedError`; `/device/challenge` answers `423` while locked. | Preserved. Lock state is already observable by an unauthenticated loopback caller. |
+| Locked vault | `trusted_resume` raises `BrowserLockedError`; `/device/challenge` answers `423` while locked, for a caller that names an enrolled device and origin. | Preserved. Today an unauthenticated caller without a device ID cannot learn the lock state. |
 | Request guard | `sidecar_security_guard` (`api/app.py:152`) exempts named browser endpoints from the bootstrap secret; everything else needs it. | New endpoints must be placed explicitly. |
 | Discovery endpoint | `GET /api/browser/discovery` is unauthenticated and returns `instance_id`. | `instance_id` is not a secret. |
 | Desktop approvals | `PasskeyRequests.tsx` polls `GET /api/passkeys/pending` with the session token and calls `show_desktop_approval`. | Reused for polling and bringing the window forward **only**. Two differences: passkey approval also requires the master password (`PasskeyRequests.tsx:51`), and its requester already holds a browser token. A connect request comes from an unauthenticated caller, so it needs the stronger checks below. |
@@ -116,7 +116,8 @@ header `X-Vault-Connect-Nonce`.
   `connect/deny` and `connect/deny-all` require the bootstrap secret **and** a
   desktop session Bearer token, like every other desktop endpoint.
 - **Checks, in order:** exact allowlisted `Origin`; connect nonce compared
-  with `hmac.compare_digest`; a vault is unlocked (`423` otherwise); the vault
+  with `hmac.compare_digest` (`403` otherwise, so only a nonce holder can learn
+  whether the vault is unlocked); a vault is unlocked (`423` otherwise); the vault
   supports browser trust (a distinct `409 upgrade_required` for older payload
   formats, not "locked"); the binding has fewer than 16 devices
   (`409 device_limit`, shown as "Remove an unused browser in Vault Unified →
