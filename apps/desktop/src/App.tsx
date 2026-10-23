@@ -27,6 +27,7 @@ import ImportWizard from "./components/ImportWizard";
 import QuickSearch from "./components/QuickSearch";
 import PersonalSyncRunner from "./components/PersonalSyncRunner";
 import PasskeyRequests from "./components/PasskeyRequests";
+import HelloOffer from "./components/HelloOffer";
 import Sharing from "./pages/Sharing";
 import ItemDetail from "./components/ItemDetail";
 import Icon from "./components/Icon";
@@ -60,6 +61,8 @@ function AppShell() {
   const [idleCountdown, setIdleCountdown] = useState<number | null>(null);
   const [quickSearch, setQuickSearch] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
+  const [helloOffer, setHelloOffer] = useState(false);
+  const closeHelloOffer = useCallback(() => setHelloOffer(false), []);
   const [desktop, setDesktop] = useState<DesktopStatus | null>(null);
   const pendingQuickSearch = useRef(false);
   const nativeHandlers = useRef({ search: () => {}, lock: () => {}, exit: () => {} });
@@ -86,6 +89,7 @@ function AppShell() {
     setIdleCountdown(null);
     setQuickSearch(false);
     setPasskeyPending(false);
+    setHelloOffer(false);
     setBackupSummary(null);
     setShareEntryId("");
     window.dispatchEvent(new Event("vault-ui-locked"));
@@ -424,7 +428,7 @@ function AppShell() {
   if (!unlocked) {
     return (
       <div className="app">
-        <Unlock onUnlock={() => setUnlocked(true)} />
+        <Unlock onUnlock={method => { setUnlocked(true); setHelloOffer(method === "master"); }} />
       </div>
     );
   }
@@ -524,6 +528,7 @@ function AppShell() {
         )}
       </main>
       {quickSearch && <QuickSearch onClose={() => setQuickSearch(false)} onOpen={openSearchEntry} />}
+      {helloOffer && <HelloOffer active={!quickSearch && !passkeyPending && !pendingAction && idleCountdown === null} onDone={closeHelloOffer} />}
       {idleCountdown !== null && editorDirty && (
         <div className="idle-lock-warning" role="alert" aria-live="assertive">
           {locale === "zh"

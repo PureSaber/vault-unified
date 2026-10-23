@@ -38,7 +38,9 @@ async function start() {
   page = browser.contexts()[0].pages()[0]; page.setDefaultTimeout(15_000);
   await page.waitForFunction(() => Boolean(window.__TAURI_INTERNALS__));
   assert(await page.evaluate(() => window.__TAURI_INTERNALS__.invoke('plugin:app|identifier')) === 'com.puresaber.vault-unified.generated-test', 'Native fixture must use its isolated application identifier');
-  await page.evaluate(() => localStorage.setItem('vault_locale', 'en')); await page.reload();
+  // The Hello setup offer is covered by renderer journeys; keep it from blocking
+  // this lifecycle journey on runners where Windows Hello is available.
+  await page.evaluate(() => { localStorage.setItem('vault_locale', 'en'); localStorage.setItem('vault_hello_prompt', 'off'); }); await page.reload();
   await page.getByLabel('Master password', { exact: true }).waitFor();
 }
 try {
