@@ -30,17 +30,30 @@ none appears in the Windows target graph.
 | [RUSTSEC-2026-0371](https://rustsec.org/advisories/RUSTSEC-2026-0371.html) | `zbus_names 4.3.4` | unmaintained | Absent; same `zbus` path | Track upstream replacement; review by 2026-11-20 |
 | [RUSTSEC-2026-0372](https://rustsec.org/advisories/RUSTSEC-2026-0372.html) | `zvariant_derive 5.15.0` | unmaintained | Absent; same `zbus` path | Track upstream replacement; review by 2026-11-20 |
 
-## Resolved on 2026-10-23
+## Updater dependency decision (2026-10-23)
 
-Advisories dated 2026-10-09 to 2026-10-20 made the audit of the unchanged
-v1.4.0 lockfile report five vulnerabilities (first seen in CI on 2026-10-22).
-None was suppressed.
+This register lists only findings that remain under review. Vulnerabilities are
+fixed rather than recorded here; the five reported against the unchanged v1.4.0
+lockfile (first seen in CI on 2026-10-22) were resolved in
+[PR #85](https://github.com/PureSaber/vault-unified/pull/85) without suppression:
+`rustls-webpki` and `webpki-root-certs` were updated to patched releases, and
+`zip 4.6.1` (three archive-extraction advisories, patched only in `zip >= 9`)
+was removed.
 
-| Advisory | Package | Resolution |
-|---|---|---|
-| [RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382.html) | `rustls-webpki 0.103.15` | Updated to the patched `0.103.16` (reached on Windows through `reqwest` for update checks) |
-| [RUSTSEC-2026-0383](https://rustsec.org/advisories/RUSTSEC-2026-0383.html) | `webpki-root-certs 1.0.9` | Updated to the patched `1.0.10` |
-| [RUSTSEC-2026-0367](https://rustsec.org/advisories/RUSTSEC-2026-0367.html), [RUSTSEC-2026-0368](https://rustsec.org/advisories/RUSTSEC-2026-0368.html), [RUSTSEC-2026-0369](https://rustsec.org/advisories/RUSTSEC-2026-0369.html) | `zip 4.6.1` | Removed. Every published `tauri-plugin-updater` release, including 2.14.0 and 3.0.0-alpha.3, still requires `zip ^4`, so no compatible upgrade exists. `zip` is the plugin's optional default `zip` feature (with `tar`/`flate2` for non-Windows bundles). On Windows it is used only when the *downloaded bytes* are a ZIP (`infer::archive::is_zip`), to extract `.msi.zip`/`-setup.exe.zip` updater bundles. Only bytes whose minisign signature verifies against the pinned `pubkey` reach `install()`, and the release pipeline (`scripts/build_release_assets.py`, `createUpdaterArtifacts: true`) signs and lists only plain `-setup.exe` and `.msi` files; `allowed_asset` in `apps/desktop/src-tauri/src/updates.rs` additionally rejects other URLs. The extraction path was therefore not reachable with a validly signed update, and it is now compiled out. The dependency sets `default-features = false` with the remaining defaults `rustls-tls` and `system-proxy`. Signature verification (`requireSignedVersion`, pinned `pubkey`) runs in `download()` independently of this feature |
+`zip` is the optional default `zip` feature of `tauri-plugin-updater` (with
+`tar`/`flate2` for non-Windows bundles). Every published updater release,
+including 2.14.0 and 3.0.0-alpha.3, still requires `zip ^4`. On Windows the
+plugin extracts only when the *downloaded bytes* are a ZIP
+(`infer::archive::is_zip`), to unpack `.msi.zip`/`-setup.exe.zip` bundles. Only
+bytes whose minisign signature verifies against the pinned `pubkey` reach
+`install()`, and the release pipeline (`scripts/build_release_assets.py`,
+`createUpdaterArtifacts: true`) signs and lists only plain `-setup.exe` and
+`.msi` files; `allowed_asset` in `apps/desktop/src-tauri/src/updates.rs`
+additionally rejects other URLs. The extraction path was therefore not reachable
+with a validly signed update, and it is now compiled out:
+`default-features = false` keeps the remaining defaults `rustls-tls` and
+`system-proxy`. Signature verification (`requireSignedVersion`) runs in
+`download()` independently of this feature.
 
 The lockfile is versioned in Git and audited directly. A manually duplicated
 lockfile hash in this document is no longer a gate. The download integrity check

@@ -11,6 +11,7 @@ def test_rustsec_register_keeps_active_reviews_and_unfiltered_ci_audit():
     text = (ROOT / "docs" / "rustsec-risk-register.md").read_text(encoding="utf-8")
     assert set(re.findall(r"RUSTSEC-\d{4}-\d{4}", text)) == {
         "RUSTSEC-2024-0370", "RUSTSEC-2024-0429",
+        "RUSTSEC-2026-0370", "RUSTSEC-2026-0371", "RUSTSEC-2026-0372",
     }
     deadlines = [date.fromisoformat(value) for value in re.findall(r"review by (\d{4}-\d{2}-\d{2})", text)]
     assert deadlines and all(date.today() <= deadline for deadline in deadlines)
