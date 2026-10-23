@@ -51,8 +51,11 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   const revealTimers = useRef(new Map<string, number>());
   const criteriaRef = useRef({ query, state, duplicatesOnly });
   criteriaRef.current = { query, state, duplicatesOnly };
+  const mounted = useRef(true);
 
   async function load() {
+    // A reload after an action must not reach the API once locking unmounted the list.
+    if (!mounted.current) return;
     const sequence = ++requestSequence.current;
     const criteria = criteriaRef.current;
     try {
@@ -62,9 +65,6 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
       if (sequence !== requestSequence.current || criteria.query !== criteriaRef.current.query || criteria.state !== criteriaRef.current.state || criteria.duplicatesOnly !== criteriaRef.current.duplicatesOnly) return;
       setEntries(nextEntries);
       setDuplicateIds(duplicates?.groups.flat() || []);
-      // A refresh of the same view keeps a selection that is still listed.
-      const listed = new Set(nextEntries.map(entry => entry.id));
-      setSelected(current => current.filter(id => listed.has(id)));
     } catch (err) {
       if (sequence !== requestSequence.current) return;
       setError(String(err).replace(/^Error:\s*/, ""));
@@ -81,6 +81,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   }
 
   useEffect(() => {
+    mounted.current = true;
     void load();
     void api.payloadFormat().then(data => setPersonalReady(data.version >= 3)).catch(() => {});
     let active = true;
@@ -93,7 +94,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
     }).catch(() => {});
     const changed = () => { hideAllPasswords(); void load(); };
     window.addEventListener("vault-entries-changed", changed);
-    return () => { active = false; ++requestSequence.current; window.removeEventListener("vault-entries-changed", changed); };
+    return () => { active = false; mounted.current = false; ++requestSequence.current; window.removeEventListener("vault-entries-changed", changed); };
   }, []);
 
   const initialSearch = useRef(true);
@@ -155,6 +156,12 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
         .includes(normalized),
     ).sort((a, b) => sort === "updated" ? b.updated_at.localeCompare(a.updated_at) : sort === "created" ? b.created_at.localeCompare(a.created_at) : a.title.localeCompare(b.title));
   }, [entries, query, favoritesOnly, duplicatesOnly, duplicateIds, tag, entryType, sort]);
+  // Refreshes keep the selection, but a bulk action may only act on rows that are
+  // visible: anything a filter, search or change hides leaves the selection.
+  useEffect(() => {
+    const visible = new Set(filtered.map(entry => entry.id));
+    setSelected(current => current.every(id => visible.has(id)) ? current : current.filter(id => visible.has(id)));
+  }, [filtered]);
   const hasFilters = Boolean(query || favoritesOnly || duplicatesOnly || tag || entryType || state !== "active");
 
   const actionLabel = (action: OrganizationAction) => ({
@@ -177,9 +184,13 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   async function applyOrganization() {
     if (!organizationPlan || busy) return;
     const plan = organizationPlan;
+    const view = criteriaRef.current;
     setOrganizationPlan(null); setBusy(true);
     try {
       await api.applyOrganization(plan.change, plan.preview.preview_token);
+      // A selection made in another view while this ran belongs to that view.
+      const now = criteriaRef.current;
+      if (now.query === view.query && now.state === view.state && now.duplicatesOnly === view.duplicatesOnly) setSelected([]);
       hideAllPasswords(); await load();
       showToast(zh ? "整理完成" : "Organization completed");
     } catch (err) { showToast(String(err).replace(/^Error:\s*/, ""), "error"); }
@@ -248,7 +259,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
 
   return (
     <div className="vault-list-panel">
-      {mergeIds && <DuplicateMerge ids={mergeIds} onCancel={() => setMergeIds(null)} onMerged={() => { setMergeIds(null); hideAllPasswords(); void load(); showToast(zh ? "账号已合并，被合并条目可在回收站恢复" : "Accounts merged; the second account can be restored from trash"); }} />}
+      {mergeIds && <DuplicateMerge ids={mergeIds} onCancel={() => setMergeIds(null)} onMerged={() => { setMergeIds(null); setSelected([]); hideAllPasswords(); void load(); showToast(zh ? "账号已合并，被合并条目可在回收站恢复" : "Accounts merged; the second account can be restored from trash"); }} />}
       <ConfirmDialog open={organizationPlan !== null} idPrefix="organization"
         title={organizationPlan ? actionLabel(organizationPlan.change.action) : ""}
         message={organizationPlan ? `${zh ? "选中条目" : "Selected entries"}: ${organizationPlan.preview.entries.map(entry => entry.title).join(zh ? "、" : ", ")}\n${organizationPlan.change.action === "trash" ? (zh ? "回收站保留 30 天，到期自动清理；期间可恢复。" : "Trash keeps items for 30 days, then removes them automatically. Restore them during this period.") : organizationPlan.change.action === "purge" ? (zh ? "将从回收站永久删除这些条目。" : "These items will be permanently removed from trash.") : ""}` : ""}

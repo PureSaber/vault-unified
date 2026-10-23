@@ -113,31 +113,54 @@ test("only a user-created backup clears the reminder; per-write copies do not (r
   } finally { await sidecar.stop(); }
 });
 
-test("a background list refresh keeps the bulk selection; changing location clears it (real API)", async ({ page }) => {
+async function addAccounts(page: Page, names: string[]) {
+  for (const name of names) {
+    await page.getByRole("button", { name: "Add password", exact: true }).click();
+    await page.getByLabel("Website or app name", { exact: true }).fill(name);
+    await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("button", { name: `Open ${name}`, exact: true })).toBeVisible();
+  }
+}
+
+test("bulk selection survives refreshes but keeps only rows that stay visible (real API)", async ({ page }) => {
   const sidecar = await startGeneratedSidecar(page);
   try {
     await page.addInitScript(() => localStorage.setItem("vault_locale", "en"));
     await page.goto("/");
     await createVault(page);
-    for (const name of ["Generated keep A", "Generated keep B"]) {
-      await page.getByRole("button", { name: "Add password", exact: true }).click();
-      await page.getByLabel("Website or app name", { exact: true }).fill(name);
-      await page.getByLabel("Password", { exact: true }).fill(testData.entryPassword);
-      await page.getByRole("button", { name: "Save", exact: true }).click();
-      await expect(page.getByRole("button", { name: `Open ${name}`, exact: true })).toBeVisible();
-    }
+    await addAccounts(page, ["Generated keep A", "Generated keep B"]);
     await sidecar.drain();
     const first = page.getByLabel("Select Generated keep A", { exact: true });
-    await first.check();
+    const second = page.getByLabel("Select Generated keep B", { exact: true });
+    await first.check(); await second.check();
     const reloaded = page.waitForResponse(response => new URL(response.url()).pathname.endsWith("/entries") && response.ok());
     await page.evaluate(() => window.dispatchEvent(new Event("vault-entries-changed")));
     await reloaded; await sidecar.drain();
     await expect(first).toBeChecked();
-    await expect(page.getByLabel("Select Generated keep B", { exact: true })).not.toBeChecked();
-    await page.getByLabel("Entry location").selectOption("archived");
-    await page.getByLabel("Entry location").selectOption("active");
-    await expect(first).not.toBeChecked();
+    await expect(second).toBeChecked();
+    // A search that hides a row removes it from what a bulk action would touch.
+    await page.getByLabel("Search vault").fill("keep A");
+    await expect(second).toHaveCount(0);
+    await page.getByLabel("Search vault").fill("");
+    await expect(second).toBeVisible();
+    await expect(second).not.toBeChecked();
+    await expect(first).toBeChecked();
+    // Unfavoriting under "Favorites only" hides the row but keeps it in the server list.
+    const row = page.locator(".entry-row").filter({ hasText: "Generated keep A" });
+    await row.locator("summary").click();
+    await row.getByRole("button", { name: "Favorite", exact: true }).click();
+    await expect(row.getByLabel("Favorite", { exact: true })).toBeVisible();
+    await page.getByRole("group", { name: "Filters and bulk organization" }).locator("summary").click();
+    await page.getByLabel("Favorites only", { exact: true }).check();
+    await row.locator("summary").click();
+    await row.getByRole("button", { name: "Unfavorite", exact: true }).click();
+    await expect(first).toHaveCount(0);
     await sidecar.drain();
+    await page.getByLabel("Favorites only", { exact: true }).uncheck();
+    await expect(first).toBeVisible();
+    await expect(first).not.toBeChecked();
+    await expect(page.getByRole("button", { name: "Select current list", exact: true })).toBeVisible();
   } finally { await sidecar.stop(); }
 });
 
