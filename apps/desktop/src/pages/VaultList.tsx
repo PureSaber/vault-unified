@@ -22,7 +22,7 @@ function maskPassword(hasPassword: boolean) {
 
 export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId, active = true }: Props) {
   const { t, locale } = useI18n();
-  const { showToast } = useToast();
+  const { showToast: publishToast } = useToast();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [query, setQuery] = useState("");
   const zh = locale === "zh";
@@ -53,8 +53,14 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   criteriaRef.current = { query, state, duplicatesOnly };
   const mounted = useRef(true);
 
+  // ToastProvider outlives this view. Old async callbacks must not publish into
+  // the lock screen or a later unlocked session.
+  const showToast: typeof publishToast = (...args) => {
+    if (mounted.current) publishToast(...args);
+  };
+
   async function load() {
-    // A reload after an action must not reach the API once locking unmounted the list.
+    // Lock invalidates the view synchronously, before React's unmount cleanup.
     if (!mounted.current) return;
     const sequence = ++requestSequence.current;
     const criteria = criteriaRef.current;
@@ -83,18 +89,20 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   useEffect(() => {
     mounted.current = true;
     void load();
-    void api.payloadFormat().then(data => setPersonalReady(data.version >= 3)).catch(() => {});
+    void api.payloadFormat().then(data => { if (mounted.current) setPersonalReady(data.version >= 3); }).catch(() => {});
     let active = true;
     // The sync engine pushes every dirty entry, linked or not, to the sources
     // that are both configured and enabled (`enabled_sources: null` = all).
     void Promise.all([api.integrations(), api.getPrefs().catch(() => null)]).then(([items, prefs]) => {
-      if (!active) return;
+      if (!active || !mounted.current) return;
       const enabled = prefs?.enabled_sources;
       setConnectedSources(items.filter(item => item.configured && (!Array.isArray(enabled) || enabled.includes(item.source))).map(item => item.source));
     }).catch(() => {});
-    const changed = () => { hideAllPasswords(); void load(); };
+    const changed = () => { if (mounted.current) { hideAllPasswords(); void load(); } };
+    const locked = () => { mounted.current = false; ++requestSequence.current; hideAllPasswords(); };
     window.addEventListener("vault-entries-changed", changed);
-    return () => { active = false; mounted.current = false; ++requestSequence.current; window.removeEventListener("vault-entries-changed", changed); };
+    window.addEventListener("vault-ui-locked", locked);
+    return () => { active = false; mounted.current = false; ++requestSequence.current; window.removeEventListener("vault-entries-changed", changed); window.removeEventListener("vault-ui-locked", locked); };
   }, []);
 
   const initialSearch = useRef(true);
@@ -171,30 +179,32 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   })[action];
   const typeLabel = (type: Entry["entry_type"]) => ({ login: zh ? "账号" : "Login", secure_note: zh ? "安全笔记" : "Secure note", card: zh ? "卡片" : "Card", identity: zh ? "身份信息" : "Identity", ssh_key: zh ? "SSH 密钥" : "SSH key", recovery_code: zh ? "恢复码" : "Recovery codes", software_license: zh ? "软件许可证" : "Software license", api_credential: zh ? "API 凭据" : "API credential" })[type];
   async function organize(action: OrganizationAction, ids = selected, immediate = false) {
-    if (!ids.length || busy) return;
+    if (!mounted.current || !ids.length || busy) return;
     setBusy(true);
     const change: OrganizationChange = { action, entry_ids: ids, tags: action === "tag" ? bulkTags.split(/[,，]/).map(value => value.trim()).filter(Boolean) : [] };
     try {
       const preview = await api.previewOrganization(change);
+      if (!mounted.current) return;
       if (immediate) { await api.applyOrganization(change, preview.preview_token); await load(); }
       else setOrganizationPlan({ change, preview });
     } catch (err) { showToast(String(err).replace(/^Error:\s*/, ""), "error"); }
-    finally { setBusy(false); }
+    finally { if (mounted.current) setBusy(false); }
   }
   async function applyOrganization() {
-    if (!organizationPlan || busy) return;
+    if (!mounted.current || !organizationPlan || busy) return;
     const plan = organizationPlan;
     const view = criteriaRef.current;
     setOrganizationPlan(null); setBusy(true);
     try {
       await api.applyOrganization(plan.change, plan.preview.preview_token);
+      if (!mounted.current) return;
       // A selection made in another view while this ran belongs to that view.
       const now = criteriaRef.current;
       if (now.query === view.query && now.state === view.state && now.duplicatesOnly === view.duplicatesOnly) setSelected([]);
       hideAllPasswords(); await load();
       showToast(zh ? "整理完成" : "Organization completed");
     } catch (err) { showToast(String(err).replace(/^Error:\s*/, ""), "error"); }
-    finally { setBusy(false); }
+    finally { if (mounted.current) setBusy(false); }
   }
   function cancelOrganization() {
     if (organizationPlan) void api.cancelOrganization(organizationPlan.preview.preview_token).catch(() => {});
@@ -259,7 +269,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
 
   return (
     <div className="vault-list-panel">
-      {mergeIds && <DuplicateMerge ids={mergeIds} onCancel={() => setMergeIds(null)} onMerged={() => { setMergeIds(null); setSelected([]); hideAllPasswords(); void load(); showToast(zh ? "账号已合并，被合并条目可在回收站恢复" : "Accounts merged; the second account can be restored from trash"); }} />}
+      {mergeIds && <DuplicateMerge ids={mergeIds} onCancel={() => setMergeIds(null)} onMerged={() => { if (!mounted.current) return; setMergeIds(null); setSelected([]); hideAllPasswords(); void load(); showToast(zh ? "账号已合并，被合并条目可在回收站恢复" : "Accounts merged; the second account can be restored from trash"); }} />}
       <ConfirmDialog open={organizationPlan !== null} idPrefix="organization"
         title={organizationPlan ? actionLabel(organizationPlan.change.action) : ""}
         message={organizationPlan ? `${zh ? "选中条目" : "Selected entries"}: ${organizationPlan.preview.entries.map(entry => entry.title).join(zh ? "、" : ", ")}\n${organizationPlan.change.action === "trash" ? (zh ? "回收站保留 30 天，到期自动清理；期间可恢复。" : "Trash keeps items for 30 days, then removes them automatically. Restore them during this period.") : organizationPlan.change.action === "purge" ? (zh ? "将从回收站永久删除这些条目。" : "These items will be permanently removed from trash.") : ""}` : ""}
@@ -318,7 +328,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
           <label>{zh ? "排序" : "Sort"}<select value={sort} onChange={event => setSort(event.target.value)}><option value="title">{zh ? "名称" : "Name"}</option><option value="updated">{zh ? "最近修改" : "Recently changed"}</option><option value="created">{zh ? "最近添加" : "Recently added"}</option></select></label>
         </div>
         <div className="button-row">
-          <button type="button" className="secondary" onClick={() => setSelected(selected.length ? [] : filtered.slice(0, 500).map(entry => entry.id))}>{selected.length ? (zh ? "取消选择" : "Clear selection") : (zh ? "选择当前列表" : "Select current list")}</button>
+          <button type="button" className="secondary" disabled={busy} onClick={() => setSelected(selected.length ? [] : filtered.slice(0, 500).map(entry => entry.id))}>{selected.length ? (zh ? "取消选择" : "Clear selection") : (zh ? "选择当前列表" : "Select current list")}</button>
           {state === "active" && <button type="button" className="secondary" disabled={selected.length !== 2 || busy} onClick={() => { hideAllPasswords(); setMergeIds([selected[0], selected[1]]); }}>{zh ? "比较并合并" : "Compare and merge"}</button>}
           {(state === "trash" ? ["restore", "purge"] as OrganizationAction[] : state === "archived" ? ["restore", "trash"] as OrganizationAction[] : ["archive", "trash"] as OrganizationAction[]).map(action => <button key={action} type="button" className={action === "purge" ? "danger" : "secondary"} disabled={!selected.length || busy} onClick={() => void organize(action)}>{actionLabel(action)}</button>)}
           <input aria-label={zh ? "批量添加的标签" : "Tags to add"} placeholder={zh ? "用逗号分隔标签" : "Comma-separated tags"} value={bulkTags} onChange={event => setBulkTags(event.target.value)} />

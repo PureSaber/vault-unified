@@ -50,6 +50,8 @@ function AppShell() {
   const { t, locale } = useI18n();
   const { showToast } = useToast();
   const [unlocked, setUnlocked] = useState(hasToken());
+  const [locking, setLocking] = useState(false);
+  const lockInFlight = useRef(false);
   const [page, setPage] = useState<Page>("passwords");
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
   const [shareEntryId, setShareEntryId] = useState("");
@@ -78,10 +80,9 @@ function AppShell() {
   const localeRef = useRef(locale);
   localeRef.current = locale;
 
-  const lockToUnlock = useCallback(() => {
+  const clearWorkspace = useCallback(() => {
     cancelHello();
     if (isTauri()) void api.cancelAutoType().catch(() => {});
-    lockApp();
     setUnlocked(false);
     setEditEntry(null);
     setPage("passwords");
@@ -96,6 +97,11 @@ function AppShell() {
     setShareEntryId("");
     window.dispatchEvent(new Event("vault-ui-locked"));
   }, []);
+
+  const lockToUnlock = useCallback(() => {
+    lockApp();
+    clearWorkspace();
+  }, [clearWorkspace]);
 
   useEffect(() => {
     setUnauthorizedHandler(() => {
@@ -224,13 +230,22 @@ function AppShell() {
   }, [unlocked, showToast]);
 
   const performLock = useCallback(async () => {
+    if (lockInFlight.current) return;
+    lockInFlight.current = true;
+    setLocking(true);
+    // Remove sensitive views and stop their work immediately. Keep authentication
+    // available for the lock request, but do not allow a new unlock until it ends.
+    clearWorkspace();
     try {
       await api.lock();
     } catch {
-      /* ignore */
+      // Even a failed transport must leave the renderer locked.
+    } finally {
+      lockToUnlock();
+      lockInFlight.current = false;
+      setLocking(false);
     }
-    lockToUnlock();
-  }, [lockToUnlock]);
+  }, [clearWorkspace, lockToUnlock]);
 
   useEffect(() => {
     if (!desktop || updateCheckStarted.current) return;
@@ -426,6 +441,10 @@ function AppShell() {
   ];
 
   const activePage = ["editor", "details", "import", "conflicts"].includes(page) ? "passwords" : page;
+
+  if (locking) {
+    return <div className="app"><p role="status">{locale === "zh" ? "正在锁定…" : "Locking…"}</p></div>;
+  }
 
   if (!unlocked) {
     return (

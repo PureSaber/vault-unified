@@ -183,18 +183,21 @@ async function request<T>(path: string, options: RequestInit & { endsSession?: b
 
 async function send<T>(path: string, options: RequestInit): Promise<T> {
   const config = await runtimeConfig();
+  const requestToken = token;
   const requestHeaders = new Headers(options.headers);
   requestHeaders.set("Content-Type", "application/json");
   requestHeaders.set("X-Vault-Bootstrap", config.bootstrap_secret);
   requestHeaders.set("X-Vault-Client", "vault-unified-desktop");
-  if (token) requestHeaders.set("Authorization", `Bearer ${token}`);
+  if (requestToken) requestHeaders.set("Authorization", `Bearer ${requestToken}`);
 
   const res = await fetch(`${config.base_url}${path}`, {
     ...options,
     headers: requestHeaders,
   });
   if (!res.ok) {
-      if ((res.status === 401 || res.status === 423) && token) {
+    // A response belongs to the session that sent it. A late rejection from an
+    // old session must not revoke a session the user has since unlocked.
+    if ((res.status === 401 || res.status === 423) && requestToken && token === requestToken) {
       clearToken();
       onUnauthorized?.();
     }
