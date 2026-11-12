@@ -5,7 +5,7 @@ import base64
 from collections.abc import Callable
 
 from vault_unified.local_store import LocalVault, EntryTransactionConflict
-from vault_unified.personal_sync.codec import ProtocolError, STATE_NAMESPACE, record_identity, unseal
+from vault_unified.personal_sync.codec import ProtocolError, STATE_NAMESPACE, filename, record_identity, unseal
 from vault_unified.personal_sync.merge import choose
 from vault_unified.personal_sync.payload import project, materialize
 from vault_unified.personal_sync.replica import queue, receive
@@ -17,22 +17,51 @@ MAX_DOWNLOAD_RECORDS = 1000
 
 def download(store, state: dict, key: bytes, check: Callable[[], None]) -> tuple[dict, bool]:
     records, size = {}, 0
-    pending = []
+    pending, latest = set(), {}
     for name in store.list():
         device, sequence = record_identity(name)
         if sequence > state["seen"].get(device, 0):
-            pending.append(name)
-    # Select by sequence across devices so a busy device cannot starve another
-    # device's causal predecessor when a space exceeds the cycle limit.
-    pending.sort(key=lambda name: (record_identity(name)[1], name))
-    for name in pending:
+            pending.add(name)
+            latest[device] = max(sequence, latest.get(device, 0))
+    # Schedule causal heads, not low sequence numbers from unrelated clocks.
+    # Blocked heads count against the same page budget as their predecessors.
+    # This vector is only a scheduling simulation; receive still validates and
+    # applies every record before any durable seen counter can advance.
+    seen = dict(state["seen"])
+    stack = []
+    while stack or any(seen.get(device, 0) < sequence for device, sequence in latest.items()):
         check()
-        blob = store.get(name)
-        size += len(blob)
-        if records and (size > MAX_DOWNLOAD_BYTES or len(records) >= MAX_DOWNLOAD_RECORDS):
-            break
-        records[name] = unseal(key, state["space"], name, blob)
-    return records, len(records) < len(pending)
+        if not stack:
+            device = min((device for device in latest if seen.get(device, 0) < latest[device]),
+                         key=lambda device: (seen.get(device, 0), device))
+            stack.append(filename(device, seen.get(device, 0) + 1))
+        name = stack[-1]
+        if name not in pending:
+            raise ProtocolError("Synchronization history is missing required changes")
+        if name not in records:
+            if len(records) >= MAX_DOWNLOAD_RECORDS:
+                break
+            blob = store.get(name)
+            size += len(blob)
+            if records and size > MAX_DOWNLOAD_BYTES:
+                break
+            records[name] = unseal(key, state["space"], name, blob)
+        record = records[name]
+        missing = [(device, sequence) for device, sequence in record["context"].items()
+                   if seen.get(device, 0) < sequence]
+        if missing:
+            device, _ = min(missing)
+            predecessor = filename(device, seen.get(device, 0) + 1)
+            if predecessor in stack:
+                raise ProtocolError("Synchronization history contains a causal cycle")
+            stack.append(predecessor)
+        else:
+            seen[record["device"]] = record["sequence"]
+            stack.pop()
+    more = any(seen.get(device, 0) < sequence for device, sequence in latest.items())
+    if more and seen == state["seen"]:
+        raise ProtocolError("Synchronization causal dependencies exceed the download resource limit")
+    return records, more
 
 
 def run(local: LocalVault, store, key: bytes, *, check: Callable[[], None] = lambda: None) -> dict:
