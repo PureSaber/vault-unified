@@ -9,7 +9,7 @@ import { generatedWebDAV } from "./sync-storage";
 import { testData } from "./test-data";
 
 test.use({ trace: "off", screenshot: "off" });
-for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile and reconnect (${locale})`, async ({ page }, testInfo) => {
+for (const locale of ["en", "zh"] as const) for (const delayed of [false, true]) test(`${delayed ? "slow successful sync initialization" : "two computers join, reconcile and reconnect"} (${locale})`, async ({ page }, testInfo) => {
   test.setTimeout(150_000); page.setDefaultTimeout(15_000);
   const zh = locale === "zh";
   const folder = await mkdtemp(join(tmpdir(), "vault-sync-generated-"));
@@ -46,6 +46,18 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
       pendingRequests.delete(request);
     });
   }
+  if (delayed) {
+    // A valid operation may outlast a UI assertion's five-second budget. Hold
+    // one real successful response (not its server-side commit) across that
+    // boundary, without changing encryption, product timers or expect timeouts.
+    const target = zh ? page : other;
+    await target.route(zh ? `${source.apiUrl}/auth/create` : "**/api/personal-sync/connect", async route => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      await route.fulfill({ response });
+    }, { times: 1 });
+  }
   let destination: Awaited<ReturnType<typeof startGeneratedSidecar>> | undefined;
   const text = (en: string, chinese: string) => zh ? chinese : en;
   const title = "Generated synchronized account";
@@ -56,7 +68,12 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
     await target.goto("/");
     await target.getByLabel(text("Master password", "主密码"), { exact: true }).fill(testData.masterPassword);
     await target.getByLabel(text("Confirm master password", "再次输入主密码"), { exact: true }).fill(testData.masterPassword);
-    await target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click();
+    const [created] = await Promise.all([
+      target.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/auth/create")),
+      target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click(),
+    ]);
+    expect(created.status(), "vault creation must succeed before checking navigation").toBe(200);
+    expect(await created.finished()).toBeNull();
     await expect(target.getByRole("button", { name: text("Connections", "连接"), exact: true })).toBeVisible();
     record({ device: target === page ? "first" : "second", stage: "create-ready" });
   }
@@ -83,7 +100,12 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
   async function apply(target: Page) {
     record({ device: target === page ? "first" : "second", stage: "connect-start" });
     await section(target).getByRole("button", { name: text("Connect and apply", "连接并应用"), exact: true }).click();
-    await target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click();
+    const [connected] = await Promise.all([
+      target.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/personal-sync/connect")),
+      target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click(),
+    ]);
+    expect(connected.status(), "connection must commit before checking the sync controls").toBe(200);
+    expect(await connected.finished()).toBeNull();
     await expect(section(target).getByRole("button", { name: text("Sync now", "立即同步"), exact: true })).toBeVisible();
     record({ device: target === page ? "first" : "second", stage: "connect-ready" });
   }
@@ -194,11 +216,15 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
     throw error;
   } finally {
     const stopped = await Promise.allSettled([destination?.stop(), source.stop()]);
-    console.log("[sync-diagnostics] " + JSON.stringify({ locale, repeat: testInfo.repeatEachIndex, retry: testInfo.retry, events: diagnostics }));
+    const diagnosticOutput = JSON.stringify({ locale, delayed, repeat: testInfo.repeatEachIndex, retry: testInfo.retry, events: diagnostics });
+    const markers = (await readFile(resolve(".playwright-runtime/secret-markers.txt"), "utf8")).split(/\r?\n/).filter(Boolean);
     await other.close(); await server?.stop();
     const target = resolve(folder);
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("vault-sync-generated-")) throw new Error("Generated sync folder cleanup boundary failed");
     await rm(target, { recursive: true, force: true, maxRetries: 3 });
+    // Artifact scanning cannot retract a leaked console line: fail before logging.
+    if (markers.some(marker => diagnosticOutput.includes(marker))) throw new Error("Unsafe sync diagnostics suppressed");
+    console.log("[sync-diagnostics] " + diagnosticOutput);
     for (const result of stopped) if (result.status === "rejected") throw result.reason;
   }
 });
