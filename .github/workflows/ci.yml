@@ -6,12 +6,19 @@ on:
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
+    inputs:
+      sync_repetitions:
+        description: "Repeat only the two generated-data computer-sync journeys (0 = normal CI)"
+        type: number
+        default: 0
 
 permissions:
   contents: read
 
 jobs:
   python:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/python-unused' || 'python' }}
+    if: ${{ !inputs.sync_repetitions }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -34,6 +41,8 @@ jobs:
         run: .\.venv\Scripts\python scripts\scan_repository_secrets.py --repo-root .
 
   desktop:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/desktop-unused' || 'desktop' }}
+    if: ${{ !inputs.sync_repetitions }}
     # Server 2025 WebView2 automation currently fails before opening its DevTools
     # port: actions/runner-images#14738. Keep native GUI checks on Server 2022;
     # Python and renderer checks still use windows-latest. Do not downgrade runtime.
@@ -96,6 +105,7 @@ jobs:
           }
 
   ui-journey:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/repeated-journeys' || 'ui-journey' }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -124,7 +134,17 @@ jobs:
         id: ui-journeys
         continue-on-error: true
         working-directory: apps/desktop
-        run: npm run test:ui
+        shell: pwsh
+        env:
+          SYNC_REPETITIONS: ${{ inputs.sync_repetitions || 0 }}
+        run: |
+          $repetitions = [int]$env:SYNC_REPETITIONS
+          if ($repetitions -lt 0 -or $repetitions -gt 20) { throw "Choose 0 to 20 sync repetitions" }
+          if ($repetitions -gt 0) {
+            & ../../scripts/run-ui-journeys.ps1 -TestFiles @('personal-sync.spec.ts', '--grep=two computers join', "--repeat-each=$repetitions", '--retries=0')
+          } else {
+            npm run test:ui
+          }
       - name: Upload scanned failure artifacts
         if: ${{ always() && steps.ui-journeys.outcome == 'failure' && hashFiles('apps/desktop/test-results/.artifacts-safe') != '' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -144,6 +164,8 @@ jobs:
           }
 
   rustsec:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/rustsec-unused' || 'rustsec' }}
+    if: ${{ !inputs.sync_repetitions }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

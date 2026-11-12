@@ -9,24 +9,73 @@ import { generatedWebDAV } from "./sync-storage";
 import { testData } from "./test-data";
 
 test.use({ trace: "off", screenshot: "off" });
-for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile and reconnect (${locale})`, async ({ page }, testInfo) => {
+for (const locale of ["en", "zh"] as const) for (const delayed of [false, true]) test(`${delayed ? "slow successful sync initialization" : "two computers join, reconcile and reconnect"} (${locale})`, async ({ page }, testInfo) => {
   test.setTimeout(150_000); page.setDefaultTimeout(15_000);
   const zh = locale === "zh";
   const folder = await mkdtemp(join(tmpdir(), "vault-sync-generated-"));
   const server = zh ? await generatedWebDAV("generated-user", testData.entryPassword) : null;
   const source = await startGeneratedSidecar(page, { personalSync: true });
   const other = await page.context().newPage(); other.setDefaultTimeout(15_000);
+  // Allowlisted metadata only: never log URLs, headers, bodies, DOM text or secrets.
+  const diagnostics: Record<string, string | number | boolean>[] = [];
+  const epoch = Date.now();
+  const record = (value: Record<string, string | number | boolean>) => {
+    if (diagnostics.length < 500) diagnostics.push({ ms: Date.now() - epoch, ...value });
+  };
+  const pendingRequests = new Map<object, { device: string; operation: string; start: number }>();
+  const operations = new Map([
+    ["/api/auth/create", "create"], ["/api/auth/unlock", "unlock"],
+    ["/api/personal-sync/preview", "preview"], ["/api/personal-sync/connect", "connect"],
+    ["/api/personal-sync/status", "status"], ["/api/personal-sync/run", "sync"],
+  ]);
+  for (const [device, target] of [["first", page], ["second", other]] as const) {
+    target.on("request", request => {
+      const operation = operations.get(new URL(request.url()).pathname);
+      if (!operation) return;
+      pendingRequests.set(request, { device, operation, start: Date.now() });
+      record({ device, operation, event: "request" });
+    });
+    target.on("response", response => {
+      const request = pendingRequests.get(response.request());
+      if (request) record({ device, operation: request.operation, event: "response", status: response.status(), elapsed: Date.now() - request.start });
+    });
+    target.on("requestfinished", request => { pendingRequests.delete(request); });
+    target.on("requestfailed", request => {
+      const pending = pendingRequests.get(request);
+      if (pending) record({ device, operation: pending.operation, event: "request-failed", elapsed: Date.now() - pending.start });
+      pendingRequests.delete(request);
+    });
+  }
+  if (delayed) {
+    // A valid operation may outlast a UI assertion's five-second budget. Hold
+    // one real successful response (not its server-side commit) across that
+    // boundary, without changing encryption, product timers or expect timeouts.
+    const target = zh ? page : other;
+    await target.route(zh ? `${source.apiUrl}/auth/create` : "**/api/personal-sync/connect", async route => {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await new Promise(resolve => setTimeout(resolve, 6000));
+      await route.fulfill({ response });
+    }, { times: 1 });
+  }
   let destination: Awaited<ReturnType<typeof startGeneratedSidecar>> | undefined;
   const text = (en: string, chinese: string) => zh ? chinese : en;
   const title = "Generated synchronized account";
   const section = (target: Page) => target.getByRole("region", { name: text("Full vault sync between computers", "多电脑完整同步"), exact: true });
   async function create(target: Page) {
+    record({ device: target === page ? "first" : "second", stage: "create-start" });
     await target.addInitScript(value => localStorage.setItem("vault_locale", value), locale);
     await target.goto("/");
     await target.getByLabel(text("Master password", "主密码"), { exact: true }).fill(testData.masterPassword);
     await target.getByLabel(text("Confirm master password", "再次输入主密码"), { exact: true }).fill(testData.masterPassword);
-    await target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click();
+    const [created] = await Promise.all([
+      target.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/auth/create")),
+      target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click(),
+    ]);
+    expect(created.status(), "vault creation must succeed before checking navigation").toBe(200);
+    expect(await created.finished()).toBeNull();
     await expect(target.getByRole("button", { name: text("Connections", "连接"), exact: true })).toBeVisible();
+    record({ device: target === page ? "first" : "second", stage: "create-ready" });
   }
   async function connections(target: Page) { await target.getByRole("button", { name: text("Connections", "连接"), exact: true }).click(); }
   async function setup(target: Page, label: string, code = "") {
@@ -49,9 +98,16 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
     await expect(box.getByRole("region", { name: text("Sync connection preview", "同步连接预览"), exact: true })).toBeVisible();
   }
   async function apply(target: Page) {
+    record({ device: target === page ? "first" : "second", stage: "connect-start" });
     await section(target).getByRole("button", { name: text("Connect and apply", "连接并应用"), exact: true }).click();
-    await target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click();
+    const [connected] = await Promise.all([
+      target.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/personal-sync/connect")),
+      target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click(),
+    ]);
+    expect(connected.status(), "connection must commit before checking the sync controls").toBe(200);
+    expect(await connected.finished()).toBeNull();
     await expect(section(target).getByRole("button", { name: text("Sync now", "立即同步"), exact: true })).toBeVisible();
+    record({ device: target === page ? "first" : "second", stage: "connect-ready" });
   }
   async function sync(target: Page) {
     const response = target.waitForResponse(value => value.url().endsWith("/personal-sync/run") && value.request().postDataJSON()?.automatic === false);
@@ -149,12 +205,26 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
       await target.getByRole("button", { name: text("Lock now", "立即锁定"), exact: true }).click();
       await expect(target.getByLabel(text("Master password", "主密码"), { exact: true })).toBeVisible();
     }
+  } catch (error) {
+    for (const [device, target] of [["first", page], ["second", other]] as const) {
+      if (!target.isClosed()) {
+        const visible = await target.evaluate(() => ({ hidden: document.hidden, focused: document.hasFocus(), alerts: document.querySelectorAll('[role="alert"]').length })).catch(() => null);
+        if (visible) record({ device, stage: "failure-state", ...visible });
+      }
+    }
+    for (const request of pendingRequests.values()) record({ device: request.device, operation: request.operation, event: "still-pending", elapsed: Date.now() - request.start });
+    throw error;
   } finally {
     const stopped = await Promise.allSettled([destination?.stop(), source.stop()]);
+    const diagnosticOutput = JSON.stringify({ locale, delayed, repeat: testInfo.repeatEachIndex, retry: testInfo.retry, events: diagnostics });
+    const markers = (await readFile(resolve(".playwright-runtime/secret-markers.txt"), "utf8")).split(/\r?\n/).filter(Boolean);
     await other.close(); await server?.stop();
     const target = resolve(folder);
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("vault-sync-generated-")) throw new Error("Generated sync folder cleanup boundary failed");
     await rm(target, { recursive: true, force: true, maxRetries: 3 });
+    // Artifact scanning cannot retract a leaked console line: fail before logging.
+    if (markers.some(marker => diagnosticOutput.includes(marker))) throw new Error("Unsafe sync diagnostics suppressed");
+    console.log("[sync-diagnostics] " + diagnosticOutput);
     for (const result of stopped) if (result.status === "rejected") throw result.reason;
   }
 });
