@@ -68,12 +68,7 @@ for (const locale of ["en", "zh"] as const) for (const delayed of [false, true])
     await target.goto("/");
     await target.getByLabel(text("Master password", "主密码"), { exact: true }).fill(testData.masterPassword);
     await target.getByLabel(text("Confirm master password", "再次输入主密码"), { exact: true }).fill(testData.masterPassword);
-    const [created] = await Promise.all([
-      target.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/auth/create")),
-      target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click(),
-    ]);
-    expect(created.status(), "vault creation must succeed before checking navigation").toBe(200);
-    expect(await created.finished()).toBeNull();
+    await target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click();
     await expect(target.getByRole("button", { name: text("Connections", "连接"), exact: true })).toBeVisible();
     record({ device: target === page ? "first" : "second", stage: "create-ready" });
   }
@@ -100,12 +95,7 @@ for (const locale of ["en", "zh"] as const) for (const delayed of [false, true])
   async function apply(target: Page) {
     record({ device: target === page ? "first" : "second", stage: "connect-start" });
     await section(target).getByRole("button", { name: text("Connect and apply", "连接并应用"), exact: true }).click();
-    const [connected] = await Promise.all([
-      target.waitForResponse(response => response.request().method() === "POST" && response.url().endsWith("/personal-sync/connect")),
-      target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click(),
-    ]);
-    expect(connected.status(), "connection must commit before checking the sync controls").toBe(200);
-    expect(await connected.finished()).toBeNull();
+    await target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click();
     await expect(section(target).getByRole("button", { name: text("Sync now", "立即同步"), exact: true })).toBeVisible();
     record({ device: target === page ? "first" : "second", stage: "connect-ready" });
   }

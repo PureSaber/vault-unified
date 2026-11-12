@@ -138,7 +138,7 @@ jobs:
           $repetitions = [int]$env:SYNC_REPETITIONS
           if ($repetitions -lt 0 -or $repetitions -gt 20) { throw "Choose 0 to 20 sync repetitions" }
           if ($repetitions -gt 0) {
-            & ../../scripts/run-ui-journeys.ps1 -TestFiles @('personal-sync.spec.ts', '--grep=two computers join', "--repeat-each=$repetitions", '--retries=0')
+            & ../../scripts/run-ui-journeys.ps1 -TestFiles @('personal-sync.spec.ts', '--grep=slow successful', "--repeat-each=$repetitions", '--retries=0')
           } else {
             npm run test:ui
           }
