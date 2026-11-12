@@ -17,7 +17,7 @@ from vault_unified.crypto import decrypt_payload
 from vault_unified.models import SecretEntry
 from vault_unified.storage import atomic_write_bytes, require_clean_storage
 from vault_unified.v3_crypto import V3Credential
-from vault_unified.vault_format import V3Container, inspect_vault_format_file
+from vault_unified.vault_format import V3Container, inspect_vault_format_file, parse_vault_container
 
 CATALOG_VERSION = 1
 _ATOMIC_BACKUP_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -266,6 +266,8 @@ def verify_backup(
     vault_path: Path,
     backup_path: str | Path,
     credential: V3Credential,
+    *,
+    for_restore: bool = False,
 ) -> BackupRecord:
     """Authenticate and parse a registered backup without changing the vault."""
 
@@ -280,18 +282,29 @@ def verify_backup(
     data = source.read_bytes()
     if hashlib.sha256(data).hexdigest() != record.sha256:
         raise ValueError("Backup changed while it was being verified")
+    _validate_backup_payload(data, credential)
+    if for_restore:
+        from vault_unified.device_keyring import check_rollback_anchor
+
+        check_rollback_anchor(data, credential=credential)
+    return BackupRecord(**{**record.to_dict(), "verified": True})
+
+
+def _validate_backup_payload(data: bytes, credential: V3Credential) -> None:
     payload = decrypt_payload(credential, data)
     if (
         not isinstance(payload, dict)
+        or type(payload.get("version")) is not int
         or payload.get("version") not in {1, 2, 3}
         or not isinstance(payload.get("entries"), dict)
     ):
         raise ValueError("Backup payload is not supported")
+    if payload["version"] == 3 and not isinstance(parse_vault_container(data), V3Container):
+        raise ValueError("Personal payload schema 3 requires a framed V3 vault")
     for entry_id, entry in payload["entries"].items():
         if not isinstance(entry_id, str) or not isinstance(entry, dict):
             raise ValueError("Backup entry schema is invalid")
         SecretEntry.from_dict(entry)
-    return BackupRecord(**{**record.to_dict(), "verified": True})
 
 
 def set_backup_pinned(
@@ -441,16 +454,14 @@ def restore_backup(
 ) -> None:
     active = vault_path.resolve()
     canonical = _canonical(backup_path)
-    records = {record.path: record for record in list_backups(active, credential)}
-    record = records.get(canonical)
-    if record is None:
-        raise KeyError("Backup is not registered or is not a local atomic backup")
+    record = verify_backup(active, canonical, credential, for_restore=True)
     source = Path(canonical)
     data = source.read_bytes()
     source_digest = hashlib.sha256(data).hexdigest()
+    if source_digest != record.sha256:
+        raise ValueError("Backup changed while it was being verified")
     if expected_backup_sha256 is not None and source_digest != expected_backup_sha256:
         raise ValueError("Backup changed after the restore preview")
-    decrypt_payload(credential, data)
     if active.is_symlink() or not active.is_file():
         raise FileNotFoundError(f"Active vault not found: {active}")
     expected = hashlib.sha256(active.read_bytes()).hexdigest()
@@ -459,6 +470,6 @@ def restore_backup(
     atomic_write_bytes(
         active,
         data,
-        validator=lambda candidate: decrypt_payload(credential, candidate),
+        validator=lambda candidate: _validate_backup_payload(candidate, credential),
         expected_old_sha256=expected_active_sha256 or expected,
     )

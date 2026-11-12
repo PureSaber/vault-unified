@@ -71,6 +71,14 @@ authenticated marker, then deletes the external record. Backups remain explicit 
 evidence and may intentionally be rejected while the anchor is enabled; disable the anchor with
 an authenticated current vault before a deliberate rollback.
 
+Desktop backup restoration checks this policy without advancing the anchor during
+both preview and apply. A rejected candidate leaves the active vault unchanged.
+Ordinary backup verification still authenticates older backups: a valid backup is
+not necessarily eligible for restoration while rollback protection is enabled.
+Successful restoration locks the session; the next unlock advances an enabled
+anchor if needed. A storage failure during replacement may require inspection of
+the encrypted recovery copies before retrying.
+
 ## Test and recovery contract
 
 The tests cover exact backend rejection, password/device round trips, set-before-activate and

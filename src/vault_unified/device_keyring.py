@@ -298,8 +298,21 @@ def verify_and_advance_rollback_anchor(
 ) -> bool:
     """Verify an enabled anchor after authentication; absence degrades without data loss."""
 
-    path = Path(path)
-    blob, container = _v3(path)
+    blob, _ = _v3(Path(path))
+    return _verify_rollback_anchor(blob, credential=credential, advance=True)
+
+
+def check_rollback_anchor(blob: bytes, *, credential: V3Credential) -> bool:
+    """Check a restore candidate without creating or advancing device state."""
+    return _verify_rollback_anchor(blob, credential=credential, advance=False)
+
+
+def _verify_rollback_anchor(
+    blob: bytes, *, credential: V3Credential, advance: bool
+) -> bool:
+    container = parse_vault_container(blob)
+    if not isinstance(container, V3Container):
+        return False
     if container.header.extensions.get(ROLLBACK_ANCHOR_EXTENSION) is not True:
         return False
     decrypt_v3_payload(credential, container)
@@ -328,10 +341,11 @@ def verify_and_advance_rollback_anchor(
         if current.file_sha256 != stored.file_sha256:
             raise V3RollbackDetected("Vault digest conflicts with rollback anchor")
         return True
-    try:
-        backend.set_password(ANCHOR_SERVICE, current.vault_id, current.encode())
-    except Exception as exc:
-        raise DeviceKeyringError("Unable to advance rollback anchor") from exc
+    if advance:
+        try:
+            backend.set_password(ANCHOR_SERVICE, current.vault_id, current.encode())
+        except Exception as exc:
+            raise DeviceKeyringError("Unable to advance rollback anchor") from exc
     return True
 
 

@@ -45,6 +45,8 @@ const copy = {
     addLogin: "添加密码",
     addNote: "添加安全备注",
     editLogin: "编辑密码",
+    loadFailed: "无法读取这个条目，暂时不能编辑。请重试，或返回账号详情。",
+    retryLoading: "重新读取",
     editNote: "编辑安全备注",
     editCompatibility: "编辑兼容条目",
     type: "内容类型",
@@ -104,6 +106,8 @@ const copy = {
     addLogin: "Add password",
     addNote: "Add secure note",
     editLogin: "Edit password",
+    loadFailed: "Could not load this entry. Retry loading or return to account details before editing.",
+    retryLoading: "Retry loading",
     editNote: "Edit secure note",
     editCompatibility: "Edit compatibility entry",
     type: "Content type",
@@ -270,6 +274,9 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   const [original, setOriginal] = useState<Draft>(initial);
   const [draft, setDraft] = useState<Draft>(initial);
   const [loading, setLoading] = useState(isEdit);
+  const [loadedFor, setLoadedFor] = useState<Entry | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [personalReady, setPersonalReady] = useState(false);
   const [history, setHistory] = useState<Array<{ id: string; saved_at: string }>>([]);
   const [historyToRestore, setHistoryToRestore] = useState<string | null>(null);
@@ -311,6 +318,9 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   useEffect(() => {
     transactionId.current = clientId();
+    setLoadedFor(null);
+    setLoadFailed(false);
+    setError("");
     setShowMore(false);
     setShowTechnical(false);
     setShowGeneratorOptions(false);
@@ -334,10 +344,12 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         setOriginal(loaded);
         setDraft(loaded);
         setHistory(historyResult.history.map((item) => ({ id: item.id, saved_at: item.saved_at })));
+        setLoadedFor(entry);
       })
       .catch((loadError) => {
         if (cancelled) return;
         const message = String(loadError).replace(/^Error:\s*/, "");
+        setLoadFailed(true);
         setError(message);
         showToast(message, "error");
       })
@@ -347,7 +359,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
     return () => {
       cancelled = true;
     };
-  }, [entry, showToast]);
+  }, [entry, showToast, loadAttempt]);
 
   const advancedSummary = useMemo(() => {
     const summary: string[] = [];
@@ -417,7 +429,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
-    if (saving) return;
+    if (saving || loading || (entry && loadedFor !== entry)) return;
     const invalidCustomField = draft.customFields.some((field) => !field.label.trim());
     if (invalidCustomField) {
       setAdvancedError(text.customFieldError);
@@ -498,7 +510,17 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
     setHistoryToRestore(null);
   }
 
-  if (loading) return <div className="loading-state">{t("form.loading")}</div>;
+  if (loading || (entry && loadedFor !== entry && !loadFailed)) return <div className="loading-state">{t("form.loading")}</div>;
+  if (entry && loadedFor !== entry) return (
+    <div className="card entry-editor-card">
+      <h2>{text.editLogin}</h2>
+      <p className="error" role="alert">{text.loadFailed}</p>
+      <div className="button-row">
+        <button className="primary" onClick={() => setLoadAttempt(attempt => attempt + 1)}>{text.retryLoading}</button>
+        <button className="secondary" onClick={() => onDone(false)}>{t("form.cancel")}</button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="card entry-editor-card">
