@@ -1,12 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type GeneratedPassword } from "../api/client";
 import { useI18n } from "../i18n";
-import { useToast } from "./Toast";
 
 export default function GenerationHistory({ onClose, onUse }: { onClose: () => void; onUse?: (value: string) => void }) {
   const { locale } = useI18n();
   const zh = locale === "zh";
-  const { showToast } = useToast();
   const dialog = useRef<HTMLDialogElement>(null);
   const [items, setItems] = useState<GeneratedPassword[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -34,7 +32,7 @@ export default function GenerationHistory({ onClose, onUse }: { onClose: () => v
     try {
       if (action === "copy") {
         await api.copyGeneration(item.id);
-        if (stamp === sequence.current) showToast(zh ? "已复制，45 秒后清除剪贴板" : "Copied; clipboard clears in 45 seconds");
+
       } else {
         const result = await api.generationValue(item.id);
         if (stamp !== sequence.current) return;

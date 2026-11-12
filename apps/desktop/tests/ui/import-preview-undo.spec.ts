@@ -56,6 +56,7 @@ test("previews duplicates without secrets, cancels with zero writes, applies onc
   await expect(page.getByText(existingTitle, { exact: true })).toBeVisible();
 
   await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Import and export", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Import passwords" })).toBeVisible();
   const content = generatedImport(existingTitle);
   const input = page.getByLabel("Choose JSON / CSV file");

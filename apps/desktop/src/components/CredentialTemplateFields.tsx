@@ -1,3 +1,4 @@
+import { useTaskLifetime } from "./useTaskLifetime";
 import { api, type Entry, type TemplateData } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
@@ -6,6 +7,7 @@ import PasswordField from "./PasswordField";
 interface Props { type: Entry["entry_type"]; value: TemplateData; onChange: (value: TemplateData) => void; saved?: Entry | null }
 
 export default function CredentialTemplateFields({ type, value, onChange, saved }: Props) {
+  const alive = useTaskLifetime();
   const { locale } = useI18n();
   const zh = locale === "zh";
   const { showToast } = useToast();
@@ -13,8 +15,8 @@ export default function CredentialTemplateFields({ type, value, onChange, saved 
   function setField(key: keyof TemplateData, text: string) { onChange({ ...value, [key]: text }); }
   async function copyCode(id: string) {
     if (!saved) return;
-    try { await api.copyRecoveryCode(saved.id, id); showToast(zh ? "恢复码已复制，45 秒后清除剪贴板" : "Recovery code copied; clipboard clears in 45 seconds"); }
-    catch (error) { showToast(String(error).replace(/^Error:\s*/, ""), "error"); }
+    try { await api.copyRecoveryCode(saved.id, id); }
+    catch (error) { if (alive.current) showToast(String(error).replace(/^Error:\s*/, ""), "error"); }
   }
   return <section className="settings-section" aria-label={zh ? "凭据详情" : "Credential details"}>
     {(type === "software_license" || value.registered_to) && <div className="field">

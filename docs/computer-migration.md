@@ -1,6 +1,6 @@
 # Move to another computer
 
-1. On the old computer, open **Security & recovery → Emergency recovery kit**.
+1. On the old computer, open **Security & recovery → Recovery → Emergency recovery kit**.
    Create a recovery code, record it separately, re-enter it and save the encrypted
    kit. The most recently created path stays visible on this page. Create a fresh
    kit if the vault changes before the move.

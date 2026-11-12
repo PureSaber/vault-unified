@@ -1,3 +1,4 @@
+import { copyWithFeedback } from "./clipboard-feedback";
 import { invoke } from "@tauri-apps/api/core";
 
 export interface GenerationOptions {
@@ -599,13 +600,13 @@ export const api = {
   pendingSharing: (id: string, action: "retry" | "discard") => request<{ invitation?: string }>(`/sharing/pending/${encodeURIComponent(id)}/${action}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   reviewPendingSharing: (id: string) => request<{ options: SharingOptions; current: SharedValues | null }>(`/sharing/pending/${encodeURIComponent(id)}/review`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
   sharingLink: (id: string) => request<{ link: string }>(`/sharing/shares/${encodeURIComponent(id)}/link`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
-  copySharingLink: (id: string) => request(`/sharing/shares/${encodeURIComponent(id)}/copy`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  copySharingLink: (id: string) => copyWithFeedback(() => request(`/sharing/shares/${encodeURIComponent(id)}/copy`, { method: "POST", body: JSON.stringify({ confirm: true }) })),
   sharedFamily: (id: string) => request<SharedFamily>(`/sharing/families/${encodeURIComponent(id)}`),
   refreshFamily: (id: string) => request<{ pending: boolean }>(`/sharing/families/${encodeURIComponent(id)}/refresh`, { method: "POST" }),
   sharedEntry: (family: string, id: string) => request<SharedEntry>(`/sharing/families/${encodeURIComponent(family)}/entry/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
-  copySharedEntry: (family: string, id: string, field: "username" | "password") => request(`/sharing/families/${encodeURIComponent(family)}/entry/${encodeURIComponent(id)}/copy/${field}`, { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  copySharedEntry: (family: string, id: string, field: "username" | "password") => copyWithFeedback(() => request(`/sharing/families/${encodeURIComponent(family)}/entry/${encodeURIComponent(id)}/copy/${field}`, { method: "POST", body: JSON.stringify({ confirm: true }) })),
   familyPending: (id: string) => request<FamilyPending>(`/sharing/families/${encodeURIComponent(id)}/pending`),
-  copyFamilyInvitation: (code: string) => request("/sharing/invitations/copy", { method: "POST", body: JSON.stringify({ code, confirm: true }) }),
+  copyFamilyInvitation: (code: string) => copyWithFeedback(() => request("/sharing/invitations/copy", { method: "POST", body: JSON.stringify({ code, confirm: true }) })),
   pendingPasskeys: (signal?: AbortSignal) => request<{ items: PasskeyRequest[] }>("/passkeys/pending", { signal }),
   approvePasskey: (request_id: string, password: string, entry_id = "", credential_id = "") => request<{ approved: boolean; changed: boolean }>("/passkeys/approve", { method: "POST", body: JSON.stringify({ request_id, password, entry_id, credential_id, confirm: true }) }),
   rejectPasskey: (request_id: string, fallback = false) => request("/passkeys/reject", { method: "POST", body: JSON.stringify({ request_id, fallback }) }),
@@ -616,7 +617,7 @@ export const api = {
   runPersonalSync: (automatic = false, signal?: AbortSignal) => request<PersonalSyncResult>("/personal-sync/run", { method: "POST", body: JSON.stringify({ automatic }), signal }),
   updatePersonalSync: (automatic: boolean, label: string) => request<PersonalSyncStatus>("/personal-sync/settings", { method: "PUT", body: JSON.stringify({ automatic, label }) }),
   personalSyncCode: () => request<{ code: string }>("/personal-sync/code", { method: "POST", body: JSON.stringify({ confirm: true }) }),
-  copyPersonalSyncCode: () => request("/personal-sync/code/copy", { method: "POST", body: JSON.stringify({ confirm: true }) }),
+  copyPersonalSyncCode: () => copyWithFeedback(() => request("/personal-sync/code/copy", { method: "POST", body: JSON.stringify({ confirm: true }) })),
   disconnectPersonalSync: () => request<{ disconnected: boolean; cleanup_pending: boolean }>("/personal-sync/disconnect", { method: "POST", body: JSON.stringify({ confirm: true }) }),
   personalSyncConflicts: (reveal = false) => request<PersonalSyncConflicts>(`/personal-sync/conflicts?reveal=${reveal}`),
   resolvePersonalSync: (generation: number, choices: Record<string, "local" | "remote">) => request("/personal-sync/resolve", { method: "POST", body: JSON.stringify({ generation, choices, confirm: true }) }),
@@ -695,10 +696,10 @@ export const api = {
   previewEntryHistory: (id: string, historyId: string) =>
     request<{ history_id: string; entry: Entry }>(`/entries/${id}/history/${historyId}`),
   copy: (id: string, field = "password") =>
-    request<{ clears_in_seconds: number }>(`/entries/${id}/copy?field=${field}`, { method: "POST" }),
-  copyRecoveryCode: (id: string, codeId: string) => request(`/entries/${encodeURIComponent(id)}/recovery-codes/${encodeURIComponent(codeId)}/copy`, { method: "POST" }),
+    copyWithFeedback(() => request<{ clears_in_seconds: number }>(`/entries/${id}/copy?field=${field}`, { method: "POST" })),
+  copyRecoveryCode: (id: string, codeId: string) => copyWithFeedback(() => request(`/entries/${encodeURIComponent(id)}/recovery-codes/${encodeURIComponent(codeId)}/copy`, { method: "POST" })),
   previewTotp: (value: string) => request<({ valid: true } & TotpCode) | { valid: false }>("/entries/tools/totp/preview", { method: "POST", body: JSON.stringify({ value }) }),
-  copyTotp: (id: string) => request<{ clears_in_seconds: number }>(`/entries/${encodeURIComponent(id)}/totp/copy`, { method: "POST" }),
+  copyTotp: (id: string) => copyWithFeedback(() => request<{ clears_in_seconds: number }>(`/entries/${encodeURIComponent(id)}/totp/copy`, { method: "POST" })),
   getTotp: (id: string) => request<TotpCode>(`/entries/${encodeURIComponent(id)}/totp`),
   generate: (length = 20, symbols = true) =>
     request<{ password: string }>(
@@ -708,7 +709,7 @@ export const api = {
   generationHistory: () => request<{ items: GeneratedPassword[] }>("/entries/tools/generation/history"),
   testWebsiteMatch: (primary_url: string, rules: WebsiteRules, test_url: string) => request<{ valid: boolean; matches: boolean }>("/entries/tools/website-match", { method: "POST", body: JSON.stringify({ primary_url, rules, test_url }) }),
   generationValue: (id: string) => request<{ password: string }>(`/entries/tools/generation/history/${encodeURIComponent(id)}`),
-  copyGeneration: (id: string) => request(`/entries/tools/generation/history/${encodeURIComponent(id)}/copy`, { method: "POST" }),
+  copyGeneration: (id: string) => copyWithFeedback(() => request(`/entries/tools/generation/history/${encodeURIComponent(id)}/copy`, { method: "POST" })),
   integrations: () => request<Integration[]>("/integrations"),
   saveIntegration: (
     source: string,

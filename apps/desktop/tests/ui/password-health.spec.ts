@@ -34,6 +34,7 @@ for (const locale of ["en", "zh"] as const) test(`offline findings, optional exp
       await expect(page.getByRole("button", { name: `${zh ? "打开" : "Open"} ${title}`, exact: true })).toBeVisible();
     }
     await page.getByRole("button", { name: zh ? "安全与恢复" : "Security & recovery", exact: true }).click();
+    await page.locator("nav.section-nav").getByRole("button", { name: zh ? "密码检查" : "Password check", exact: true }).click();
     const section = page.getByRole("region", { name: zh ? "密码检查" : "Password check", exact: true });
     const reportResponse = page.waitForResponse(value => value.url().endsWith("/security/password-health"));
     await section.getByRole("button", { name: zh ? "检查本地密码" : "Check local passwords", exact: true }).click();
@@ -68,6 +69,7 @@ for (const locale of ["en", "zh"] as const) test(`offline findings, optional exp
     await page.getByRole("button", { name: zh ? "保存" : "Save", exact: true }).click();
     await expect(page.getByRole("button", { name: zh ? "打开 Generated first" : "Open Generated first", exact: true })).toBeVisible();
     await page.getByRole("button", { name: zh ? "安全与恢复" : "Security & recovery", exact: true }).click();
+    await page.locator("nav.section-nav").getByRole("button", { name: zh ? "密码检查" : "Password check", exact: true }).click();
     await section.getByRole("button", { name: zh ? "检查本地密码" : "Check local passwords", exact: true }).click();
     await expect(section.getByRole("status")).toHaveText(zh ? "已检查 3 个账号 · 弱密码 1 · 重复密码 0" : "3 logins checked · 1 weak · 0 reused");
     await expect(consent).not.toBeChecked();

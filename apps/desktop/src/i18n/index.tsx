@@ -1,3 +1,4 @@
+import { uiEn, uiZh } from "./ui-messages";
 import {
   createContext,
   useCallback,
@@ -13,6 +14,7 @@ export type Locale = "zh" | "en";
 type Dict = Record<string, string>;
 
 const zh: Dict = {
+  ...uiZh,
   "app.title": "Vault Unified",
   "nav.passwords": "密码",
   "nav.securityRecovery": "安全与恢复",
@@ -206,6 +208,7 @@ const zh: Dict = {
 };
 
 const en: Dict = {
+  ...uiEn,
   "app.title": "Vault Unified",
   "nav.passwords": "Passwords",
   "nav.securityRecovery": "Security & recovery",

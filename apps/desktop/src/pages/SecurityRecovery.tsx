@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import TaskNavigation from "../components/TaskNavigation";
+import DiscardChanges from "../components/DiscardChanges";
+import { useCallback, useEffect, useState, useRef } from "react";
 import { api, type BackupSummary, type PersonalSettings, type Entry } from "../api/client";
 import BackupCenter from "../components/BackupCenter";
 import PersonalCenter from "../components/PersonalCenter";
@@ -19,8 +21,24 @@ function displayTime(value: string, locale: string, fallback: string) {
   return Number.isNaN(parsed.valueOf()) ? fallback : parsed.toLocaleString(locale === "zh" ? "zh-CN" : "en-US");
 }
 
-export default function SecurityRecovery({ onOpen }: { onOpen: (entry: Entry) => void }) {
-  const { locale } = useI18n();
+export default function SecurityRecovery({ onOpen, onDirtyChange, onSavingChange, task, onTaskChange: setTask }: {
+  task: string; onTaskChange: (value: string) => void;
+  onOpen: (entry: Entry) => void; onDirtyChange: (value: boolean) => void; onSavingChange: (value: boolean) => void;
+}) {
+  const [pendingTask, setPendingTask] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onSavingChange(busy); }, [busy, onSavingChange]);
+  useEffect(() => () => { onDirtyChange(false); onSavingChange(false); }, [onDirtyChange, onSavingChange]);
+  const navigate = (next: string) => {
+    if (next === task || busy) return;
+    if (dirty) { setPendingTask(next); return; }
+    setTask(next);
+  };
+  useEffect(() => { content.current?.focus(); }, [task]);
+  const { locale, t } = useI18n();
   const zh = locale === "zh";
   const [settings, setSettings] = useState<PersonalSettings | null>(null);
   const [backups, setBackups] = useState<BackupSummary | null>(null);
@@ -36,7 +54,7 @@ export default function SecurityRecovery({ onOpen }: { onOpen: (entry: Entry) =>
       setSettings(nextSettings);
       setBackups(withStoredBackupStatus(nextBackups, nextSettings));
     } catch {
-      setError(zh ? "无法读取安全与备份状态，请重试。" : "Security and backup status could not be loaded. Try again.");
+      setError(t("SecurityRecovery.securityAndBackupStatusCouldNotBe"));
     }
   }, [zh]);
 
@@ -47,43 +65,56 @@ export default function SecurityRecovery({ onOpen }: { onOpen: (entry: Entry) =>
   }, [load]);
 
   const health = backups?.health;
-  const noValue = zh ? "尚未设置" : "Not set";
-  const never = zh ? "尚未备份" : "No backup yet";
+  const noValue = t("SecurityRecovery.notSet");
+  const never = t("SecurityRecovery.noBackupYet");
   const verification = health?.last_verification_status === "passed"
-    ? (zh ? "通过" : "Passed")
+    ? (t("SecurityRecovery.passed"))
     : health?.last_verification_status === "failed"
-      ? (zh ? "失败" : "Failed")
-      : (zh ? "未验证" : "Not verified");
+      ? (t("SecurityRecovery.failed"))
+      : (t("SecurityRecovery.notVerified"));
 
   return (
     <div className="card">
-      <h2>{zh ? "安全与恢复" : "Security & recovery"}</h2>
+      <h2>{t("SecurityRecovery.securityRecovery")}</h2>
       <p className="page-lead">
-        {zh ? "先查看保护状态，再按需要调整设置或执行恢复。" : "Review protection status first, then change settings or start a recovery only when needed."}
+        {t("SecurityRecovery.reviewProtectionStatusFirstThenChangeSettings")}
       </p>
-      <nav className="section-nav" aria-label={zh ? "安全与恢复分区" : "Security and recovery sections"}>
-        <a href="#security-status-heading">{zh ? "概览" : "Overview"}</a><a href="#password-health-heading">{zh ? "密码检查" : "Password check"}</a><a href="#personal-security-heading">{zh ? "自动保护" : "Automatic protection"}</a><a href="#backup-center-heading">{zh ? "备份" : "Backups"}</a><a href="#recovery-heading">{zh ? "恢复" : "Recovery"}</a><a href="#transfer-heading">{zh ? "导入与导出" : "Import and export"}</a>
-      </nav>
+      <TaskNavigation label={t("SecurityRecovery.securityAndRecoverySections")} current={task} busy={busy} onChange={navigate}
+        items={[
+          { id: "overview", label: t("SecurityRecovery.overview") },
+          { id: "health", label: t("SecurityRecovery.passwordCheck") },
+          { id: "protection", label: t("SecurityRecovery.automaticProtection") },
+          { id: "backups", label: t("SecurityRecovery.backups") },
+          { id: "recovery", label: t("SecurityRecovery.recovery") },
+          { id: "transfer", label: t("SecurityRecovery.importAndExport") },
+        ]} />
+      <div ref={content} className="task-content" tabIndex={-1}>
+      {task === "overview" && <>
       <section className={`security-summary card ${backups ? backupHealth(backups).failed ? "security-error" : backupHealth(backups).hasBackup ? "security-ready" : "security-warning" : ""}`} aria-labelledby="security-status-heading">
-        <h3 id="security-status-heading" className="section-title">{zh ? "当前保护状态" : "Current protection status"}</h3>
+        <h3 id="security-status-heading" className="section-title">{t("SecurityRecovery.currentProtectionStatus")}</h3>
         <dl className="status-grid security-status-grid">
-          <div className="status-row"><dt>{zh ? "保险库" : "Vault"}</dt><dd>{zh ? "已加密" : "Encrypted"}</dd></div>
-          <div className="status-row"><dt>{zh ? "自动锁定" : "Auto-lock"}</dt><dd>{settings ? `${Math.round(settings.lock_after_seconds / 60)} ${zh ? "分钟" : "minutes"}` : "…"}</dd></div>
-          <div className="status-row"><dt>{zh ? "最近一次成功备份" : "Last successful backup"}</dt><dd>{displayTime(backups ? backupHealth(backups).lastSuccess : "", locale, never)}</dd></div>
-          <div className="status-row"><dt>{zh ? "自动备份位置" : "Automatic-backup location"}</dt><dd className="path-break">{health?.backup_location || noValue}</dd></div>
-          <div className={`status-row${health?.last_error_summary ? " status-row-danger" : ""}`}><dt>{zh ? "最近一次备份错误" : "Latest backup error"}</dt><dd>{health?.last_error_summary || (zh ? "没有" : "None")}</dd></div>
-          <div className="status-row"><dt>{zh ? "下次自动备份" : "Next automatic backup"}</dt><dd>{health?.auto_backup_enabled ? `${displayTime(health.next_eligible_at, locale, zh ? "应用解锁后尽快执行" : "As soon as the app is unlocked")} · ${zh ? "仅在应用解锁时执行" : "runs only while unlocked"}` : (zh ? "未启用" : "Not enabled")}</dd></div>
-          <div className="status-row"><dt>{zh ? "最新备份验证" : "Latest backup verification"}</dt><dd>{verification}{health?.last_verification_at ? ` · ${displayTime(health.last_verification_at, locale, "")}` : ""}</dd></div>
-          <div className="status-row"><dt>{zh ? "恢复包" : "Recovery kit"}</dt><dd>{health?.recovery_kit_created_at ? `${zh ? "已创建" : "Created"} · ${displayTime(health.recovery_kit_created_at, locale, "")}` : (zh ? "尚未创建" : "Not created")}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.vault")}</dt><dd>{t("SecurityRecovery.encrypted")}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.autoLock")}</dt><dd>{settings ? `${Math.round(settings.lock_after_seconds / 60)} ${t("SecurityRecovery.minutes")}` : "…"}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.lastSuccessfulBackup")}</dt><dd>{displayTime(backups ? backupHealth(backups).lastSuccess : "", locale, never)}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.automaticBackupLocation")}</dt><dd className="path-break">{health?.backup_location || noValue}</dd></div>
+          <div className={`status-row${health?.last_error_summary ? " status-row-danger" : ""}`}><dt>{t("SecurityRecovery.latestBackupError")}</dt><dd>{health?.last_error_summary || (t("SecurityRecovery.none"))}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.nextAutomaticBackup")}</dt><dd>{health?.auto_backup_enabled ? `${displayTime(health.next_eligible_at, locale, t("SecurityRecovery.asSoonAsTheAppIsUnlocked"))} · ${t("SecurityRecovery.runsOnlyWhileUnlocked")}` : (t("SecurityRecovery.notEnabled"))}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.latestBackupVerification")}</dt><dd>{verification}{health?.last_verification_at ? ` · ${displayTime(health.last_verification_at, locale, "")}` : ""}</dd></div>
+          <div className="status-row"><dt>{t("SecurityRecovery.recoveryKit")}</dt><dd>{health?.recovery_kit_created_at ? `${t("SecurityRecovery.created")} · ${displayTime(health.recovery_kit_created_at, locale, "")}` : (t("SecurityRecovery.notCreated"))}</dd></div>
         </dl>
-        {backups && !backupHealth(backups).hasBackup && <p role="status">{zh ? "尚未手动或按计划完成备份。导入、更新前自动保留的副本不能代替备份；请备份到另一块磁盘或同步文件夹并验证。" : "No backup has been created by you or by a schedule yet. Safety copies kept before imports or updates do not replace it; back up to another drive or a synced folder and verify it."}</p>}
+        {backups && !backupHealth(backups).hasBackup && <p role="status">{t("SecurityRecovery.noBackupHasBeenCreatedByYou")}</p>}
         {error && <div className="error" role="alert">{error}</div>}
-        <button type="button" className="secondary" onClick={() => void load()}>{zh ? "刷新状态" : "Refresh status"}</button>
+        <button type="button" className="secondary" onClick={() => void load()}>{t("SecurityRecovery.refreshStatus")}</button>
       </section>
-      <PayloadUpgrade />
-      <PasswordHealth onOpen={onOpen} />
-      <PersonalCenter />
-      <BackupCenter />
+      <PayloadUpgrade onDirtyChange={setDirty} onSavingChange={setBusy} />
+      </>}
+      {task === "health" && <PasswordHealth onOpen={onOpen} />}
+      {["protection", "recovery", "transfer"].includes(task) && <PersonalCenter key={task} section={task} onDirtyChange={setDirty} onSavingChange={setBusy} />}
+      {task === "backups" && <BackupCenter onDirtyChange={setDirty} onSavingChange={setBusy} />}
+      </div>
+      <DiscardChanges open={pendingTask !== null} onCancel={() => setPendingTask(null)} onConfirm={() => {
+        if (pendingTask) { setDirty(false); setTask(pendingTask); setPendingTask(null); }
+      }} />
     </div>
   );
 }

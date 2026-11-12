@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useTaskLifetime } from "./useTaskLifetime";
+import { backupMessages } from "../i18n/backup-messages";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   clearToken,
@@ -16,104 +18,7 @@ function notifyStatusChanged() {
   window.dispatchEvent(new Event("vault-security-status-changed"));
 }
 
-const copy = {
-  zh: {
-    title: "手动备份与恢复",
-    hint: "在这里立即创建一份加密备份，不会保存这个临时目录，也不会启用上方的自动备份计划。备份文件不会因恢复一次而失效，可按需重复使用。",
-    manageHistory: "管理历史备份",
-    hideHistory: "收起历史备份",
-    loading: "正在检查备份…",
-    destination: "本次手动备份的文件夹（不会启用自动备份）",
-    create: "立即创建加密备份",
-    creating: "正在创建…",
-    total: "备份总数",
-    storage: "占用空间",
-    verified: "已验证",
-    pinned: "已固定",
-    manual: "手动备份",
-    atomic: "自动恢复备份",
-    unreadable: "当前凭据无法验证",
-    pin: "固定",
-    unpin: "取消固定",
-    restorePassword: "旧备份密码（当前密码可解密时留空）",
-    restore: "恢复这个备份",
-    previewRestore: "预览恢复影响",
-    restoring: "正在恢复…",
-    restoreDone: "恢复完成，需要重新解锁。",
-    retention: "备份保留策略",
-    newest: "保留最近版本数",
-    daily: "每日保留天数",
-    weekly: "每周保留周数",
-    preview: "预览清理",
-    previewing: "正在预览…",
-    apply: "执行清理",
-    applying: "正在清理…",
-    applyConfirm: "只删除预览中列出的备份。确认执行？",
-    candidates: "可删除",
-    reclaim: "预计释放",
-    none: "还没有可管理的备份。修改密码库后会产生自动恢复备份，也可以立即创建手动备份。",
-    created: "手动加密备份已创建；自动备份设置没有改变",
-    saved: "备份固定状态已更新",
-    pruned: "备份清理已完成",
-    path: "路径",
-    format: "格式",
-    modified: "时间",
-    defaultDestination: "默认目录",
-    verifyLatest: "验证最新备份",
-    verifying: "正在验证…",
-    verificationPassed: "最新备份已通过认证和解析，当前保险库未被修改。",
-    retry: "立即重试",
-    restoreFromBackup: "从备份恢复",
-  },
-  en: {
-    title: "Manual backup and restore",
-    hint: "Create an encrypted backup now without remembering this temporary folder or enabling the automatic schedule above. The backup file is not consumed by a restore and can be reused when needed.",
-    manageHistory: "Manage backup history",
-    hideHistory: "Collapse backup history",
-    loading: "Checking backups…",
-    destination: "Folder for this manual backup (does not enable automatic backups)",
-    create: "Create encrypted backup now",
-    creating: "Creating…",
-    total: "Backups",
-    storage: "Storage",
-    verified: "Verified",
-    pinned: "Pinned",
-    manual: "Manual backup",
-    atomic: "Automatic recovery backup",
-    unreadable: "Not verified with the current credential",
-    pin: "Pin",
-    unpin: "Unpin",
-    restorePassword: "Old backup password (leave blank when the current credential works)",
-    restore: "Restore this backup",
-    previewRestore: "Preview restore impact",
-    restoring: "Restoring…",
-    restoreDone: "Restore completed. Unlock the vault again.",
-    retention: "Backup retention policy",
-    newest: "Newest versions to keep",
-    daily: "Daily retention days",
-    weekly: "Weekly retention weeks",
-    preview: "Preview cleanup",
-    previewing: "Previewing…",
-    apply: "Apply cleanup",
-    applying: "Cleaning…",
-    applyConfirm: "Only backups shown in the preview will be deleted. Continue?",
-    candidates: "Candidates",
-    reclaim: "Estimated reclaim",
-    none: "No manageable backups yet. Editing the vault creates automatic recovery backups, or create a manual backup now.",
-    created: "Manual encrypted backup created; automatic-backup settings were not changed",
-    saved: "Backup pin state updated",
-    pruned: "Backup cleanup completed",
-    path: "Path",
-    format: "Format",
-    modified: "Modified",
-    defaultDestination: "Default directory",
-    verifyLatest: "Verify latest backup",
-    verifying: "Verifying…",
-    verificationPassed: "The latest backup passed authentication and parsing. The active vault was not changed.",
-    retry: "Retry now",
-    restoreFromBackup: "Restore from backup",
-  },
-} as const;
+
 
 const defaultPolicy = {
   newest_count: 10,
@@ -130,10 +35,12 @@ function formatBytes(value: number): string {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GiB`;
 }
 
-export default function BackupCenter() {
+export default function BackupCenter({ onDirtyChange, onSavingChange }: { onDirtyChange?: (value: boolean) => void; onSavingChange?: (value: boolean) => void }) {
   const { locale } = useI18n();
-  const text = copy[locale];
-  const { showToast } = useToast();
+  const text = backupMessages[locale];
+  const alive = useTaskLifetime();
+  const { showToast: publishToast } = useToast();
+  const showToast = (message: string, type?: "success" | "error" | "info") => { if (alive.current) publishToast(message, type); };
   const [summary, setSummary] = useState<BackupSummary | null>(null);
   const [destination, setDestination] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
@@ -143,17 +50,22 @@ export default function BackupCenter() {
   const [error, setError] = useState("");
   const [showHistory, setShowHistory] = useState(false);
   const [restorePlan, setRestorePlan] = useState<BackupRestorePreview | null>(null);
+  const activeRestoreToken = useRef<string | null>(null);
+  useEffect(() => () => { if (activeRestoreToken.current) void api.cancelBackupRestore(activeRestoreToken.current).catch(() => {}); }, []);
   const [confirmCleanup, setConfirmCleanup] = useState(false);
 
+  useEffect(() => { onDirtyChange?.(Boolean(destination || restorePassword || restorePlan || plan) || JSON.stringify(policy) !== JSON.stringify(defaultPolicy)); onSavingChange?.(busy !== null); });
+  useEffect(() => () => { onDirtyChange?.(false); onSavingChange?.(false); }, [onDirtyChange, onSavingChange]);
   const load = useCallback(async () => {
     setBusy("load");
     setError("");
     try {
-      setSummary(await api.backups());
+      const next = await api.backups();
+      if (alive.current) setSummary(next);
     } catch (err) {
-      setError(String(err).replace(/^Error:\s*/, ""));
+      if (alive.current) setError(String(err).replace(/^Error:\s*/, ""));
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }, []);
 
@@ -168,17 +80,18 @@ export default function BackupCenter() {
     setError("");
     try {
       const result = await api.createBackup(destination.trim() || undefined);
+      if (!alive.current) return;
       setSummary(result);
       setPlan(null);
       showToast(result.warning || text.created, result.warning ? "error" : "info");
       notifyStatusChanged();
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
       notifyStatusChanged();
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -187,15 +100,16 @@ export default function BackupCenter() {
     setError("");
     try {
       const result = await api.pinBackup(record.path, !record.pinned);
+      if (!alive.current) return;
       setSummary(result);
       setPlan(null);
       showToast(text.saved);
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -204,14 +118,15 @@ export default function BackupCenter() {
     setError("");
     try {
       const result = await api.pruneBackups(false, policy);
+      if (!alive.current) return;
       setPlan(result);
       setSummary(result.summary);
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -226,15 +141,16 @@ export default function BackupCenter() {
         plan.policy,
         plan.preview_token
       );
+      if (!alive.current) return;
       setPlan(result);
       setSummary(result.summary);
       showToast(text.pruned);
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -242,34 +158,39 @@ export default function BackupCenter() {
     setBusy(`restore-preview:${record.path}`);
     setError("");
     try {
-      setRestorePlan(await api.previewBackupRestore(record.path, restorePassword));
+      const preview = await api.previewBackupRestore(record.path, restorePassword);
+      if (!alive.current) { void api.cancelBackupRestore(preview.preview_token).catch(() => {}); return; }
+      activeRestoreToken.current = preview.preview_token;
+      setRestorePlan(preview);
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
   async function restore() {
     if (!restorePlan) return;
     const plan = restorePlan;
+    activeRestoreToken.current = null;
     setRestorePlan(null);
     setBusy(`restore:${plan.backup.path}`);
     setError("");
     try {
       await api.applyBackupRestore(plan.preview_token, restorePassword, true);
+      if (!alive.current) return;
       showToast(text.restoreDone);
       setRestorePassword("");
       clearToken();
       window.location.reload();
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -278,16 +199,17 @@ export default function BackupCenter() {
     setError("");
     try {
       const result = await api.verifyBackup();
+      if (!alive.current) return;
       showToast(result.warning || text.verificationPassed, result.warning ? "error" : "info");
       await load();
       notifyStatusChanged();
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, "");
-      setError(message);
+      if (alive.current) setError(message);
       showToast(message, "error");
       notifyStatusChanged();
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -495,11 +417,12 @@ export default function BackupCenter() {
         title={text.restore}
         message={restorePlan ? `${text.modified}: ${new Date(restorePlan.backup.modified_at).toLocaleString()} · ${text.path}: ${restorePlan.backup.path} · ${text.format}: ${restorePlan.backup.format}. ${restorePlan.impact}` : ""}
         confirmLabel={text.restore}
-        cancelLabel={locale === "zh" ? "取消" : "Cancel"}
+        cancelLabel={text.cancel}
         variant="danger"
         onConfirm={() => void restore()}
         onCancel={() => {
           if (restorePlan) void api.cancelBackupRestore(restorePlan.preview_token).catch(() => undefined);
+          activeRestoreToken.current = null;
           setRestorePlan(null);
           setRestorePassword("");
         }}
@@ -507,10 +430,10 @@ export default function BackupCenter() {
       <ConfirmDialog
         open={confirmCleanup}
         idPrefix="backup-cleanup-confirm"
-        title={locale === "zh" ? "执行备份清理？" : "Apply backup cleanup?"}
+        title={text.cleanupTitle}
         message={text.applyConfirm}
         confirmLabel={text.apply}
-        cancelLabel={locale === "zh" ? "取消" : "Cancel"}
+        cancelLabel={text.cancel}
         variant="danger"
         onConfirm={() => void applyCleanup()}
         onCancel={() => setConfirmCleanup(false)}

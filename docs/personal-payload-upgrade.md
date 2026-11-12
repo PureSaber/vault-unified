@@ -1,12 +1,12 @@
 # Personal payload upgrade
 
-Open **Security & recovery → Personal vault data format → Review upgrade**.
+Open **Security & recovery → Overview → Personal vault data format → Review upgrade**.
 Review the entry count and choose **Back up and upgrade**. Cancel leaves the
 vault untouched. On success, unlock again. The backup list contains a pinned,
 authenticated copy of the complete pre-upgrade encrypted file.
 
-升级入口：**安全与恢复 → 个人版数据格式 → 查看升级**。确认条目数量后选择
-**备份并升级**，完成后重新解锁。取消不会写入。升级前备份可在下方的
+升级入口：**安全与恢复 → 概览 → 个人版数据格式 → 查看升级**。确认条目数量后选择
+**备份并升级**，完成后重新解锁。取消不会写入。升级前备份可在“备份”子页的
 **管理历史备份**中找到，默认固定保留。
 
 ## Compatibility

@@ -35,7 +35,12 @@ The unlocked workspace has five destinations, plus quick search and immediate lo
 
 ## Security & recovery
 
-Auto-lock, encrypted backup, backup validation and restore, backup history, and the emergency recovery package share one destination. The page starts with conclusions, navigation links to its sections, and recommended actions. Internal atomic-write copies do not count as verified independent backups. Enabling automatic backup does not dismiss the reminder until a verified backup exists. File paths, hashes, retention classes, and historical backup administration remain inside **Manage backup history** or a technical-details disclosure.
+Auto-lock, encrypted backup, backup validation and restore, backup history, and the emergency recovery package share one destination. It opens with an Overview, followed by task navigation for Password check, Automatic protection, Backups, Recovery, and Import and export. Only the selected task renders; unsaved settings and previews require a discard decision before leaving. The selected task is remembered until lock. Internal atomic-write copies do not count as verified independent backups. Enabling automatic backup does not dismiss the reminder until a verified backup exists. File paths, hashes, retention classes, and historical backup administration remain inside **Manage backup history** or a technical-details disclosure.
+
+Sharing uses separate Limited shares, Family vaults, Connection, and Pending changes
+pages. The connection form requires an explicit save; changing tasks preserves the
+selected account/family context while requiring confirmation before discarding a draft.
+Settings cards identify immediately applied preferences and explicit-save forms.
 
 Three artifacts must remain distinct:
 

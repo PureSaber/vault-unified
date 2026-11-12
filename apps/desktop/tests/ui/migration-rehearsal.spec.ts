@@ -24,6 +24,7 @@ for (const locale of ["en", "zh"] as const) test(`rehearse and move to an indepe
     await page.getByRole("button", { name: zh ? "保存" : "Save", exact: true }).click();
     await expect(page.getByRole("button", { name: zh ? "打开 Generated portable account" : "Open Generated portable account", exact: true })).toBeVisible();
     await page.getByRole("button", { name: zh ? "安全与恢复" : "Security & recovery", exact: true }).click();
+    await page.locator("nav.section-nav").getByRole("button", { name: zh ? "恢复" : "Recovery", exact: true }).click();
     await page.getByRole("button", { name: zh ? "创建恢复包" : "Create recovery kit", exact: true }).click();
     const codeField = page.getByLabel(zh ? "恢复码（请立即离线记录）" : "Recovery code (record offline now)", { exact: true });
     await expect(codeField).toBeVisible();

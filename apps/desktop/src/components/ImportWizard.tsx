@@ -47,7 +47,7 @@ function classificationLabel(item: ImportPreviewItem, zh: boolean): string {
   return zh ? "无法导入，默认跳过" : "Cannot import; skipped by default";
 }
 
-export default function ImportWizard({ initialSource = "auto", onDone }: { initialSource?: ImportSource; onDone?: () => void }) {
+export default function ImportWizard({ initialSource = "auto", onDone, onDirtyChange, onSavingChange }: { initialSource?: ImportSource; onDone?: () => void; onDirtyChange?: (value: boolean) => void; onSavingChange?: (value: boolean) => void }) {
   const { locale } = useI18n();
   const { showToast } = useToast();
   const zh = locale === "zh";
@@ -65,6 +65,8 @@ export default function ImportWizard({ initialSource = "auto", onDone }: { initi
   const [reviewed, setReviewed] = useState(false);
   const [previewPage, setPreviewPage] = useState(0);
 
+  useEffect(() => { onDirtyChange?.(Boolean(preview) || uncertainOutcome); onSavingChange?.(busy); });
+  useEffect(() => () => { onDirtyChange?.(false); onSavingChange?.(false); }, [onDirtyChange, onSavingChange]);
   useEffect(() => () => {
     operation.current += 1;
     const token = activePreviewToken.current;

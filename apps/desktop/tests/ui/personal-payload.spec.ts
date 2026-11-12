@@ -31,6 +31,7 @@ for (const locale of ["en", "zh"]) {
       await page.getByRole("button", { name: zh ? "安全与恢复" : "Security & recovery", exact: true }).click();
       await expect(page.getByText(zh ? "已启用个人版数据格式。" : "Personal vault data format is enabled.", { exact: true })).toBeVisible();
       await expect(review).toHaveCount(0);
+      await page.locator("nav.section-nav").getByRole("button", { name: zh ? "备份" : "Backups", exact: true }).click();
       await page.getByRole("button", { name: zh ? "管理历史备份" : "Manage backup history", exact: true }).click();
       await expect(page.getByRole("button", { name: zh ? "取消固定" : "Unpin", exact: true })).toHaveCount(1);
     } finally { await sidecar.stop(); }

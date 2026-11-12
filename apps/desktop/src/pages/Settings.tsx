@@ -1,5 +1,6 @@
+import SettingsCard from "../components/SettingsCard";
 import packageMetadata from "../../package.json";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useI18n, type Locale } from "../i18n";
 import { saveDesktopPreferences, type DesktopPreferences, type DesktopStatus } from "../desktop";
 import HelloSettings from "../components/HelloSettings";
@@ -11,12 +12,18 @@ export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: {
   const { theme, setTheme } = useAppearance();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const zh = locale === "zh";
+  const [saved, setSaved] = useState(false);
+  const [updatesBusy, setUpdatesBusy] = useState(false);
+  const [helloBusy, setHelloBusy] = useState(false);
+  const alive = useRef(true);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  useEffect(() => { onBusy(saving || updatesBusy || helloBusy); }, [saving, updatesBusy, helloBusy, onBusy]);
+  useEffect(() => () => onBusy(false), [onBusy]);
   async function update(preferences: DesktopPreferences) {
-    setSaving(true); setError("");
-    try { onDesktopChange(await saveDesktopPreferences(preferences)); }
-    catch (reason) { setError(String(reason).includes("shortcut_unavailable") ? (zh ? "该快捷键已被占用，请选择其他组合。" : "This shortcut is in use. Choose another combination.") : (zh ? "设置未能保存，请重试。" : "Could not save settings. Try again.")); }
-    finally { setSaving(false); }
+    setSaving(true); setError(""); setSaved(false);
+    try { const next = await saveDesktopPreferences(preferences); if (alive.current) { onDesktopChange(next); setSaved(true); } }
+    catch (reason) { if (alive.current) setError(String(reason).includes("shortcut_unavailable") ? (t("Settings.thisShortcutIsInUseChooseAnother")) : (t("Settings.couldNotSaveSettingsTryAgain"))); }
+    finally { if (alive.current) setSaving(false); }
   }
 
   return (
@@ -24,10 +31,7 @@ export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: {
       <h2>{t("settings.title")}</h2>
       <p className="field-hint">{t("settings.simpleHint")}</p>
 
-      <section className="settings-section" aria-labelledby="locale-heading">
-        <h3 id="locale-heading" className="section-title">
-          {t("settings.language")}
-        </h3>
+      <SettingsCard id="locale-heading" title={t("settings.language")} mode="immediate">
         <div className="field">
           <label className="field-label" htmlFor="settings-locale">
             {t("lang.label")}
@@ -41,38 +45,35 @@ export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: {
             <option value="en">{t("lang.en")}</option>
           </select>
         </div>
-      </section>
+      </SettingsCard>
 
-      <section className="settings-section" aria-labelledby="appearance-heading">
-        <h3 id="appearance-heading" className="section-title">{zh ? "外观" : "Appearance"}</h3>
-        <div className="field"><label className="field-label" htmlFor="settings-theme">{zh ? "主题" : "Theme"}</label>
+      <SettingsCard id="appearance-heading" title={t("Settings.appearance")} mode="immediate">
+        <div className="field"><label className="field-label" htmlFor="settings-theme">{t("Settings.theme")}</label>
           <select id="settings-theme" value={theme} onChange={event => setTheme(event.target.value as "system" | "light" | "dark")}>
-            <option value="system">{zh ? "跟随系统" : "Use system setting"}</option><option value="light">{zh ? "浅色" : "Light"}</option><option value="dark">{zh ? "深色" : "Dark"}</option>
+            <option value="system">{t("Settings.useSystemSetting")}</option><option value="light">{t("Settings.light")}</option><option value="dark">{t("Settings.dark")}</option>
           </select>
         </div>
-      </section>
+      </SettingsCard>
 
-      {desktop && <section className="settings-section" aria-labelledby="desktop-heading">
-        <h3 id="desktop-heading" className="section-title">{zh ? "快捷搜索与托盘" : "Quick search and tray"}</h3>
-        <p className="field-hint">{zh ? "在任意应用中唤起搜索。窗口内也可使用 Ctrl+K。" : "Open search from any application. Ctrl+K also works inside the window."}</p>
-        <div className="field"><label className="field-label" htmlFor="desktop-shortcut">{zh ? "全局快捷键" : "Global shortcut"}</label>
+      {desktop && <SettingsCard id="desktop-heading" title={t("Settings.quickSearchAndTray")} mode="immediate" state={saving ? "saving" : error ? "error" : saved ? "saved" : undefined}>
+        <p className="field-hint">{t("Settings.openSearchFromAnyApplicationCtrlK")}</p>
+        <div className="field"><label className="field-label" htmlFor="desktop-shortcut">{t("Settings.globalShortcut")}</label>
           <select id="desktop-shortcut" disabled={saving} value={desktop.preferences.shortcut} onChange={event => void update({ ...desktop.preferences, shortcut: event.target.value })}>
-            <option value="Control+Shift+Space">Ctrl+Shift+Space</option><option value="Control+Alt+KeyV">Ctrl+Alt+V</option><option value="Control+Shift+KeyY">Ctrl+Shift+Y</option><option value="">{zh ? "关闭" : "Off"}</option>
+            <option value="Control+Shift+Space">Ctrl+Shift+Space</option><option value="Control+Alt+KeyV">Ctrl+Alt+V</option><option value="Control+Shift+KeyY">Ctrl+Shift+Y</option><option value="">{t("Settings.off")}</option>
           </select>
         </div>
-        {desktop.preferences.shortcut && !desktop.shortcut_registered && <p role="status">{zh ? "当前快捷键不可用，请更换组合。" : "The current shortcut is unavailable. Choose another combination."}</p>}
-        <label className="checkbox-field"><input type="checkbox" checked={desktop.preferences.close_to_tray} disabled={saving || !desktop.tray_available} onChange={event => void update({ ...desktop.preferences, close_to_tray: event.target.checked })} /><span>{zh ? "关闭主窗口时收起到托盘" : "Keep running in the tray when the window closes"}</span></label>
-        {!desktop.tray_available && <p role="status">{zh ? "托盘不可用，关闭窗口会退出应用。" : "The tray is unavailable; closing the window quits the app."}</p>}
-        <p className="field-hint">{zh ? "收起后仍按设定时间自动锁定。需要完全退出时，使用托盘菜单或下方按钮。" : "Auto-lock stays active while hidden. Use the tray menu or the button below to quit."}</p>
-        <p className="field-hint">{zh ? "Windows 锁屏或休眠会立即锁定密码库并清除未保存的草稿。恢复后需要重新解锁。" : "Windows lock or sleep locks the vault and clears unsaved drafts. Unlock again after resuming."}</p>
+        {desktop.preferences.shortcut && !desktop.shortcut_registered && <p role="status">{t("Settings.theCurrentShortcutIsUnavailableChooseAnother")}</p>}
+        <label className="checkbox-field"><input type="checkbox" checked={desktop.preferences.close_to_tray} disabled={saving || !desktop.tray_available} onChange={event => void update({ ...desktop.preferences, close_to_tray: event.target.checked })} /><span>{t("Settings.keepRunningInTheTrayWhenThe")}</span></label>
+        {!desktop.tray_available && <p role="status">{t("Settings.theTrayIsUnavailableClosingTheWindow")}</p>}
+        <p className="field-hint">{t("Settings.autoLockStaysActiveWhileHiddenUse")}</p>
+        <p className="field-hint">{t("Settings.windowsLockOrSleepLocksTheVault")}</p>
         {error && <p className="error" role="alert">{error}</p>}
-        <button type="button" className="secondary" onClick={onExit}>{zh ? "退出 Vault Unified" : "Quit Vault Unified"}</button>
-      </section>}
+        <button type="button" className="secondary" onClick={onExit}>{t("Settings.quitVaultUnified")}</button>
+      </SettingsCard>}
 
-      {desktop && <HelloSettings />}
-      {desktop && <DesktopUpdates preferences={desktop.preferences} onPreferences={update} onBusy={onBusy} />}
-      <section className="settings-section" aria-labelledby="about-heading">
-        <h3 id="about-heading" className="section-title">{t("settings.about")}</h3>
+      {desktop && <HelloSettings onBusy={setHelloBusy} />}
+      {desktop && <DesktopUpdates preferences={desktop.preferences} onPreferences={update} savingPreferences={saving} onBusy={setUpdatesBusy} />}
+      <SettingsCard id="about-heading" title={t("settings.about")}>
         <dl className="status-grid">
           <div className="status-row">
             <dt>{t("settings.product")}</dt>
@@ -87,7 +88,7 @@ export default function Settings({ desktop, onDesktopChange, onExit, onBusy }: {
             <dd>Windows</dd>
           </div>
         </dl>
-      </section>
+      </SettingsCard>
     </div>
   );
 }

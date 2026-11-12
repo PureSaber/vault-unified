@@ -91,6 +91,35 @@ def invite_member(connected, tmp_path, gid, *, role="reader"):
     return second_auth, vault, master
 
 
+def test_copy_responses_report_the_scheduled_clear_duration_without_secrets(connected, monkeypatch):
+    from vault_unified.clipboard import CLIPBOARD_CLEAR_SECONDS
+
+    runtime = connected[0]
+    client, auth = runtime[1], runtime[3]
+    vault, entry = personal(runtime)
+    copied = []
+    monkeypatch.setattr("vault_unified.api.routes.sharing.copy_to_clipboard", copied.append)
+    assert apply(client, auth, action="share", entry_id=entry.id, fields=["password"], hours=1, max_reads=1).status_code == 200
+    sid = next(iter(state_for(vault.local)["shares"]))
+    gid = family(connected)
+    invitation_result = apply(client, auth, action="invite", family_id=gid, role="reader")
+    code = invitation_result.json()["invitation"]
+    assert apply(client, auth, action="save-entry", family_id=gid, values={"title": "Generated shared account", "username": "generated", "password": entry.password, "url": "", "notes": ""}).status_code == 200
+    eid = client.get(f"/api/sharing/families/{gid}", headers=auth).json()["entries"][0]["id"]
+
+    for path, body in [
+        (f"/api/sharing/shares/{sid}/copy", {"confirm": True}),
+        ("/api/sharing/invitations/copy", {"confirm": True, "code": code}),
+        (f"/api/sharing/families/{gid}/entry/{eid}/copy/password", {"confirm": True}),
+    ]:
+        response = client.post(path, headers=auth, json=body)
+        assert response.status_code == 200
+        assert response.json() == {"copied": True, "clears_in_seconds": CLIPBOARD_CLEAR_SECONDS}
+    assert len(copied) == 3
+    assert copied[1] == code
+    assert copied[2] == entry.password
+
+
 def test_cancel_stale_preview_and_field_selection_do_not_leak_personal_data(connected):
     runtime, remote, store, _, calls, credentials = connected
     client, auth = runtime[1], runtime[3]; vault, entry = personal(runtime)

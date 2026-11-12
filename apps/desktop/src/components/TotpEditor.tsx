@@ -1,3 +1,4 @@
+import { useTaskLifetime } from "./useTaskLifetime";
 import { useEffect, useRef, useState } from "react";
 import { api, type TotpCode } from "../api/client";
 import { useI18n } from "../i18n";
@@ -7,6 +8,7 @@ import { useToast } from "./Toast";
 interface Props { value: string; onChange: (value: string) => void; savedValue?: string; entryId?: string }
 
 export default function TotpEditor({ value, onChange, savedValue, entryId }: Props) {
+  const alive = useTaskLifetime();
   const { locale } = useI18n();
   const zh = locale === "zh";
   const { showToast } = useToast();
@@ -71,8 +73,8 @@ export default function TotpEditor({ value, onChange, savedValue, entryId }: Pro
   }
   async function copyCode() {
     if (!entryId || savedValue !== value) return;
-    try { const copied = await api.copyTotp(entryId); showToast(zh ? `验证码已复制，${copied.clears_in_seconds} 秒后清除剪贴板` : `Code copied; clipboard clears in ${copied.clears_in_seconds} seconds`); }
-    catch { showToast(zh ? "复制失败，请重试" : "Could not copy. Try again.", "error"); }
+    try { await api.copyTotp(entryId); }
+    catch { if (alive.current) showToast(zh ? "复制失败，请重试" : "Could not copy. Try again.", "error"); }
   }
   const remaining = result ? Math.max(0, Math.ceil((result.deadline - clock) / 1000)) : 0;
   return <section className="settings-section" aria-labelledby="entry-totp-heading">

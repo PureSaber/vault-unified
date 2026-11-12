@@ -119,6 +119,11 @@ installed over the daily application or accessed an existing user vault.
 
 ## Handoff proposals reserved for subsequent slices
 
+Historical status below describes the original October refresh. The November
+issue #93 finishing pass delivers task-page text catalogs, live clipboard feedback,
+security/sharing task pages, editor section ordering and explicit save/leave
+feedback; see [UI/UX finishing pass](uiux-finish-93.md) for its scope and evidence.
+
 The HTML is a design backlog, not a claim that every one of its 25 proposals is in
 this diff. Full extraction of legacy inline strings, Hello onboarding, a combined
 pairing-code format, security/sharing subpage separation, a new settings-save model,

@@ -1,0 +1,29 @@
+{
+  "screenshots": [
+    "01-settings-zh.png",
+    "01-settings-en.png",
+    "02-copy-now.png",
+    "02-copy-countdown.png",
+    "04-editor-default-window.png",
+    "04-editor-order.png",
+    "03-security-overview.png",
+    "03-security-recovery.png",
+    "03-security-backups.png",
+    "05-protection-saved.png",
+    "05-protection-unsaved.png",
+    "05-leave-confirm.png",
+    "05-protection-after-save.png",
+    "03-sharing-links.png",
+    "03-sharing-family.png",
+    "03-sharing-connection.png",
+    "05-settings-dark.png"
+  ],
+  "source": "real renderer and isolated generated sidecar",
+  "clipboard": {
+    "initial": 45,
+    "later": 43
+  },
+  "viewport": "1000x700; editor-order 1000x1100",
+  "generatedDataOnly": true,
+  "accessibilitySeriousCritical": 0
+}
