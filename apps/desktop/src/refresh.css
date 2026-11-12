@@ -52,6 +52,8 @@ a { color: var(--color-link); }
 .vault-list-panel .page-heading-row .button-row > button:first-child:nth-last-child(3) { order: 3; width: 100%; justify-content: flex-start; padding-left: 0; border: 0; background: none; color: var(--color-text-muted); font-size: 11px; }
 .vault-list-panel .list-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) 85px; gap: 6px; margin-bottom: 10px; }
 .vault-list-panel .list-toolbar input, .vault-list-panel .list-toolbar select { min-width: 0; font-size: 12px; padding: 7px 8px; }
+/* The compact grid owns the width; do not inherit the legacy 12rem select. */
+.vault-list-panel .list-toolbar select { width: 100%; }
 .vault-list-panel > details.card { border: 0; border-bottom: 1px solid var(--color-border); background: none; padding: 0 0 12px; margin-bottom: 8px; border-radius: 0; font-size: 12px; }
 .vault-list-panel > details.card > summary { color: var(--color-text-secondary); padding: 4px 0; }
 .vault-list-panel > details.card[open] .button-row { gap: 8px; }
