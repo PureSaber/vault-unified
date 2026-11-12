@@ -16,17 +16,49 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
   const server = zh ? await generatedWebDAV("generated-user", testData.entryPassword) : null;
   const source = await startGeneratedSidecar(page, { personalSync: true });
   const other = await page.context().newPage(); other.setDefaultTimeout(15_000);
+  // Allowlisted metadata only: never log URLs, headers, bodies, DOM text or secrets.
+  const diagnostics: Record<string, string | number | boolean>[] = [];
+  const epoch = Date.now();
+  const record = (value: Record<string, string | number | boolean>) => {
+    if (diagnostics.length < 500) diagnostics.push({ ms: Date.now() - epoch, ...value });
+  };
+  const pendingRequests = new Map<object, { device: string; operation: string; start: number }>();
+  const operations = new Map([
+    ["/api/auth/create", "create"], ["/api/auth/unlock", "unlock"],
+    ["/api/personal-sync/preview", "preview"], ["/api/personal-sync/connect", "connect"],
+    ["/api/personal-sync/status", "status"], ["/api/personal-sync/run", "sync"],
+  ]);
+  for (const [device, target] of [["first", page], ["second", other]] as const) {
+    target.on("request", request => {
+      const operation = operations.get(new URL(request.url()).pathname);
+      if (!operation) return;
+      pendingRequests.set(request, { device, operation, start: Date.now() });
+      record({ device, operation, event: "request" });
+    });
+    target.on("response", response => {
+      const request = pendingRequests.get(response.request());
+      if (request) record({ device, operation: request.operation, event: "response", status: response.status(), elapsed: Date.now() - request.start });
+    });
+    target.on("requestfinished", request => { pendingRequests.delete(request); });
+    target.on("requestfailed", request => {
+      const pending = pendingRequests.get(request);
+      if (pending) record({ device, operation: pending.operation, event: "request-failed", elapsed: Date.now() - pending.start });
+      pendingRequests.delete(request);
+    });
+  }
   let destination: Awaited<ReturnType<typeof startGeneratedSidecar>> | undefined;
   const text = (en: string, chinese: string) => zh ? chinese : en;
   const title = "Generated synchronized account";
   const section = (target: Page) => target.getByRole("region", { name: text("Full vault sync between computers", "多电脑完整同步"), exact: true });
   async function create(target: Page) {
+    record({ device: target === page ? "first" : "second", stage: "create-start" });
     await target.addInitScript(value => localStorage.setItem("vault_locale", value), locale);
     await target.goto("/");
     await target.getByLabel(text("Master password", "主密码"), { exact: true }).fill(testData.masterPassword);
     await target.getByLabel(text("Confirm master password", "再次输入主密码"), { exact: true }).fill(testData.masterPassword);
     await target.getByRole("button", { name: text("Create and unlock", "创建并解锁"), exact: true }).click();
     await expect(target.getByRole("button", { name: text("Connections", "连接"), exact: true })).toBeVisible();
+    record({ device: target === page ? "first" : "second", stage: "create-ready" });
   }
   async function connections(target: Page) { await target.getByRole("button", { name: text("Connections", "连接"), exact: true }).click(); }
   async function setup(target: Page, label: string, code = "") {
@@ -49,9 +81,11 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
     await expect(box.getByRole("region", { name: text("Sync connection preview", "同步连接预览"), exact: true })).toBeVisible();
   }
   async function apply(target: Page) {
+    record({ device: target === page ? "first" : "second", stage: "connect-start" });
     await section(target).getByRole("button", { name: text("Connect and apply", "连接并应用"), exact: true }).click();
     await target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click();
     await expect(section(target).getByRole("button", { name: text("Sync now", "立即同步"), exact: true })).toBeVisible();
+    record({ device: target === page ? "first" : "second", stage: "connect-ready" });
   }
   async function sync(target: Page) {
     const response = target.waitForResponse(value => value.url().endsWith("/personal-sync/run") && value.request().postDataJSON()?.automatic === false);
@@ -149,8 +183,18 @@ for (const locale of ["en", "zh"] as const) test(`two computers join, reconcile 
       await target.getByRole("button", { name: text("Lock now", "立即锁定"), exact: true }).click();
       await expect(target.getByLabel(text("Master password", "主密码"), { exact: true })).toBeVisible();
     }
+  } catch (error) {
+    for (const [device, target] of [["first", page], ["second", other]] as const) {
+      if (!target.isClosed()) {
+        const visible = await target.evaluate(() => ({ hidden: document.hidden, focused: document.hasFocus(), alerts: document.querySelectorAll('[role="alert"]').length })).catch(() => null);
+        if (visible) record({ device, stage: "failure-state", ...visible });
+      }
+    }
+    for (const request of pendingRequests.values()) record({ device: request.device, operation: request.operation, event: "still-pending", elapsed: Date.now() - request.start });
+    throw error;
   } finally {
     const stopped = await Promise.allSettled([destination?.stop(), source.stop()]);
+    console.log("[sync-diagnostics] " + JSON.stringify({ locale, repeat: testInfo.repeatEachIndex, retry: testInfo.retry, events: diagnostics }));
     await other.close(); await server?.stop();
     const target = resolve(folder);
     if (dirname(target) !== resolve(tmpdir()) || !basename(target).startsWith("vault-sync-generated-")) throw new Error("Generated sync folder cleanup boundary failed");
