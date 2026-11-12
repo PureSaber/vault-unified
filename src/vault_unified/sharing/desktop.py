@@ -36,6 +36,13 @@ def state_for(local):
     return state
 
 
+def state_snapshot(local):
+    """Bind a detached sharing state to the generation it was read from."""
+    with local._lock:
+        generation = local.generation
+        return generation, state_for(local)
+
+
 def invitation(value):
     try:
         prefix, encoded = value.strip().split(".")
@@ -78,7 +85,7 @@ class DesktopSharing:
         server = service_url(server)
         if admin and not 32 <= len(admin) <= 256: raise SharingError("Enter the administration token from your sharing service")
         with self.context(token) as (vault, check):
-            generation = vault.local.generation; state = state_for(vault.local)
+            generation, state = state_snapshot(vault.local)
             state["identity"] = state["identity"] or new_identity(); state["service"] = server
             backend = self.backend_factory(); account = self.admin_account(vault.local, server)
             old = backend.get_password(CREDENTIAL_SERVICE, account)
@@ -123,9 +130,9 @@ class DesktopSharing:
 
     def refresh(self, token, gid):
         with self.context(token) as (vault, check):
-            state = state_for(vault.local); item = state["families"].get(identifier(gid))
+            generation, state = state_snapshot(vault.local)
+            item = state["families"].get(identifier(gid))
             if not item: raise SharingError("Shared vault is not connected")
-            generation = vault.local.generation
             remote = self.remote(vault, state, item["server"], check)
             try:
                 if item.get("pending"):
@@ -156,7 +163,7 @@ class DesktopSharing:
 
     def preview(self, token, options):
         with self.context(token) as (vault, check):
-            generation = vault.local.generation; state = state_for(vault.local)
+            generation, state = state_snapshot(vault.local)
             action, gid = options["action"], options.get("family_id", "")
             if options.get("replace_pending_id") and action != "save-entry": raise SharingError("Only an account draft can replace a pending proposal")
             title, details, server = "", [], state["service"]
@@ -219,8 +226,9 @@ class DesktopSharing:
         with self.context(token) as (vault, check):
             intent = restore_preview_store.consume(preview_token, scope=token, kind="sharing")
             if intent.source_sha256 != canonical_digest(options): raise SharingError("Sharing selection changed after preview")
-            if vault.local.generation != intent.active_generation: raise EntryTransactionConflict("Vault changed after sharing preview")
-            state = state_for(vault.local); state["identity"] = state["identity"] or new_identity()
+            generation, state = state_snapshot(vault.local)
+            if generation != intent.active_generation: raise EntryTransactionConflict("Vault changed after sharing preview")
+            state["identity"] = state["identity"] or new_identity()
             action = options["action"]; oid = uuid4().hex; now = int(time.time())
             op = {"action": action, "server": state["service"], "creation": False, "family": options.get("family_id", ""), "title": options.get("name", "")}
             if action == "share":
@@ -284,9 +292,9 @@ class DesktopSharing:
 
     def retry(self, token, oid):
         with self.context(token) as (vault, check):
-            state = state_for(vault.local); op = state["outbox"].get(identifier(oid))
+            generation, state = state_snapshot(vault.local)
+            op = state["outbox"].get(identifier(oid))
             if not op: raise SharingError("Pending sharing operation no longer exists")
-            generation = vault.local.generation
             remote = self.remote(vault, state, op["server"], check, creation=op["creation"])
             try: result = remote.post(op["path"], op["payload"], creation=op["creation"])
             except RemoteError as error:
@@ -321,13 +329,13 @@ class DesktopSharing:
 
     def discard(self, token, oid):
         with self.context(token) as (vault, _):
-            state = state_for(vault.local); generation = vault.local.generation
+            state = state_for(vault.local)
             op = state["outbox"].get(identifier(oid))
             if not op: return {"discarded": True}
             if op.get("share"): raise SharingError("Revoke the pending share before discarding it")
             # Remote success may have preceded a lost response; refresh before discarding.
             if op["family"] and op["action"] not in {"join-family", "create-family"}: self.refresh(token, op["family"])
-            generation = vault.local.generation; state = state_for(vault.local)
+            generation, state = state_snapshot(vault.local)
             state["outbox"].pop(oid, None)
             self.commit(token, vault, generation, state)
             return {"discarded": True}

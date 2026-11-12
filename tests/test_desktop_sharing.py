@@ -2,6 +2,8 @@ import copy
 import json
 import secrets
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -9,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from test_system_session_lock import runtime
 from vault_unified.api.routes.sharing import Options
-from vault_unified.local_store import LocalVault
+from vault_unified.local_store import LocalVault, EntryTransactionConflict
 from vault_unified.models import SecretEntry
 from vault_unified.session import sessions
 from vault_unified.sharing.client import RemoteError, approve_proposal, verify_family, verify_join_request
@@ -160,6 +162,81 @@ def test_lost_create_response_and_restart_retry_are_idempotent(connected):
     assert client.post(f"/api/sharing/pending/{oid}/retry", headers=auth, json={"confirm": True}).status_code == 200
     assert state_for(vault.local)["outbox"] == {}
     with store.connect() as db: assert db.execute("SELECT COUNT(*) FROM shares").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("operation", ["refresh", "retry"])
+def test_sharing_snapshot_cannot_erase_an_interleaved_committed_share(connected, monkeypatch, operation):
+    from vault_unified.sharing import desktop
+
+    runtime, remote, _, behavior, _, _ = connected
+    client, auth = runtime[1], runtime[3]
+    gid = family(connected)
+    vault, entry = personal(runtime)
+    if operation == "retry":
+        behavior["before"] = lambda _path: (_ for _ in ()).throw(RemoteError(503))
+        assert apply(client, auth, action="invite", family_id=gid).status_code == 400
+        oid = next(iter(state_for(vault.local)["outbox"]))
+        behavior["before"] = None
+
+    original = desktop.state_for
+    inserted = False
+    sid = None
+    def interleave(local):
+        nonlocal inserted, sid
+        snapshot = original(local)
+        if not inserted:
+            inserted = True
+            # Reentrant, real approved share commits exactly after the copy.
+            # This also guards against relying only on the reentrant vault lock.
+            options = Options(action="share", entry_id=entry.id, fields=["password"]).model_dump()
+            intent = sharing.preview(token(auth), options)
+            sharing.apply(token(auth), intent["preview_token"], options)
+            sid = next(iter(original(local)["shares"]))
+        return snapshot
+    monkeypatch.setattr(desktop, "state_for", interleave)
+    with pytest.raises(EntryTransactionConflict):
+        if operation == "refresh": sharing.refresh(token(auth), gid)
+        else: sharing.retry(token(auth), oid)
+    monkeypatch.setattr(desktop, "state_for", original)
+
+    item = original(vault.local)["shares"][sid]
+    assert item["phase"] == "ready"
+    assert original(LocalVault(vault.vault_path, runtime[4]))["shares"][sid] == item
+    assert apply(client, auth, action="revoke-share", entry_id=sid).status_code == 200
+    assert remote.post(f"/v1/shares/{sid}/read", json={"capability": item["payload"]["capability"]}).status_code == 410
+    assert original(LocalVault(vault.vault_path, runtime[4]))["shares"][sid]["phase"] == "revoked"
+
+
+@pytest.mark.parametrize("operation", ["refresh", "retry"])
+def test_sharing_network_wait_allows_concurrent_share_and_preserves_its_revocation(connected, operation):
+    runtime, remote, _, behavior, _, _ = connected
+    client, auth = runtime[1], runtime[3]
+    gid = family(connected)
+    vault, entry = personal(runtime)
+    if operation == "retry":
+        behavior["before"] = lambda _path: (_ for _ in ()).throw(RemoteError(503))
+        assert apply(client, auth, action="invite", family_id=gid).status_code == 400
+        oid = next(iter(state_for(vault.local)["outbox"]))
+    entered, release = Event(), Event()
+    def delay(path):
+        if path == f"/v1/families/{gid}/read":
+            entered.set()
+            assert release.wait(10)
+    behavior["before"] = delay
+    with ThreadPoolExecutor() as pool:
+        pending = pool.submit(sharing.refresh if operation == "refresh" else sharing.retry,
+                              token(auth), gid if operation == "refresh" else oid)
+        try:
+            assert entered.wait(10)
+            assert apply(client, auth, action="share", entry_id=entry.id, fields=["password"]).status_code == 200
+            sid, item = next(iter(state_for(vault.local)["shares"].items()))
+        finally:
+            release.set()
+        with pytest.raises(EntryTransactionConflict): pending.result(timeout=10)
+    behavior["before"] = None
+    assert state_for(LocalVault(vault.vault_path, runtime[4]))["shares"][sid] == item
+    assert apply(client, auth, action="revoke-share", entry_id=sid).status_code == 200
+    assert remote.post(f"/v1/shares/{sid}/read", json={"capability": item["payload"]["capability"]}).status_code == 410
 
 
 def test_cancel_pending_upload_records_remote_revocation_before_retry(connected):
