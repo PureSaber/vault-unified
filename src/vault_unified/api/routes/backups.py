@@ -35,6 +35,7 @@ from vault_unified.backup_preview import (
     backup_preview_store,
 )
 from vault_unified.manager import UnifiedVault
+from vault_unified.device_keyring import V3RollbackDetected
 from vault_unified.personal_settings import (
     BackupStatus,
     load_personal_settings,
@@ -366,7 +367,12 @@ def preview_registered_backup_restore(
 ) -> dict:
     credential = body.password or vault.local.credential
     try:
-        record = verify_backup(vault.vault_path, body.path, credential)
+        record = verify_backup(vault.vault_path, body.path, credential, for_restore=True)
+    except V3RollbackDetected as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Rollback protection rejected this backup; the active vault was not changed",
+        ) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except FileNotFoundError as exc:
@@ -430,11 +436,15 @@ def apply_registered_backup_restore(
             expected_active_sha256=intent.active_sha256,
             expected_backup_sha256=intent.source_sha256,
         )
-        UnifiedVault(vault.vault_path, credential)
+    except V3RollbackDetected as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Rollback protection rejected this backup; the active vault was not changed",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail="Backup restore failed; the previous active vault remains available",
+            detail="Backup restore failed; inspect recovery status before retrying",
         ) from exc
     sessions.lock(token)
     restore_preview_store.clear_scope(token)

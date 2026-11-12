@@ -18,6 +18,159 @@ from vault_unified.session import sessions
 BOOTSTRAP_SECRET = "backup-api-secret-0123456789abcdef"
 
 
+class MemoryKeyring:
+    def __init__(self):
+        self.records = {}
+
+    def get_password(self, service, username):
+        return self.records.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.records[(service, username)] = password
+
+    def delete_password(self, service, username):
+        self.records.pop((service, username), None)
+
+
+@pytest.fixture
+def v3_backup_api(backup_api, monkeypatch, request):
+    from vault_unified import device_keyring
+    from vault_unified.v3_crypto import create_v3_file
+
+    client, headers, vault_file, root = backup_api
+    backend = MemoryKeyring()
+    monkeypatch.setattr(device_keyring, "get_approved_backend", lambda: backend)
+    sessions._sessions.clear()
+    vault_file.unlink()
+    create_v3_file(
+        vault_file, "backup-password", {"version": 3, "entries": {}, "metadata": {}}
+    )
+    if getattr(request, "param", True):
+        device_keyring.enable_rollback_anchor(vault_file, "backup-password")
+    unlock = client.post(
+        "/api/auth/unlock",
+        json={"password": "backup-password", "remember": False},
+        headers={"X-Vault-Bootstrap": BOOTSTRAP_SECRET},
+    )
+    assert unlock.status_code == 200, unlock.text
+    headers = {**headers, "Authorization": f"Bearer {unlock.json()['token']}"}
+    return client, headers, vault_file, root, backend
+
+
+def test_restore_preview_rejects_backup_older_than_anchor_without_changes(v3_backup_api):
+    from vault_unified.models import SecretEntry
+
+    client, headers, vault_file, root, backend = v3_backup_api
+    vault = sessions.get(headers["Authorization"].removeprefix("Bearer "))
+    backup = backup_manager.create_manual_backup(vault_file, "backup-password", root / "older")
+    vault.local.add(SecretEntry(title="Keep current", password="synthetic"))
+    before = vault_file.read_bytes()
+    anchor_before = dict(backend.records)
+
+    # Authentication remains useful even when rollback protection forbids restoration.
+    verified = client.post("/api/backups/verify", headers=headers, json={"path": backup.path})
+    assert verified.status_code == 200, verified.text
+    preview = client.post(
+        "/api/backups/restore/preview", headers=headers,
+        json={"path": backup.path, "password": "backup-password"},
+    )
+
+    assert vault_file.read_bytes() == before
+    assert backend.records == anchor_before
+    reopened = UnifiedVault(vault_file, "backup-password")
+    assert {entry.title for entry in reopened.local.list_entries()} == {"Keep current"}
+    assert preview.status_code == 400, preview.text
+    assert "preview_token" not in preview.json()
+
+
+def test_restore_apply_rechecks_anchor_changed_after_preview_before_writing(v3_backup_api):
+    from vault_unified.device_keyring import verify_and_advance_rollback_anchor
+    from vault_unified.models import SecretEntry
+
+    client, headers, vault_file, root, backend = v3_backup_api
+    vault = sessions.get(headers["Authorization"].removeprefix("Bearer "))
+    backup = backup_manager.create_manual_backup(vault_file, "backup-password", root / "older")
+    old_anchor = dict(backend.records)
+    vault.local.add(SecretEntry(title="Keep current", password="synthetic"))
+    # Simulate an anchor lagging behind the current file, then catching up elsewhere.
+    backend.records = old_anchor.copy()
+    before = vault_file.read_bytes()
+    preview = client.post(
+        "/api/backups/restore/preview", headers=headers,
+        json={"path": backup.path, "password": "backup-password"},
+    )
+    assert preview.status_code == 200, preview.text
+    assert backend.records == old_anchor
+    assert verify_and_advance_rollback_anchor(vault_file, credential="backup-password")
+    advanced_anchor = dict(backend.records)
+    assert advanced_anchor != old_anchor
+    assert vault_file.read_bytes() == before
+
+    applied = client.post(
+        "/api/backups/restore/apply", headers=headers,
+        json={"preview_token": preview.json()["preview_token"],
+              "password": "backup-password", "confirm_restore": True},
+    )
+
+    assert applied.status_code == 400, applied.text
+    assert vault_file.read_bytes() == before
+    assert backend.records == advanced_anchor
+    reopened = UnifiedVault(vault_file, "backup-password")
+    assert {entry.title for entry in reopened.local.list_entries()} == {"Keep current"}
+    assert client.get("/api/entries", headers=headers).status_code == 200
+
+
+def test_restore_preview_of_newer_backup_does_not_advance_anchor(v3_backup_api):
+    from vault_unified.models import SecretEntry
+
+    client, headers, vault_file, root, backend = v3_backup_api
+    old_anchor = dict(backend.records)
+    vault = sessions.get(headers["Authorization"].removeprefix("Bearer "))
+    vault.local.add(SecretEntry(title="Newer backup", password="synthetic"))
+    backup = backup_manager.create_manual_backup(vault_file, "backup-password", root / "newer")
+    backend.records = old_anchor.copy()
+    before = vault_file.read_bytes()
+    source_before = Path(backup.path).read_bytes()
+
+    preview = client.post(
+        "/api/backups/restore/preview", headers=headers,
+        json={"path": backup.path, "password": "backup-password"},
+    )
+
+    assert preview.status_code == 200, preview.text
+    assert backend.records == old_anchor
+    assert vault_file.read_bytes() == before
+    assert Path(backup.path).read_bytes() == source_before
+
+
+@pytest.mark.parametrize("v3_backup_api", [False], indirect=True)
+def test_restore_unanchored_v3_backup_still_succeeds(v3_backup_api):
+    from vault_unified.models import SecretEntry
+
+    client, headers, vault_file, root, backend = v3_backup_api
+    vault = sessions.get(headers["Authorization"].removeprefix("Bearer "))
+    vault.local.add(SecretEntry(title="Before", password="synthetic"))
+    backup = backup_manager.create_manual_backup(vault_file, "backup-password", root / "unanchored")
+    vault.local.add(SecretEntry(title="After", password="synthetic"))
+    preview = client.post(
+        "/api/backups/restore/preview", headers=headers,
+        json={"path": backup.path, "password": "backup-password"},
+    )
+    assert preview.status_code == 200, preview.text
+    applied = client.post(
+        "/api/backups/restore/apply", headers=headers,
+        json={"preview_token": preview.json()["preview_token"],
+              "password": "backup-password", "confirm_restore": True},
+    )
+
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["locked"] is True
+    assert vault_file.read_bytes() == Path(backup.path).read_bytes()
+    assert backend.records == {}
+    reopened = UnifiedVault(vault_file, "backup-password")
+    assert {entry.title for entry in reopened.local.list_entries()} == {"Before"}
+
+
 def test_personal_upgrade_cancel_stale_apply_and_reopen(backup_api):
     from vault_unified.crypto import decrypt_payload
 

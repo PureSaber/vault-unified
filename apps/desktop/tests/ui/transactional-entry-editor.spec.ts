@@ -19,6 +19,47 @@ async function addGeneratedEntry(page: Parameters<MockAuthenticatedSidecar["inst
   await expect(page.locator(".list-pane").getByText(title, { exact: true })).toBeVisible();
 }
 
+for (const failedRead of ["entry", "history"] as const) {
+  test(`failed ${failedRead} read blocks editing until a complete retry loads the saved values`, async ({ page }) => {
+    test.info().annotations.push({ type: "expected-request-failures", description: "1" });
+    const sidecar = new MockAuthenticatedSidecar();
+    await sidecar.install(page);
+    await createVault(page);
+    const title = "Generated load failure account";
+    await addGeneratedEntry(page, title);
+    await page.getByRole("button", { name: `Open ${title}`, exact: true }).click();
+    await expect(page.getByRole("article")).toBeVisible();
+    const before = sidecar.persistedEntries;
+    const id = before[0].id;
+    const path = failedRead === "history" ? `/entries/${id}/history` : `/entries/${id}`;
+    let failNext = true;
+    await page.route(url => url.pathname === path, async route => {
+      if (failNext) {
+        failNext = false;
+        await route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Generated read failure" }) });
+      } else {
+        await route.fallback();
+      }
+    });
+    await page.getByRole("article").getByRole("button", { name: "Edit", exact: true }).click();
+    await expect(page.getByText("Generated read failure", { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Website or app name", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("alert").filter({ hasText: "Could not load this entry" })).toBeVisible();
+    expect(sidecar.persistedEntries).toEqual(before);
+    expect(sidecar.writes.update).toBe(0);
+
+    await page.getByRole("button", { name: "Retry loading", exact: true }).click();
+    await expect(page.getByLabel("Website or app name", { exact: true })).toHaveValue(title);
+    await expect(page.getByLabel("Password", { exact: true })).toHaveValue(testData.entryPassword);
+    await page.getByLabel("Website or app name", { exact: true }).fill("Generated recovered draft");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.locator(".list-pane").getByText("Generated recovered draft", { exact: true })).toBeVisible();
+    expect(sidecar.persistedEntries[0].password).toBe(before[0].password);
+    expect(sidecar.writes.update).toBe(1);
+  });
+}
+
 test("keeps custom-field focus stable and guards navigation, cancel, and manual lock", async ({ page }) => {
   const sidecar = new MockAuthenticatedSidecar();
   await sidecar.install(page);
