@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 from vault_unified.api.deps import get_token
-from vault_unified.clipboard import copy_to_clipboard
+from vault_unified.clipboard import CLIPBOARD_CLEAR_SECONDS, copy_to_clipboard
 from vault_unified.local_store import EntryTransactionConflict
 from vault_unified.restore_preview import RestorePreviewError
 from vault_unified.sharing.client import RemoteError
@@ -127,7 +127,7 @@ def copy_link(sid: str, body: Confirm, response: Response, token=Depends(get_tok
     consent(body)
     with guard(response):
         copy_to_clipboard(sharing.link(token, sid))
-        return {"copied": True}
+        return {"copied": True, "clears_in_seconds": CLIPBOARD_CLEAR_SECONDS}
 
 
 @router.get("/families/{gid}")
@@ -142,7 +142,7 @@ def copy_invitation(body: InvitationCopy, response: Response, token=Depends(get_
         value = invitation(body.code); state = state_for(vault.local)
         if value["owner"] != public_identity(state["identity"])["signing_key"]: raise SharingError("Only the inviter can copy this invitation")
         copy_to_clipboard(body.code)
-        return {"copied": True}
+        return {"copied": True, "clears_in_seconds": CLIPBOARD_CLEAR_SECONDS}
 
 
 @router.post("/families/{gid}/refresh")
@@ -163,7 +163,7 @@ def copy_entry(gid: str, eid: str, field: Literal["username", "password"], body:
         value = sharing.view(token, gid, entry_id=eid, reveal=True)
         if value["trashed_at"]: raise SharingError("Restore this shared account before copying it")
         copy_to_clipboard(value[field])
-        return {"copied": True}
+        return {"copied": True, "clears_in_seconds": CLIPBOARD_CLEAR_SECONDS}
 
 
 @router.get("/families/{gid}/pending")

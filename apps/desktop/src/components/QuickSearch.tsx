@@ -41,8 +41,8 @@ export default function QuickSearch({ onClose, onOpen }: { onClose: () => void; 
     setCopying(true);
     const stamp = sequence.current;
     try {
-      const result = field === "totp" ? await api.copyTotp(current.id) : await api.copy(current.id, field);
-      if (stamp === sequence.current) showToast(zh ? `已复制，${result.clears_in_seconds} 秒后清除剪贴板` : `Copied; clipboard clears in ${result.clears_in_seconds} seconds`);
+      field === "totp" ? await api.copyTotp(current.id) : await api.copy(current.id, field);
+
     } catch { if (stamp === sequence.current) showToast(zh ? "复制失败，请重试" : "Could not copy. Try again.", "error"); }
     finally { setCopying(false); }
   }

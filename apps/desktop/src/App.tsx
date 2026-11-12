@@ -54,6 +54,7 @@ function AppShell() {
   const lockInFlight = useRef(false);
   const [page, setPage] = useState<Page>("passwords");
   const [editEntry, setEditEntry] = useState<Entry | null>(null);
+  const [securityTask, setSecurityTask] = useState("overview");
   const [shareEntryId, setShareEntryId] = useState("");
   const [conflictCount, setConflictCount] = useState(0);
   const [backupSummary, setBackupSummary] = useState<BackupSummary | null>(null);
@@ -86,6 +87,7 @@ function AppShell() {
     setUnlocked(false);
     setEditEntry(null);
     setPage("passwords");
+    setSecurityTask("overview");
     setEditorDirty(false);
     setEditorSaving(false);
     setPendingAction(null);
@@ -352,6 +354,7 @@ function AppShell() {
   }, [unlocked]);
 
   function requestNavigation(target: Page, force = false, entry?: Entry) {
+    if (!force && target === page && ["security", "sharing", "settings"].includes(target)) return;
     if (editorSaving && !force) {
       showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info");
       return;
@@ -530,7 +533,7 @@ function AppShell() {
             <ImportWizard initialSource="chrome" onDone={() => requestNavigation("passwords")} />
           </div>
         )}
-        {page === "security" && <SecurityRecovery onOpen={entry => openEntry(entry, "editor")} />}
+        {page === "security" && <SecurityRecovery task={securityTask} onTaskChange={setSecurityTask} onOpen={entry => openEntry(entry, "editor")} onDirtyChange={setEditorDirty} onSavingChange={setEditorSaving} />}
         {page === "connections" && (
           <Connections
             conflictCount={conflictCount}
@@ -564,7 +567,7 @@ function AppShell() {
         title={pendingAction?.kind === "close"
           ? (locale === "zh" ? "放弃更改并关闭？" : "Discard changes and close?")
           : (locale === "zh" ? "放弃未保存的更改？" : "Discard unsaved changes?")}
-        message={locale === "zh" ? "未保存的字段、附件更改和历史恢复草稿都会被清除，保险库不会发生写入。" : "Unsaved fields, attachment changes, and history restore drafts will be cleared without writing to the vault."}
+        message={locale === "zh" ? "未保存的设置、字段、附件更改和预览草稿都会被清除；已保存的数据不会改变。" : "Unsaved settings, fields, attachment changes and preview drafts will be cleared. Saved data will not change."}
         confirmLabel={pendingAction?.kind === "close"
           ? (locale === "zh" ? "放弃并关闭" : "Discard and close")
           : (locale === "zh" ? "放弃更改" : "Discard changes")}

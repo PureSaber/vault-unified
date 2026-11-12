@@ -20,6 +20,7 @@ test("a delayed sharing status cannot erase an address already being entered", a
   await page.getByLabel("Confirm master password").fill(testData.masterPassword);
   await page.getByRole("button", { name: "Create and unlock" }).click();
   await page.getByRole("button", { name: "Sharing", exact: true }).click();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Connection", exact: true }).click();
   await expect.poll(() => received).toBe(true);
   const field = page.getByLabel("Sharing service address", { exact: true });
   await field.fill("https://sharing.example.invalid");

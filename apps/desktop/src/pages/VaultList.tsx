@@ -239,7 +239,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   async function handleCopy(id: string) {
     try {
       await api.copy(id);
-      showToast(t("list.copiedPass"));
+
     } catch (err) {
       showToast(String(err).replace(/^Error:\s*/, ""), "error");
     }
@@ -248,7 +248,7 @@ export default function VaultList({ onAdd, onEdit, onOpen, onImport, selectedId,
   async function handleCopyUsername(id: string) {
     try {
       await api.copy(id, "username");
-      showToast(t("list.copiedUser"));
+
     } catch (err) {
       showToast(String(err).replace(/^Error:\s*/, ""), "error");
     }

@@ -598,7 +598,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
         {showMore && (
           <div id="entry-more-options" className="entry-more-options">
-            {personalReady && (draft.entryType === "login" || draft.websiteRules.match !== "exact" || draft.websiteRules.additional_urls.length > 0 || draft.websiteRules.excluded_urls.length > 0) && <WebsiteRulesEditor primaryUrl={draft.url} value={draft.websiteRules} onChange={websiteRules => patchDraft({ websiteRules })} />}
+            <TotpEditor value={draft.totpSecret} onChange={totpSecret => patchDraft({ totpSecret })} savedValue={original.totpSecret} entryId={entry?.id} />
             {advancedError && <div className="error" role="alert" id="entry-advanced-error" tabIndex={-1}>{advancedError}</div>}
 
             <section className="settings-section" aria-labelledby="entry-tags-heading">
@@ -639,7 +639,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
               </div>
             </section>
 
-            <TotpEditor value={draft.totpSecret} onChange={totpSecret => patchDraft({ totpSecret })} savedValue={original.totpSecret} entryId={entry?.id} />
+            {personalReady && (draft.entryType === "login" || draft.websiteRules.match !== "exact" || draft.websiteRules.additional_urls.length > 0 || draft.websiteRules.excluded_urls.length > 0) && <WebsiteRulesEditor primaryUrl={draft.url} value={draft.websiteRules} onChange={websiteRules => patchDraft({ websiteRules })} />}
 
             <section className="settings-section" aria-labelledby="custom-fields-heading">
               <h3 id="custom-fields-heading" className="section-title">{text.customFields}</h3>

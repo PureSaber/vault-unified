@@ -26,12 +26,15 @@ test("shows conclusions first and completes backup verification with a cancellab
   await expect(status).toContainText("Recovery kitNot created");
   await expect(status).toContainText("Automatic-backup locationNot set");
   await expect(status).toContainText("Next automatic backupNot enabled");
+  await page.locator("nav.section-nav").getByRole("button", { name: "Automatic protection", exact: true }).click();
   await expect(page.getByText("Settings are saved; automatic backups are currently off.")).toBeVisible();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Backups", exact: true }).click();
   const manualBackup = page.getByLabel("Manual backup and restore");
   await expect(manualBackup).toBeVisible();
-  await expect(manualBackup).toContainText("without remembering this temporary folder or enabling the automatic schedule above");
+  await expect(manualBackup).toContainText("without remembering this temporary folder or enabling the schedule in Automatic protection");
   await expect(manualBackup).toContainText("not consumed by a restore and can be reused");
 
+  await page.locator("nav.section-nav").getByRole("button", { name: "Automatic protection", exact: true }).click();
   await page.getByLabel("Create encrypted backups while the app is unlocked").check();
   await page.getByRole("button", { name: "Enter path manually (advanced)" }).first().click();
   await page.getByLabel("Automatic-backup folder").fill(`C:\\isolated-vault-tests\\${testData.runId}\\safe-backups`);
@@ -41,16 +44,22 @@ test("shows conclusions first and completes backup verification with a cancellab
   await expect(page.getByText(/Writable, free space/)).toBeVisible();
   await page.getByRole("button", { name: "Save auto-lock and automatic-backup settings" }).click();
   await expect(page.getByText("Automatic-backup settings are saved and enabled.")).toBeVisible();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Overview", exact: true }).click();
   await expect(status).toContainText(`Automatic-backup locationC:\\isolated-vault-tests\\${testData.runId}\\safe-backups`);
   await expect(status).not.toContainText("Next automatic backupNot enabled");
 
+  await page.locator("nav.section-nav").getByRole("button", { name: "Automatic protection", exact: true }).click();
   await page.getByRole("button", { name: "Back up to this folder now" }).click();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Overview", exact: true }).click();
   await expect(status).not.toContainText("No backup yet");
   expect(sidecar.backupWrites.create).toBe(1);
 
+  await page.locator("nav.section-nav").getByRole("button", { name: "Backups", exact: true }).click();
   await page.getByRole("button", { name: "Verify latest backup" }).click();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Overview", exact: true }).click();
   await expect(status).toContainText("Latest backup verificationPassed");
 
+  await page.locator("nav.section-nav").getByRole("button", { name: "Backups", exact: true }).click();
   await page.getByRole("button", { name: "Manage backup history" }).click();
   await expect(page.getByText("b".repeat(64), { exact: false })).toBeVisible();
   await page.getByRole("button", { name: "Preview restore impact" }).click();
@@ -61,7 +70,9 @@ test("shows conclusions first and completes backup verification with a cancellab
   expect(sidecar.backupWrites.restore).toBe(0);
   await expect(page.getByRole("heading", { name: "Security & recovery" })).toBeVisible();
 
+  await page.locator("nav.section-nav").getByRole("button", { name: "Recovery", exact: true }).click();
   await expect(page.getByRole("button", { name: "Restore from recovery kit" })).toBeVisible();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Import and export", exact: true }).click();
   await expect(page.getByText(/Plaintext export is a short-lived migration file, not a backup/)).toBeVisible();
   const ids = await page.locator("[id]").evaluateAll((elements) => elements.map((element) => element.id));
   expect(new Set(ids).size).toBe(ids.length);
@@ -80,6 +91,7 @@ test("Chinese manual-backup wording does not imply a single-use backup file", as
   await page.getByRole("button", { name: "创建并解锁" }).click();
   await page.getByRole("button", { name: "安全与恢复", exact: true }).click();
 
+  await page.locator("nav.section-nav").getByRole("button", { name: "备份", exact: true }).click();
   const manualBackup = page.getByLabel("手动备份与恢复");
   await expect(manualBackup).toBeVisible();
   await expect(manualBackup).toContainText("备份文件不会因恢复一次而失效，可按需重复使用");
@@ -106,6 +118,7 @@ test("offers emergency recovery before authentication and preserves the in-app h
   await page.getByLabel("Master password", { exact: true }).fill(testData.masterPassword);
   await page.getByRole("button", { name: "Unlock", exact: true }).click();
   await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Recovery", exact: true }).click();
   await page.getByRole("button", { name: "Restore from recovery kit", exact: true }).click();
   await expect(page.getByRole("alertdialog", { name: "Lock and open recovery?" })).toBeVisible();
   await page.getByRole("button", { name: "Cancel", exact: true }).click();

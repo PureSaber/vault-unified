@@ -31,7 +31,7 @@ test("one-entry path copies, auto-hides a reveal, edits, and searches", async ({
 
   const row = page.getByRole("listitem").filter({ hasText: "Generated account 0001" });
   await row.getByRole("button", { name: "Copy password", exact: true }).click();
-  await expect(page.getByText("Password copied to clipboard", { exact: true })).toBeVisible();
+  await expect(page.locator(".toast").filter({ hasText: /Copied; clipboard clears in \d+ seconds/ })).toBeVisible();
   expect(sidecar.copyWrites.password).toBe(1);
 
   await page.clock.install();
@@ -163,6 +163,7 @@ test("restore failure keeps the active vault unchanged and unlocked", async ({ p
   const before = sidecar.persistedEntries;
 
   await page.getByRole("button", { name: "Security & recovery", exact: true }).click();
+  await page.locator("nav.section-nav").getByRole("button", { name: "Backups", exact: true }).click();
   const backupCenter = page.getByLabel("Manual backup and restore");
   await backupCenter.getByRole("button", { name: "Enter path manually (advanced)", exact: true }).click();
   await backupCenter.getByLabel("Folder for this manual backup (does not enable automatic backups)").fill(
@@ -180,6 +181,7 @@ test("restore failure keeps the active vault unchanged and unlocked", async ({ p
   expect(sidecar.backupWrites.restore).toBe(0);
   expect(sidecar.persistedEntries).toEqual(before);
   await page.getByRole("button", { name: "Passwords", exact: true }).click();
+  await page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard changes", exact: true }).click();
   await expect(page.getByText("Generated account 0001", { exact: true })).toBeVisible();
 });
 

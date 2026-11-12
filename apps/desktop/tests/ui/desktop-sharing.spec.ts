@@ -31,7 +31,7 @@ for (const locale of ["en", "zh"] as const) test(`desktop shares and independent
     await target.getByRole("alertdialog").getByRole("button", { name: text("Confirm", "确认"), exact: true }).click();
     const response = await applied;
     expect(response.status()).toBe(200);
-    await expect(target.getByRole("button", { name: text("Preview joining", "预览加入"), exact: true })).toBeEnabled();
+    await expect(target.locator("nav.section-nav").getByRole("button", { name: text("Connection", "服务连接"), exact: true })).toBeEnabled();
     return response.json();
   }
   try {
@@ -39,10 +39,12 @@ for (const locale of ["en", "zh"] as const) test(`desktop shares and independent
     const created = await page.request.post(`${source.apiUrl}/entries`, { headers: auth, data: { title: "Generated personal share", username: "generated", password: testData.entryPassword, url: "https://example.invalid", notes: "Personal-only notes" } });
     expect(created.status()).toBe(200);
     await page.getByRole("button", { name: text("Sharing", "分享"), exact: true }).click();
+    await page.locator("nav.section-nav").getByRole("button", { name: text("Connection", "服务连接"), exact: true }).click();
     await page.getByLabel(text("Sharing service address", "分享服务地址"), { exact: true }).fill(service.url);
     await page.getByLabel(text("Service administration token", "服务管理令牌"), { exact: true }).fill(testData.bootstrapSecret);
     await page.getByRole("button", { name: text("Save service connection", "保存服务连接"), exact: true }).click();
     await expect(page.getByLabel(text("Service administration token", "服务管理令牌"), { exact: true })).toHaveValue("");
+    await page.locator("nav.section-nav").getByRole("button", { name: text("Limited shares", "限时分享"), exact: true }).click();
     await expect(page.getByRole("button", { name: text("Preview share", "预览分享"), exact: true })).toBeEnabled();
     const before = await readFile(join(source.directory, "generated.vault"));
     await page.getByRole("button", { name: text("Preview share", "预览分享"), exact: true }).click();
@@ -66,6 +68,7 @@ for (const locale of ["en", "zh"] as const) test(`desktop shares and independent
     await share.getByRole("button", { name: text("Revoke", "撤销"), exact: true }).click(); await confirm(page);
     await expect(share).toContainText(text("Revoked", "已撤销"));
 
+    await page.locator("nav.section-nav").getByRole("button", { name: text("Family vaults", "家庭共享库"), exact: true }).click();
     await page.getByLabel(text("New shared vault name", "新共享库名称"), { exact: true }).fill("Generated family");
     await page.getByRole("button", { name: text("Preview new vault", "预览新共享库"), exact: true }).click(); await confirm(page);
     await page.getByRole("button", { name: "Generated family", exact: true }).click();
@@ -85,6 +88,7 @@ for (const locale of ["en", "zh"] as const) test(`desktop shares and independent
     destination = await startGeneratedSidecar(member, { sharing: true });
     await create(member);
     await member.getByRole("button", { name: text("Sharing", "分享"), exact: true }).click();
+    await member.locator("nav.section-nav").getByRole("button", { name: text("Family vaults", "家庭共享库"), exact: true }).click();
     await member.getByLabel(text("Received invitation code", "收到的邀请码"), { exact: true }).fill(code);
     await member.getByRole("button", { name: text("Preview joining", "预览加入"), exact: true }).click(); await confirm(member);
     await expect(member.getByRole("button", { name: text("Awaiting approval", "等待批准"), exact: true })).toBeVisible();

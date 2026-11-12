@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import SettingsCard from "./SettingsCard";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, clearToken, PersonalSettings } from "../api/client";
 import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
@@ -44,13 +45,29 @@ function downloadText(filename: string, mimeType: string, content: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function PersonalCenter() {
-  const { locale } = useI18n();
-  const { showToast } = useToast();
-  const zh = locale === "zh";
+export default function PersonalCenter({ section, onDirtyChange, onSavingChange }: {
+  section: string; onDirtyChange: (value: boolean) => void; onSavingChange: (value: boolean) => void;
+}) {
+  const { locale, t } = useI18n();
+  const { showToast: publishToast } = useToast();
+  const alive = useRef(true);
+  const showToast = useCallback((message: string, type?: "success" | "error" | "info") => { if (alive.current) publishToast(message, type); }, [publishToast]);
+  const [childDirty, setChildDirty] = useState(false);
+  const [childBusy, setChildBusy] = useState(false);
+  const [operationBusy, setOperationBusy] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  useEffect(() => {
+    alive.current = true;
+    const locked = () => { alive.current = false; };
+    window.addEventListener("vault-ui-locked", locked);
+    return () => { alive.current = false; window.removeEventListener("vault-ui-locked", locked); onDirtyChange(false); onSavingChange(false); };
+  }, [onDirtyChange, onSavingChange]);
+
   const [settings, setSettings] = useState<PersonalSettings>(defaults);
   const [savedSettings, setSavedSettings] = useState<PersonalSettings>(defaults);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reload, setReload] = useState(0);
   const [saving, setSaving] = useState(false);
   const [recoveryCode, setRecoveryCode] = useState("");
   const [recoveryConfirm, setRecoveryConfirm] = useState("");
@@ -61,23 +78,29 @@ export default function PersonalCenter() {
   const [restoreConfirm, setRestoreConfirm] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
 
+  const settingsDirty = !sameEditableSettings(settings, savedSettings);
+  useEffect(() => { onDirtyChange(!loading && (settingsDirty || Boolean(recoveryCode) || Boolean(pendingExport) || childDirty)); }, [loading, settingsDirty, recoveryCode, pendingExport, childDirty, onDirtyChange]);
+  useEffect(() => { onSavingChange(saving || backupBusy || operationBusy || childBusy); }, [saving, backupBusy, operationBusy, childBusy, onSavingChange]);
+
   useEffect(() => {
+    setLoading(true); setLoadError(false);
     api.getPersonalSettings()
       .then((loaded) => {
+        if (!alive.current) return;
         setSettings(loaded);
         setSavedSettings(loaded);
       })
-      .catch((error) => showToast(String(error).replace(/^Error:\s*/, ""), "error"))
-      .finally(() => setLoading(false));
-  }, [showToast]);
+      .catch(() => { if (alive.current) setLoadError(true); })
+      .finally(() => { if (alive.current) setLoading(false); });
+  }, [reload]);
 
   async function saveSettings(e: React.FormEvent) {
     e.preventDefault();
     if (settings.auto_backup_enabled && !settings.auto_backup_destination.trim()) {
-      setDestinationResult(zh ? "请选择自动备份文件夹，然后再保存并启用。" : "Choose an automatic-backup folder before saving and enabling it.");
+      setDestinationResult(t("PersonalCenter.chooseAnAutomaticBackupFolderBeforeSaving"));
       return;
     }
-    setSaving(true);
+    setSaving(true); setSaveError("");
     try {
       const saved = await api.savePersonalSettings({
         lock_after_seconds: settings.lock_after_seconds,
@@ -85,72 +108,80 @@ export default function PersonalCenter() {
         auto_backup_interval_hours: settings.auto_backup_interval_hours,
         auto_backup_destination: settings.auto_backup_destination,
       });
+      if (!alive.current) return;
       setSettings(saved);
       setSavedSettings(saved);
       window.dispatchEvent(new CustomEvent("vault-personal-settings-changed", { detail: saved }));
       notifyStatusChanged();
-      showToast(zh ? "自动锁定与自动备份设置已保存" : "Auto-lock and automatic-backup settings saved");
+      showToast(t("PersonalCenter.autoLockAndAutomaticBackupSettingsSaved"));
     } catch (error) {
-      showToast(String(error).replace(/^Error:\s*/, ""), "error");
+      if (alive.current) setSaveError(String(error).replace(/^Error:\s*/, ""));
     } finally {
-      setSaving(false);
+      if (alive.current) setSaving(false);
     }
   }
 
   async function exportVault(format: "json" | "csv") {
     setPendingExport(null);
+    setOperationBusy(true);
     try {
       const result = await api.exportTransfer(format);
+      if (!alive.current) return;
       downloadText(result.filename, result.mime_type, result.content);
-      showToast(zh ? "明文导出已下载；请在使用后删除该文件" : "Plaintext export downloaded; delete it after use");
+      showToast(t("PersonalCenter.plaintextExportDownloadedDeleteItAfterUse"));
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    }
+    } finally { if (alive.current) setOperationBusy(false); }
   }
 
   async function generateRecoveryCode() {
+    setOperationBusy(true);
     try {
       const result = await api.newRecoveryCode();
+      if (!alive.current) return;
       setRecoveryCode(result.recovery_code);
       setRecoveryConfirm("");
-      showToast(zh ? "恢复码只会显示在此处；请离线保存" : "The recovery code is shown only here; save it offline");
+      showToast(t("PersonalCenter.theRecoveryCodeIsShownOnlyHere"));
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    }
+    } finally { if (alive.current) setOperationBusy(false); }
   }
 
   async function createRecoveryKit() {
     if (!recoveryCode || recoveryCode !== recoveryConfirm) {
-      showToast(zh ? "请准确重新输入恢复码后再创建" : "Re-enter the recovery code exactly before creating the kit", "error");
+      showToast(t("PersonalCenter.reEnterTheRecoveryCodeExactlyBefore"), "error");
       return;
     }
+    setOperationBusy(true);
     try {
       const result = await api.createRecoveryKit(recoveryCode, recoveryDestination);
+      if (!alive.current) return;
       setCreatedRecoveryPath(result.path);
-      showToast(result.warning || (zh ? `恢复包已创建：${result.path}` : `Recovery kit created: ${result.path}`), result.warning ? "error" : "info");
+      showToast(result.warning || (t("PersonalCenter.recoveryKitCreated", { value1: result.path })), result.warning ? "error" : "info");
       setRecoveryCode("");
       setRecoveryConfirm("");
       notifyStatusChanged();
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
-    }
+    } finally { if (alive.current) setOperationBusy(false); }
   }
 
   async function testDestination() {
     if (!settings.auto_backup_destination.trim()) {
-      setDestinationResult(zh ? "请先选择备份位置。" : "Choose a backup folder first.");
+      setDestinationResult(t("PersonalCenter.chooseABackupFolderFirst"));
       return;
     }
     setBackupBusy(true);
     try {
       const result = await api.testBackupDestination(settings.auto_backup_destination);
+      if (!alive.current) return;
       setDestinationResult(
         result.exists && result.writable
-          ? `${zh ? "可写，剩余空间" : "Writable, free space"}: ${(result.free_bytes / (1024 ** 3)).toFixed(2)} GiB`
-          : (zh ? "该位置不存在或不可写。" : "This location is missing or not writable."),
+          ? `${t("PersonalCenter.writableFreeSpace")}: ${(result.free_bytes / (1024 ** 3)).toFixed(2)} GiB`
+          : (t("PersonalCenter.thisLocationIsMissingOrNotWritable")),
       );
     } catch {
-      setDestinationResult(zh ? "无法测试该备份位置。" : "The backup folder could not be tested.");
+      setDestinationResult(t("PersonalCenter.theBackupFolderCouldNotBeTested"));
     } finally {
       setBackupBusy(false);
     }
@@ -160,7 +191,8 @@ export default function PersonalCenter() {
     setBackupBusy(true);
     try {
       const result = await api.createBackup(settings.auto_backup_destination.trim() || undefined);
-      showToast(result.warning || (zh ? "加密备份已创建" : "Encrypted backup created"), result.warning ? "error" : "info");
+      if (!alive.current) return;
+      showToast(result.warning || (t("PersonalCenter.encryptedBackupCreated")), result.warning ? "error" : "info");
       notifyStatusChanged();
     } catch (error) {
       showToast(String(error).replace(/^Error:\s*/, ""), "error");
@@ -181,38 +213,33 @@ export default function PersonalCenter() {
     window.location.reload();
   }
 
-  if (loading) return <div className="loading-state">{zh ? "加载个人设置…" : "Loading personal settings…"}</div>;
-
-  const settingsDirty = !sameEditableSettings(settings, savedSettings);
+  if (loadError) return <div><p className="error" role="alert">{t("settingsSave.loadFailed")}</p><button type="button" className="secondary" onClick={() => setReload(value => value + 1)}>{t("settingsSave.retry")}</button></div>;
+  if (loading) return <div className="loading-state">{t("PersonalCenter.loadingPersonalSettings")}</div>;
 
   return (
     <>
-      <section className="settings-section" aria-labelledby="personal-security-heading">
-        <h3 id="personal-security-heading" className="section-title">
-          {zh ? "自动锁定与定时备份" : "Auto-lock and scheduled backups"}
-        </h3>
+      {section === "protection" && <SettingsCard id="personal-security-heading" title={t("PersonalCenter.autoLockAndScheduledBackups")} mode="submit">
         <form onSubmit={saveSettings}>
+          <fieldset className="settings-fields" disabled={saving || backupBusy}>
           <div className="field">
             <label className="field-label" htmlFor="lock-after">
-              {zh ? "自动锁定时间" : "Auto-lock after"}
+              {t("PersonalCenter.autoLockAfter")}
             </label>
             <select
               id="lock-after"
               value={settings.lock_after_seconds}
               onChange={(e) => setSettings({ ...settings, lock_after_seconds: Number(e.target.value) })}
             >
-              <option value={60}>{zh ? "1 分钟" : "1 minute"}</option>
-              <option value={300}>{zh ? "5 分钟" : "5 minutes"}</option>
-              <option value={900}>{zh ? "15 分钟" : "15 minutes"}</option>
-              <option value={1800}>{zh ? "30 分钟" : "30 minutes"}</option>
-              <option value={3600}>{zh ? "60 分钟" : "60 minutes"}</option>
+              <option value={60}>{t("PersonalCenter.1Minute")}</option>
+              <option value={300}>{t("PersonalCenter.5Minutes")}</option>
+              <option value={900}>{t("PersonalCenter.15Minutes")}</option>
+              <option value={1800}>{t("PersonalCenter.30Minutes")}</option>
+              <option value={3600}>{t("PersonalCenter.60Minutes")}</option>
             </select>
           </div>
-          <h4>{zh ? "自动备份" : "Automatic backups"}</h4>
+          <h4>{t("PersonalCenter.automaticBackups")}</h4>
           <p className="field-hint">
-            {zh
-              ? "这里的文件夹和间隔会在保存后记住，并按计划继续备份。页面下方的手动备份只在你点击时创建，不会启用此计划；备份文件可重复用于恢复。"
-              : "This folder and interval are remembered after you save, then used for scheduled backups. The manual backup below runs only when you choose it and does not enable this schedule; its file can be reused for restores."}
+            {t("PersonalCenter.thisFolderAndIntervalAreRememberedAfter")}
           </p>
           <label className="checkbox-field">
             <input
@@ -220,18 +247,16 @@ export default function PersonalCenter() {
               checked={settings.auto_backup_enabled}
               onChange={(e) => setSettings({ ...settings, auto_backup_enabled: e.target.checked })}
             />
-            <span>{zh ? "应用解锁期间自动创建加密备份" : "Create encrypted backups while the app is unlocked"}</span>
+            <span>{t("PersonalCenter.createEncryptedBackupsWhileTheAppIs")}</span>
           </label>
           <p className="field-hint">
-            {zh
-              ? "选择 OneDrive、Dropbox 或 NAS 的同步目录可形成异地副本；任务只会在应用打开且已解锁时运行。"
-              : "Choose a synced OneDrive, Dropbox, or NAS folder for an off-device copy. Jobs run only while the app is open and unlocked."}
+            {t("PersonalCenter.chooseASyncedOneDriveDropboxOrNAS")}
           </p>
           {settings.auto_backup_enabled && (
             <>
               <div className="field">
                 <label className="field-label" htmlFor="backup-interval">
-                  {zh ? "备份间隔（小时）" : "Backup interval (hours)"}
+                  {t("PersonalCenter.backupIntervalHours")}
                 </label>
                 <input
                   id="backup-interval"
@@ -246,22 +271,22 @@ export default function PersonalCenter() {
               </div>
               <PathPicker
                 id="auto-backup-destination"
-                label={zh ? "自动备份文件夹" : "Automatic-backup folder"}
+                label={t("PersonalCenter.automaticBackupFolder")}
                 mode="directory"
                 value={settings.auto_backup_destination}
                 onChange={(auto_backup_destination) => {
                   setSettings({ ...settings, auto_backup_destination });
                   setDestinationResult("");
                 }}
-                placeholder={zh ? "例如 D:\\OneDrive\\VaultBackups" : "For example D:\\OneDrive\\VaultBackups"}
+                placeholder={t("PersonalCenter.forExampleDOneDriveVaultBackups")}
                 required
               />
               <div className="button-row">
                 <button className="secondary" type="button" onClick={() => void testDestination()} disabled={backupBusy}>
-                  {zh ? "测试自动备份位置" : "Test automatic-backup location"}
+                  {t("PersonalCenter.testAutomaticBackupLocation")}
                 </button>
                 <button className="secondary" type="button" onClick={() => void retryBackup()} disabled={backupBusy || settingsDirty}>
-                  {settings.backup_status?.last_error_summary ? (zh ? "立即重试" : "Retry now") : (zh ? "立即在此位置备份" : "Back up to this folder now")}
+                  {settings.backup_status?.last_error_summary ? (t("PersonalCenter.retryNow")) : (t("PersonalCenter.backUpToThisFolderNow"))}
                 </button>
               </div>
               {destinationResult && <p className="field-hint" role="status">{destinationResult}</p>}
@@ -270,91 +295,91 @@ export default function PersonalCenter() {
           {settingsDirty ? (
             <div className="context-notice context-notice-warning" role="status">
               <span>
-                <strong>{zh ? "更改尚未保存" : "Changes not saved"}</strong><br />
-                {zh ? "自动备份只会在保存后启用或更新。" : "Automatic backups are enabled or updated only after you save."}
+                <strong>{t("PersonalCenter.changesNotSaved")}</strong><br />
+                {t("PersonalCenter.automaticBackupsAreEnabledOrUpdatedOnly")}
               </span>
             </div>
           ) : (
             <div className="success" role="status">
               {settings.auto_backup_enabled
-                ? (zh ? "自动备份设置已保存并启用。" : "Automatic-backup settings are saved and enabled.")
-                : (zh ? "设置已保存；自动备份目前未启用。" : "Settings are saved; automatic backups are currently off.")}
+                ? (t("PersonalCenter.automaticBackupSettingsAreSavedAndEnabled"))
+                : (t("PersonalCenter.settingsAreSavedAutomaticBackupsAreCurrently"))}
             </div>
           )}
+          {saveError && <p className="error" role="alert">{saveError}</p>}
           <button className="primary" type="submit" disabled={saving || !settingsDirty}>
             {saving
-              ? (zh ? "保存中…" : "Saving…")
-              : (zh ? "保存自动锁定与自动备份设置" : "Save auto-lock and automatic-backup settings")}
+              ? (t("PersonalCenter.saving"))
+              : (t("PersonalCenter.saveAutoLockAndAutomaticBackupSettings"))}
           </button>
+          </fieldset>
         </form>
-      </section>
+      </SettingsCard>}
 
-      <section className="settings-section" aria-labelledby="transfer-heading">
-        <h3 id="transfer-heading" className="section-title">{zh ? "导入与导出" : "Import and export"}</h3>
+      {section === "transfer" && <section className="settings-section" aria-labelledby="transfer-heading">
+        <h3 id="transfer-heading" className="section-title">{t("PersonalCenter.importAndExport")}</h3>
         <p className="field-hint">
-          {zh ? "明文导出仅用于短期迁移，不是备份。JSON 保留本地扩展与附件；CSV 不包含附件。" : "Plaintext export is a short-lived migration file, not a backup. JSON preserves local extensions and attachments; CSV excludes attachments."}
+          {t("PersonalCenter.plaintextExportIsAShortLivedMigration")}
         </p>
         <div className="button-row">
           <button className="secondary" type="button" onClick={() => setPendingExport("json")}>JSON</button>
           <button className="secondary" type="button" onClick={() => setPendingExport("csv")}>CSV</button>
         </div>
-        <p className="field-hint">{zh ? "明文导出只包含正常密码库中的条目。需要保留收藏、归档、回收站及全部历史时，请使用加密备份或恢复包。" : "Plaintext export includes active vault entries. Use an encrypted backup or recovery kit to retain favorites, archive, trash and all history."}</p>
-        <ImportWizard />
-      </section>
+        <p className="field-hint">{t("PersonalCenter.plaintextExportIncludesActiveVaultEntriesUse")}</p>
+        <ImportWizard onDirtyChange={setChildDirty} onSavingChange={setChildBusy} />
+      </section>}
 
-      <section className="settings-section" aria-labelledby="recovery-heading">
-        <h3 id="recovery-heading" className="section-title">{zh ? "紧急恢复包" : "Emergency recovery kit"}</h3>
+      {section === "recovery" && <section className="settings-section" aria-labelledby="recovery-heading">
+        <h3 id="recovery-heading" className="section-title">{t("PersonalCenter.emergencyRecoveryKit")}</h3>
         <p className="field-hint">
-          {zh
-            ? "紧急恢复包用于主密码丢失或迁移恢复；它不同于日常加密备份。请将恢复码离线保存，并与恢复包文件分开。"
-            : "An emergency kit is for a lost master password or migration; it is different from an everyday encrypted backup. Keep its offline code separate from the kit file."}
+          {t("PersonalCenter.anEmergencyKitIsForALost")}
         </p>
         <div className="button-row">
-          <button className="secondary" type="button" onClick={generateRecoveryCode}>
+          <button className="secondary" type="button" disabled={operationBusy} onClick={generateRecoveryCode}>
             {recoveryCode
-              ? (zh ? "重新生成恢复码" : "Generate a new recovery code")
-              : (zh ? "创建恢复包" : "Create recovery kit")}
+              ? (t("PersonalCenter.generateANewRecoveryCode"))
+              : (t("PersonalCenter.createRecoveryKit"))}
           </button>
           <button className="secondary" type="button" onClick={() => setRestoreConfirm(true)}>
-            {zh ? "从恢复包恢复" : "Restore from recovery kit"}
+            {t("PersonalCenter.restoreFromRecoveryKit")}
           </button>
         </div>
         {recoveryCode && (
           <>
             <div className="field">
-              <label className="field-label" htmlFor="recovery-code">{zh ? "恢复码（请立即离线记录）" : "Recovery code (record offline now)"}</label>
+              <label className="field-label" htmlFor="recovery-code">{t("PersonalCenter.recoveryCodeRecordOfflineNow")}</label>
               <input id="recovery-code" value={recoveryCode} readOnly />
             </div>
             <div className="field">
-              <label className="field-label" htmlFor="recovery-confirm">{zh ? "重新输入恢复码以确认" : "Re-enter recovery code to confirm"}</label>
+              <label className="field-label" htmlFor="recovery-confirm">{t("PersonalCenter.reEnterRecoveryCodeToConfirm")}</label>
               <input id="recovery-confirm" value={recoveryConfirm} onChange={(e) => setRecoveryConfirm(e.target.value)} autoComplete="off" />
             </div>
             <PathPicker
               id="recovery-destination"
-              label={zh ? "恢复包目录（建议 U 盘或其他位置）" : "Recovery-kit folder (prefer USB or another location)"}
+              label={t("PersonalCenter.recoveryKitFolderPreferUSBOrAnother")}
               mode="directory"
               value={recoveryDestination}
               onChange={setRecoveryDestination}
             />
-            <button className="secondary" type="button" onClick={createRecoveryKit}>
-              {zh ? "创建恢复包" : "Create recovery kit"}
+            <button className="secondary" type="button" disabled={operationBusy} onClick={createRecoveryKit}>
+              {t("PersonalCenter.createRecoveryKit")}
             </button>
           </>
         )}
-        {createdRecoveryPath && <p className="path-break">{zh ? "最新恢复包：" : "Latest recovery kit: "}{createdRecoveryPath}</p>}
-        <RecoveryRehearsal suggestedPath={createdRecoveryPath} />
-      </section>
+        {createdRecoveryPath && <p className="path-break">{t("PersonalCenter.latestRecoveryKit")}{createdRecoveryPath}</p>}
+        <RecoveryRehearsal suggestedPath={createdRecoveryPath} onDirtyChange={setChildDirty} onSavingChange={setChildBusy} />
+      </section>}
 
-      <ConfirmDialog open={restoreConfirm} idPrefix="open-recovery" title={zh ? "锁定并打开恢复？" : "Lock and open recovery?"}
-        message={zh ? "当前保险库将锁定，未保存的设置会丢弃。之后选择恢复包并预览，确认后才会恢复数据。" : "The vault will lock and unsaved settings will be discarded. Choose a recovery kit and review its preview before confirming a restore."}
-        confirmLabel={zh ? "锁定并继续" : "Lock and continue"} onCancel={() => setRestoreConfirm(false)} onConfirm={() => void openRecoveryKitRestore()} />
+      <ConfirmDialog open={restoreConfirm} idPrefix="open-recovery" title={t("PersonalCenter.lockAndOpenRecovery")}
+        message={t("PersonalCenter.theVaultWillLockAndUnsavedSettings")}
+        confirmLabel={t("PersonalCenter.lockAndContinue")} onCancel={() => setRestoreConfirm(false)} onConfirm={() => void openRecoveryKitRestore()} />
       <ConfirmDialog
         open={pendingExport !== null}
         idPrefix="plaintext-export-confirm"
-        title={zh ? "导出明文迁移文件？" : "Export a plaintext migration file?"}
-        message={zh ? "文件将包含明文密码。请仅短暂保存，导入后立即删除；它不能替代加密备份。" : "The file will contain plaintext passwords. Keep it only briefly and delete it after import; it does not replace an encrypted backup."}
-        confirmLabel={zh ? "继续导出" : "Continue export"}
-        cancelLabel={zh ? "取消" : "Cancel"}
+        title={t("PersonalCenter.exportAPlaintextMigrationFile")}
+        message={t("PersonalCenter.theFileWillContainPlaintextPasswordsKeep")}
+        confirmLabel={t("PersonalCenter.continueExport")}
+        cancelLabel={t("PersonalCenter.cancel")}
         variant="danger"
         onConfirm={() => pendingExport && void exportVault(pendingExport)}
         onCancel={() => setPendingExport(null)}

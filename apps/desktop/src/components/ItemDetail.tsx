@@ -105,9 +105,9 @@ export default function ItemDetail({ entry, onEdit, onBack, onShare }: {
   async function copy(field: "password" | "username" | "totp") {
     const stamp = generation.current;
     try {
-      const result = field === "totp" ? await api.copyTotp(entry.id) : await api.copy(entry.id, field);
+      field === "totp" ? await api.copyTotp(entry.id) : await api.copy(entry.id, field);
       if (stamp !== generation.current) return;
-      showToast(zh ? `已复制，${result.clears_in_seconds} 秒后清除剪贴板` : `Copied; clipboard clears in ${result.clears_in_seconds} seconds`);
+
     } catch { if (stamp === generation.current) showToast(zh ? "复制失败，请重试。" : "Could not copy. Try again.", "error"); }
   }
   const current = item || entry;

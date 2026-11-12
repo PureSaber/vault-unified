@@ -7,7 +7,7 @@ published v1.3.0 installer.
 
 In **Passwords → Import from browser**, choose Chrome or Edge, follow the export
 instructions, and select the original CSV file. The same importer remains
-available in **Security & recovery → Import passwords**, where automatic format
+available in **Security & recovery → Import and export → Import passwords**, where automatic format
 detection also accepts Vault Unified JSON and CSV transfers.
 
 Preview shows account names, usernames, website hosts and record numbers, never
