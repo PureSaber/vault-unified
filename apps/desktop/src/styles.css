@@ -1852,3 +1852,6 @@ button.conflict-chip-btn:hover:not(:disabled) {
 .sharing-page fieldset { border: 1px solid var(--color-border); border-radius: 10px; padding: 16px; }
 .sharing-entry { border-top: 1px solid var(--color-border); padding: 16px 0; }
 .sharing-code { display: block; overflow-wrap: anywhere; margin: 10px 0; }
+
+/* Preserve layout while native fieldsets freeze every descendant control. */
+.form-controls { border: 0; padding: 0; margin: 0; min-width: 0; }

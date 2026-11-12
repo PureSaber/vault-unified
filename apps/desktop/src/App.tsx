@@ -354,7 +354,7 @@ function AppShell() {
   }, [unlocked]);
 
   function requestNavigation(target: Page, force = false, entry?: Entry) {
-    if (!force && target === page && ["security", "sharing", "settings"].includes(target)) return;
+    if (!force && target === page && ["security", "sharing", "settings", "connections"].includes(target)) return;
     if (editorSaving && !force) {
       showToast(locale === "zh" ? "正在保存，请等待完成" : "Save in progress; please wait", "info");
       return;
@@ -537,7 +537,9 @@ function AppShell() {
         {page === "connections" && (
           <Connections
             conflictCount={conflictCount}
-            onOpenConflicts={() => setPage("conflicts")}
+            onOpenConflicts={() => requestNavigation("conflicts")}
+            onDirtyChange={setEditorDirty}
+            onSavingChange={setEditorSaving}
             onSyncDone={refreshConflicts}
           />
         )}

@@ -145,7 +145,7 @@ def apply_import(
             vault.vault_path,
             vault.local.credential,
         )
-        vault.local.commit_import_batch(
+        after_generation, after_digest = vault.local.commit_import_batch(
             candidates,
             updated_entry_ids=set(updated_ids),
             expected_generation=intent.before_generation,
@@ -168,8 +168,6 @@ def apply_import(
             ),
         ) from exc
 
-    after_digest = vault.local.state_digest()
-    after_generation = vault.local.generation
     receipt = new_receipt(
         session_token=token,
         intent=intent,

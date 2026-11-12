@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type PersonalSyncSetup, type PersonalSyncPreview, type PersonalSyncStatus, type PersonalSyncConflicts, type PersonalSyncChoice } from "../api/client";
 import { useI18n } from "../i18n";
 import ConfirmDialog from "./ConfirmDialog";
 import PathPicker from "./PathPicker";
+import { useTaskLifetime } from "./useTaskLifetime";
+
+interface TaskProps { onDirtyChange?: (value: boolean) => void; onSavingChange?: (value: boolean) => void }
 
 function fieldName(path: string[], zh: boolean) {
   const names: Record<string, [string, string]> = { title: ["名称", "Name"], username: ["用户名", "Username"], password: ["密码", "Password"], url: ["网址", "Website"], notes: ["备注", "Notes"], tags: ["标签", "Tags"], totp_secret: ["验证码密钥", "Authenticator key"], attachments: ["附件", "Attachments"], history: ["历史版本", "History"], custom_fields: ["自定义字段", "Custom fields"], favorite: ["收藏", "Favorite"], state: ["条目状态", "Entry state"], template_data: ["模板字段", "Template fields"], website_rules: ["网站规则", "Website rules"] };
@@ -11,7 +14,8 @@ function fieldName(path: string[], zh: boolean) {
   return zh ? "其他内容" : "Other content";
 }
 
-function Conflicts({ onDone }: { onDone: () => void }) {
+function Conflicts({ onDone, active, blocked, onDirtyChange, onSavingChange }: TaskProps & { onDone: () => void; active: boolean; blocked: boolean }) {
+  const alive = useTaskLifetime();
   const { locale } = useI18n(); const zh = locale === "zh";
   const [data, setData] = useState<PersonalSyncConflicts | null>(null);
   const [object, setObject] = useState("");
@@ -21,54 +25,90 @@ function Conflicts({ onDone }: { onDone: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const sequence = useRef(0);
+  const generation = useRef<number | null>(null);
+  const focused = useRef(document.hasFocus());
+  const activeRef = useRef(active); activeRef.current = active;
+  const hide = useCallback(() => {
+    ++sequence.current;
+    setRevealed(false);
+    // Replace values locally. Never retain a second snapshot containing plaintext.
+    setData(current => current && ({ ...current, items: current.items.map(item => ({
+      ...item,
+      local: { present: item.local.present, value: item.local.present ? "••••••••" : "", state: item.local.state },
+      remote: { present: item.remote.present, value: item.remote.present ? "••••••••" : "", state: item.remote.state },
+    })) }));
+  }, []);
+  const dirty = Object.keys(choices).length > 0;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onSavingChange?.(busy); }, [busy, onSavingChange]);
+  useEffect(() => () => { onDirtyChange?.(false); onSavingChange?.(false); }, [onDirtyChange, onSavingChange]);
   async function load(reveal = false) {
+    if (!reveal) hide();
     const stamp = ++sequence.current;
     setError("");
     try {
       const result = await api.personalSyncConflicts(reveal);
-      if (stamp !== sequence.current) return;
-      setData(result); setRevealed(reveal); setChoices({}); setConfirm(false);
+      if (!alive.current || stamp !== sequence.current) return;
+      if (reveal && (!activeRef.current || !focused.current || !document.hasFocus() || document.visibilityState !== "visible")) return;
+      const sameGeneration = generation.current === result.generation;
+      generation.current = result.generation;
+      const validIds = new Set(result.items.map(item => item.id));
+      setChoices(current => sameGeneration ? Object.fromEntries(Object.entries(current).filter(([id]) => validIds.has(id))) : {});
+      setData(result); setRevealed(reveal); setConfirm(false);
       setObject(current => result.items.some(item => item.object === current) ? current : result.items[0]?.object || "");
-    } catch { if (stamp === sequence.current) setError(zh ? "无法读取冲突，请刷新重试。" : "Could not load conflicts. Refresh and retry."); }
+    } catch { if (alive.current && stamp === sequence.current) setError(zh ? "无法读取冲突，请刷新重试。" : "Could not load conflicts. Refresh and retry."); }
   }
   useEffect(() => { void load(); return () => { sequence.current++; }; }, []);
   useEffect(() => {
+    const blur = () => { focused.current = false; hide(); };
+    const focus = () => { focused.current = true; };
+    const visibility = () => { if (document.visibilityState !== "visible") hide(); };
+    window.addEventListener("blur", blur); window.addEventListener("focus", focus); document.addEventListener("visibilitychange", visibility);
+    return () => { window.removeEventListener("blur", blur); window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", visibility); };
+  }, [hide]);
+  useLayoutEffect(() => { if (!active) hide(); }, [active, hide]);
+  useEffect(() => {
     if (!revealed) return;
-    const hide = () => { if (document.visibilityState !== "visible" || !document.hasFocus()) void load(); };
-    const timer = window.setTimeout(() => void load(), 45_000);
-    window.addEventListener("blur", hide); document.addEventListener("visibilitychange", hide);
-    return () => { window.clearTimeout(timer); window.removeEventListener("blur", hide); document.removeEventListener("visibilitychange", hide); };
-  }, [revealed]);
+    const timer = window.setTimeout(hide, 45_000);
+    return () => window.clearTimeout(timer);
+  }, [revealed, hide]);
   const items = data?.items.filter(item => item.object === object) || [];
   const groups = new Map(data?.items.map(item => [item.object, item.title || (zh ? "密码库内容" : "Vault content")]) || []);
   async function apply() {
-    if (!data || busy) return;
+    if (!data || busy || blocked || items.some(item => !choices[item.id])) return;
     setConfirm(false); setBusy(true); setError("");
-    try { await api.resolvePersonalSync(data.generation, choices); await load(); onDone(); }
-    catch { setError(zh ? "内容已变化或保存失败，请刷新后重新选择。" : "Content changed or could not be saved. Refresh and choose again."); }
-    finally { setBusy(false); }
+    try {
+      // The confirmation describes the visible object. Other objects may only
+      // have partial choices, which the backend correctly refuses to apply.
+      await api.resolvePersonalSync(data.generation, Object.fromEntries(items.map(item => [item.id, choices[item.id]])));
+      if (!alive.current) return;
+      await load();
+      if (alive.current) onDone();
+    }
+    catch { if (alive.current) setError(zh ? "内容已变化或保存失败，请刷新后重新选择。" : "Content changed or could not be saved. Refresh and choose again."); }
+    finally { if (alive.current) setBusy(false); }
   }
   function display(value: PersonalSyncChoice["local"]) {
     if (!value.present) return zh ? "已永久删除" : "Permanently removed";
     const state = value.state === "trash" ? (zh ? "回收站" : "Trash") : value.state === "archived" ? (zh ? "归档" : "Archived") : value.state ? (zh ? "正常" : "Active") : "";
     return (state ? `${state} · ` : "") + (value.value || (zh ? "空值" : "Empty")) + (value.truncated ? "…" : "");
   }
-  return <section className="nested-panel" aria-labelledby="personal-sync-conflicts-heading">
+  return <section hidden={!active} className="nested-panel" aria-labelledby="personal-sync-conflicts-heading">
     <h4 id="personal-sync-conflicts-heading">{zh ? "处理多电脑修改冲突" : "Review changes from other computers"}</h4>
     <p className="field-hint">{zh ? "分别选择保留哪一边。确认后先保存在这台电脑，下次同步会把选择发送给其他电脑。" : "Choose which value to keep for each field. Confirmation saves locally; the next sync sends your choices to the other computers."}</p>
-    <div className="button-row"><button className="secondary" disabled={busy} onClick={() => void load()}>{zh ? "刷新冲突" : "Refresh conflicts"}</button><button className="secondary" disabled={busy || !items.length} onClick={() => void load(!revealed)}>{revealed ? (zh ? "隐藏冲突内容" : "Hide conflict values") : (zh ? "显示冲突内容" : "Reveal conflict values")}</button></div>
+    <div className="button-row"><button className="secondary" disabled={busy || blocked} onClick={() => void load()}>{zh ? "刷新冲突" : "Refresh conflicts"}</button><button className="secondary" disabled={busy || blocked || !items.length} onClick={() => revealed ? hide() : void load(true)}>{revealed ? (zh ? "隐藏冲突内容" : "Hide conflict values") : (zh ? "显示冲突内容" : "Reveal conflict values")}</button></div>
     {error && <p role="alert" className="error">{error}</p>}
     {data && !data.items.length && <p role="status">{zh ? "没有待处理冲突。" : "No conflicts to resolve."}</p>}
     {items.length > 0 && <>
-      <div className="field"><label htmlFor="sync-conflict-entry">{zh ? "需要处理的条目" : "Entry to review"}</label><select id="sync-conflict-entry" disabled={busy} value={object} onChange={event => { setObject(event.target.value); setChoices({}); }}>{[...groups].map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></div>
-      {items.map((item, index) => <fieldset className="personal-sync-choice" key={item.id} disabled={busy}>
+      <div className="field"><label htmlFor="sync-conflict-entry">{zh ? "需要处理的条目" : "Entry to review"}</label><select id="sync-conflict-entry" disabled={busy || blocked} value={object} onChange={event => { hide(); setObject(event.target.value); }}>{[...groups].map(([key, title]) => <option key={key} value={key}>{title}</option>)}</select></div>
+      {items.map((item, index) => <fieldset className="personal-sync-choice" key={item.id} disabled={busy || blocked}>
         <legend>{fieldName(item.path, zh)}</legend>
         {(["local", "remote"] as const).map(side => <label className="personal-sync-option" key={side}>
           <input type="radio" name={`sync-choice-${index}`} value={side} checked={choices[item.id] === side} onChange={() => setChoices(current => ({ ...current, [item.id]: side }))} />
           <span><strong>{side === "local" ? (zh ? "保留这台电脑" : "Keep this computer") : (zh ? `采用其他电脑（${item.device}）` : `Use other computer (${item.device})`)}</strong><span className="personal-sync-value">{display(item[side])}</span></span>
         </label>)}
       </fieldset>)}
-      <button className="primary" disabled={busy || items.some(item => !choices[item.id])} onClick={() => setConfirm(true)}>{zh ? "确认所选内容" : "Confirm selected values"}</button>
+      <button className="primary" disabled={busy || blocked || items.some(item => !choices[item.id])} onClick={() => setConfirm(true)}>{zh ? "确认所选内容" : "Confirm selected values"}</button>
     </>}
     <ConfirmDialog open={confirm} idPrefix="personal-sync-resolution" title={zh ? "保存冲突处理结果" : "Save conflict choices"} message={zh ? `将按你的选择处理 ${items.length} 处冲突。` : `Apply your choices to ${items.length} conflicting fields.`} onCancel={() => setConfirm(false)} onConfirm={() => void apply()} />
   </section>;
@@ -76,7 +116,7 @@ function Conflicts({ onDone }: { onDone: () => void }) {
 
 const blank: PersonalSyncSetup = { provider: "folder", mode: "create", location: "", label: "", automatic: false, code: "", username: "", password: "" };
 
-export default function PersonalSync() {
+export default function PersonalSync({ onDirtyChange, onSavingChange }: TaskProps) {
   const { locale } = useI18n(); const zh = locale === "zh";
   const [status, setStatus] = useState<PersonalSyncStatus | null>(null);
   const [setup, setSetup] = useState<PersonalSyncSetup>(blank);
@@ -90,26 +130,49 @@ export default function PersonalSync() {
   const [label, setLabel] = useState("");
   const [automatic, setAutomatic] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
+  const [conflictsOpened, setConflictsOpened] = useState(false);
+  const [conflictDirty, setConflictDirty] = useState(false);
+  const [conflictBusy, setConflictBusy] = useState(false);
   const [confirmation, setConfirmation] = useState<"connect" | "disconnect" | null>(null);
-  const alive = useRef(true); const working = useRef(false); const pending = useRef<string | null>(null);
+  const alive = useTaskLifetime(); const working = useRef(false); const pending = useRef<string | null>(null);
+  const dirty = JSON.stringify(setup) !== JSON.stringify(blank) || preview !== null || conflictDirty || Boolean(status?.connected && (label !== (status.label || "") || automatic !== Boolean(status.automatic)));
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onSavingChange?.(busy || conflictBusy); }, [busy, conflictBusy, onSavingChange]);
+  useEffect(() => () => { onDirtyChange?.(false); onSavingChange?.(false); }, [onDirtyChange, onSavingChange]);
   async function refresh() {
     try { const value = await api.personalSyncStatus(); if (alive.current) setStatus(value); }
     catch { if (alive.current) setError(zh ? "无法读取同步设置，请重新解锁后重试。" : "Could not load sync settings. Unlock again and retry."); }
   }
   useEffect(() => {
-    alive.current = true; void refresh();
+    void refresh();
     const update = () => { void refresh(); };
     window.addEventListener("vault-personal-sync-updated", update);
-    return () => { alive.current = false; window.removeEventListener("vault-personal-sync-updated", update); if (pending.current) void api.cancelPersonalSync(pending.current).catch(() => {}); };
+    return () => { window.removeEventListener("vault-personal-sync-updated", update); if (pending.current) void api.cancelPersonalSync(pending.current).catch(() => {}); };
   }, []);
   useEffect(() => { setLabel(status?.label || ""); setAutomatic(Boolean(status?.automatic)); }, [status?.label, status?.automatic]);
+  const codeSequence = useRef(0);
+  const codeFocused = useRef(document.hasFocus());
+  const hideCode = useCallback(() => { ++codeSequence.current; setCode(""); }, []);
+  useEffect(() => {
+    const blur = () => { codeFocused.current = false; hideCode(); };
+    const focus = () => { codeFocused.current = true; };
+    const visibility = () => { if (document.visibilityState !== "visible") hideCode(); };
+    window.addEventListener("blur", blur); window.addEventListener("focus", focus); document.addEventListener("visibilitychange", visibility);
+    return () => { window.removeEventListener("blur", blur); window.removeEventListener("focus", focus); document.removeEventListener("visibilitychange", visibility); };
+  }, [hideCode]);
   useEffect(() => {
     if (!code) return;
-    const hide = () => setCode(""); const timer = window.setTimeout(hide, 45_000);
-    window.addEventListener("blur", hide); document.addEventListener("visibilitychange", hide);
-    return () => { window.clearTimeout(timer); window.removeEventListener("blur", hide); document.removeEventListener("visibilitychange", hide); };
-  }, [code]);
-  function changed() { window.dispatchEvent(new Event("vault-personal-sync-updated")); }
+    const timer = window.setTimeout(hideCode, 45_000);
+    return () => window.clearTimeout(timer);
+  }, [code, hideCode]);
+  async function revealCode() {
+    const stamp = ++codeSequence.current;
+    await action(async () => {
+      const result = await api.personalSyncCode();
+      if (alive.current && stamp === codeSequence.current && codeFocused.current && document.hasFocus() && document.visibilityState === "visible") setCode(result.code);
+    });
+  }
+  function changed() { if (alive.current) window.dispatchEvent(new Event("vault-personal-sync-updated")); }
   async function action(work: () => Promise<void>) {
     if (working.current) return;
     working.current = true; setBusy(true); setError(""); setErrorDetail(""); setNotice("");
@@ -161,7 +224,7 @@ export default function PersonalSync() {
       {status.upgrade_required && <p className="field-hint">{zh ? "请先到“安全与恢复”升级密码库格式，再启用完整同步。" : "First upgrade the vault format in Security & recovery, then enable full synchronization."}</p>}
       {!expanded && <button className="secondary" disabled={status.upgrade_required} onClick={() => setExpanded(true)}>{zh ? "设置多电脑同步" : "Set up computer sync"}</button>}
       {expanded && !preview && <form onSubmit={event => void prepare(event)}>
-        <fieldset className="personal-sync-fields" disabled={busy}>
+        <fieldset className="personal-sync-fields" disabled={busy || conflictBusy}>
           <div className="field"><label htmlFor="personal-sync-mode">{zh ? "连接方式" : "Connection mode"}</label><select id="personal-sync-mode" value={setup.mode} onChange={event => setSetup({ ...setup, mode: event.target.value as PersonalSyncSetup["mode"] })}><option value="create">{zh ? "第一台电脑：创建同步空间" : "First computer: create a sync space"}</option><option value="join">{zh ? "其他电脑：加入已有空间" : "Another computer: join an existing space"}</option></select></div>
           <div className="field"><label htmlFor="personal-sync-provider">{zh ? "存储方式" : "Storage type"}</label><select id="personal-sync-provider" value={setup.provider} onChange={event => setSetup({ ...setup, provider: event.target.value as PersonalSyncSetup["provider"], location: "", password: "", username: "" })}><option value="folder">{zh ? "同步文件夹" : "Synchronized folder"}</option><option value="webdav">WebDAV</option></select></div>
           {setup.provider === "folder" ? <PathPicker id="personal-sync-folder" label={zh ? "同步文件夹位置" : "Synchronized folder location"} value={setup.location} onChange={location => setSetup({ ...setup, location })} mode="directory" required hint={zh ? "选择已由 OneDrive、网盘或局域网在两台电脑间同步的文件夹。" : "Choose a folder already shared between your computers through OneDrive, another drive service or your local network."} /> : <>
@@ -180,26 +243,26 @@ export default function PersonalSync() {
         <p className="field-hint">{zh ? "加入后会保留这台电脑已有条目；冲突内容需另行选择。同步期间非冲突修改会自动合并。" : "Joining retains this computer's entries; conflicts need a separate choice. Later sync merges non-conflicting changes automatically."}</p>
         {preview.items.length > 0 && <ul>{preview.items.map(item => <li key={item.id}>{item.title || (zh ? "密码库内容" : "Vault content")} · {({ add: zh ? "新增" : "Add", update: zh ? "更新" : "Update", remove: zh ? "删除" : "Remove" })[item.action]}</li>)}</ul>}
         {preview.total > preview.items.length && <p>{zh ? "仅显示前 100 项。" : "Showing the first 100 changes."}</p>}
-        <div className="button-row"><button className="primary" disabled={busy} onClick={() => setConfirmation("connect")}>{zh ? "连接并应用" : "Connect and apply"}</button><button className="secondary" disabled={busy} onClick={cancelPreview}>{zh ? "取消连接" : "Cancel connection"}</button></div>
+        <div className="button-row"><button className="primary" disabled={busy || conflictBusy} onClick={() => setConfirmation("connect")}>{zh ? "连接并应用" : "Connect and apply"}</button><button className="secondary" disabled={busy || conflictBusy} onClick={cancelPreview}>{zh ? "取消连接" : "Cancel connection"}</button></div>
       </div>}
     </>}
     {status?.connected && <>
       <dl className="status-grid"><div className="status-row"><dt>{zh ? "存储位置" : "Storage location"}</dt><dd>{status.location}</dd></div><div className="status-row"><dt>{zh ? "同步状态" : "Sync state"}</dt><dd>{status.disabled ? (zh ? "已停止，等待清理凭据" : "Stopped; credential cleanup pending") : status.busy || busy ? (zh ? "正在处理" : "Working") : status.error ? (zh ? "连接中断，将保留本地修改并重试" : "Connection interrupted; local changes retained for retry") : (zh ? "已连接" : "Connected")}</dd></div><div className="status-row"><dt>{zh ? "待上传 / 冲突" : "Pending / conflicts"}</dt><dd>{(status.pending || 0) + (status.outbox || 0)} / {status.conflicts || 0}</dd></div><div className="status-row"><dt>{zh ? "最近同步" : "Last sync"}</dt><dd>{status.last_success ? new Date(status.last_success * 1000).toLocaleString(locale) : (zh ? "本次启动尚未同步" : "Not synced in this session")}</dd></div></dl>
       {(status.waiting || status.more) && <p role="status">{zh ? "正在等待更多修改记录，下一轮同步会继续。" : "Waiting for more change records; the next sync will continue."}</p>}
-      <div className="button-row"><button className="primary" disabled={busy || status.busy || status.disabled} onClick={() => void action(async () => { await api.runPersonalSync(); if (alive.current) setNotice(zh ? "本轮同步已完成。" : "Sync cycle completed."); changed(); })}>{zh ? "立即同步" : "Sync now"}</button><button className="secondary" disabled={busy} onClick={() => void refresh()}>{zh ? "刷新状态" : "Refresh status"}</button><button className="secondary" disabled={busy} onClick={() => { setCode(""); setConfirmation("disconnect"); }}>{zh ? "断开这台电脑" : "Disconnect this computer"}</button></div>
+      <div className="button-row"><button className="primary" disabled={busy || conflictBusy || status.busy || status.disabled} onClick={() => void action(async () => { await api.runPersonalSync(); if (alive.current) setNotice(zh ? "本轮同步已完成。" : "Sync cycle completed."); changed(); })}>{zh ? "立即同步" : "Sync now"}</button><button className="secondary" disabled={busy || conflictBusy} onClick={() => void refresh()}>{zh ? "刷新状态" : "Refresh status"}</button><button className="secondary" disabled={busy || conflictBusy} onClick={() => { setCode(""); setConfirmation("disconnect"); }}>{zh ? "断开这台电脑" : "Disconnect this computer"}</button></div>
       {!status.disabled && <>
-        <div className="field"><label htmlFor="personal-sync-current-name">{zh ? "这台电脑的名称" : "This computer's name"}</label><input id="personal-sync-current-name" maxLength={100} disabled={busy} value={label} onChange={event => setLabel(event.target.value)} /></div>
-        <label className="checkbox-field"><input type="checkbox" disabled={busy} checked={automatic} onChange={event => setAutomatic(event.target.checked)} />{zh ? "解锁期间自动同步" : "Sync automatically while unlocked"}</label>
-        <button className="secondary" disabled={busy || !label.trim() || (label === status.label && automatic === status.automatic)} onClick={() => void action(async () => { await api.updatePersonalSync(automatic, label); changed(); })}>{zh ? "保存同步设置" : "Save sync settings"}</button>
-        <details className="personal-sync-devices"><summary>{zh ? "连接另一台电脑与设备列表" : "Connect another computer and view devices"}</summary>
+        <div className="field"><label htmlFor="personal-sync-current-name">{zh ? "这台电脑的名称" : "This computer's name"}</label><input id="personal-sync-current-name" maxLength={100} disabled={busy || conflictBusy} value={label} onChange={event => setLabel(event.target.value)} /></div>
+        <label className="checkbox-field"><input type="checkbox" disabled={busy || conflictBusy} checked={automatic} onChange={event => setAutomatic(event.target.checked)} />{zh ? "解锁期间自动同步" : "Sync automatically while unlocked"}</label>
+        <button className="secondary" disabled={busy || conflictBusy || !label.trim() || (label === status.label && automatic === status.automatic)} onClick={() => void action(async () => { await api.updatePersonalSync(automatic, label); changed(); })}>{zh ? "保存同步设置" : "Save sync settings"}</button>
+        <details className="personal-sync-devices" onToggle={event => { if (!event.currentTarget.open) hideCode(); }}><summary>{zh ? "连接另一台电脑与设备列表" : "Connect another computer and view devices"}</summary>
           <p className="field-hint">{zh ? "在另一台电脑选择相同的存储位置并粘贴连接码。连接码包含解密密钥，只交给你自己的设备。" : "Choose the same storage location on your other computer and paste the connection code. It contains the decryption key; give it only to your own devices."}</p>
-          <div className="button-row"><button className="secondary" disabled={busy} onClick={() => void action(async () => { const result = await api.personalSyncCode(); if (alive.current) setCode(result.code); })}>{zh ? "显示连接码" : "Reveal connection code"}</button><button className="secondary" disabled={busy} onClick={() => void action(async () => { await api.copyPersonalSyncCode(); if (alive.current) setNotice(""); })}>{zh ? "复制连接码" : "Copy connection code"}</button>{code && <button className="secondary" onClick={() => setCode("")}>{zh ? "隐藏连接码" : "Hide connection code"}</button>}</div>
+          <div className="button-row"><button className="secondary" disabled={busy || conflictBusy} onClick={() => void revealCode()}>{zh ? "显示连接码" : "Reveal connection code"}</button><button className="secondary" disabled={busy || conflictBusy} onClick={() => void action(async () => { await api.copyPersonalSyncCode(); if (alive.current) setNotice(""); })}>{zh ? "复制连接码" : "Copy connection code"}</button>{code && <button className="secondary" onClick={hideCode}>{zh ? "隐藏连接码" : "Hide connection code"}</button>}</div>
           {code && <div className="field"><label htmlFor="personal-sync-shown-code">{zh ? "同步连接码" : "Sync connection code"}</label><input id="personal-sync-shown-code" readOnly value={code} autoComplete="off" /></div>}
           <ul>{status.devices?.map(device => <li key={device.id}>{device.label}{device.current ? (zh ? "（这台电脑）" : " (this computer)") : ""}</li>)}</ul>
           {Boolean(status.pending_deletions) && <p className="field-hint">{zh ? `${status.pending_deletions} 条删除记录等待其他电脑确认。` : `${status.pending_deletions} deletion records are waiting for other computers to acknowledge them.`}</p>}
         </details>
-        {Boolean(status.conflicts) && <button className="secondary" disabled={busy} onClick={() => setShowConflicts(value => !value)}>{showConflicts ? (zh ? "收起冲突处理" : "Close conflict review") : (zh ? "处理多电脑冲突" : "Review computer sync conflicts")}</button>}
-        {showConflicts && <Conflicts onDone={changed} />}
+        {Boolean(status.conflicts) && <button className="secondary" disabled={busy || conflictBusy} onClick={() => { setConflictsOpened(true); setShowConflicts(value => !value); }}>{showConflicts ? (zh ? "收起冲突处理" : "Close conflict review") : (zh ? "处理多电脑冲突" : "Review computer sync conflicts")}</button>}
+        {conflictsOpened && <Conflicts onDone={changed} active={showConflicts} blocked={busy} onDirtyChange={setConflictDirty} onSavingChange={setConflictBusy} />}
       </>}
     </>}
     <ConfirmDialog open={confirmation !== null} idPrefix="personal-sync-confirm" title={confirmation === "disconnect" ? (zh ? "断开多电脑同步" : "Disconnect computer sync") : (zh ? "确认连接同步空间" : "Connect to this sync space")} message={confirmation === "disconnect" ? (zh ? "保留本地数据，停止这台电脑的上传和下载。共享存储中的加密记录会保留。" : "Keep local data and stop this computer's uploads and downloads. Encrypted records in shared storage remain.") : (zh ? "确认后应用预览中的合并，并按你的设置同步后续修改。需要修改本地数据时会先创建加密备份。" : "Apply the previewed merge and sync future changes according to your settings. An encrypted backup is created before changing local data.")} onCancel={() => setConfirmation(null)} onConfirm={() => void confirm()} />

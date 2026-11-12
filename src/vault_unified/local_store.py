@@ -232,8 +232,8 @@ class LocalVault:
         updated_entry_ids: set[str],
         expected_generation: int,
         expected_digest: str,
-    ) -> None:
-        """Apply a previewed import with one encrypted write and no partial memory state."""
+    ) -> tuple[int, str]:
+        """Apply an import and return its generation/digest under the write lock."""
 
         with self._lock:
             if (
@@ -262,6 +262,7 @@ class LocalVault:
             if candidates:
                 self._save_entries(staged)
                 self._entries = staged
+            return self._generation, self._state_digest_locked()
 
     def restore_import_payload(
         self,

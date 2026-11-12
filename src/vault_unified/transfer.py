@@ -190,6 +190,11 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
     for entry in vault.local.list_entries():
         if not is_fillable(entry):
             continue
+        if len(values) >= MAX_TRANSFER_ENTRIES:
+            raise ValueError(
+                f"Plaintext export exceeds the {MAX_TRANSFER_ENTRIES:,}-entry import limit. "
+                "Use an encrypted backup for a full vault migration."
+            )
         personal = data_for(entry)
         values.append(
             {
@@ -209,7 +214,10 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
         )
     if format_name == "json":
         return (
-            json.dumps({"schema": JSON_SCHEMA, "version": JSON_VERSION, "entries": values}, ensure_ascii=False, indent=2),
+            _bounded_export_content(json.dumps(
+                {"schema": JSON_SCHEMA, "version": JSON_VERSION, "entries": values},
+                ensure_ascii=False, indent=2,
+            )),
             "vault-unified-export.json",
             "application/json",
         )
@@ -242,5 +250,14 @@ def export_transfer(vault: Any, format_name: str) -> tuple[str, str, str]:
                     "website_rules": json.dumps(value["website_rules"], ensure_ascii=False),
                 }
             )
-        return stream.getvalue(), "vault-unified-export.csv", "text/csv"
+        return _bounded_export_content(stream.getvalue()), "vault-unified-export.csv", "text/csv"
     raise ValueError("format must be json or csv")
+
+
+def _bounded_export_content(content: str) -> str:
+    if len(content.encode("utf-8")) > MAX_TRANSFER_BYTES:
+        raise ValueError(
+            f"Plaintext export exceeds the {MAX_TRANSFER_BYTES // (1024 * 1024)} MiB import limit. "
+            "Use an encrypted backup for a full vault migration."
+        )
+    return content

@@ -11,6 +11,7 @@ import SyncResultSummary, {
 } from "../components/SyncResultSummary";
 import LoadingSkeleton from "../components/LoadingSkeleton";
 import { useI18n } from "../i18n";
+import { useTaskLifetime } from "../components/useTaskLifetime";
 
 const PULL_SOURCES = [
   "proton_pass",
@@ -132,12 +133,15 @@ const copy = {
 interface Props {
   onOpenConflicts?: () => void;
   onSyncDone?: () => void;
+  onDirtyChange?: (value: boolean) => void;
+  onSavingChange?: (value: boolean) => void;
 }
 
 export default function SyncPanel({
   onOpenConflicts,
-  onSyncDone,
+  onSyncDone, onDirtyChange, onSavingChange,
 }: Props) {
+  const alive = useTaskLifetime();
   const { t, locale } = useI18n();
   const text = copy[locale];
   const { showToast } = useToast();
@@ -149,16 +153,22 @@ export default function SyncPanel({
   const [busy, setBusy] = useState<"preview" | "execute" | null>(null);
   const [deletionsReviewed, setDeletionsReviewed] = useState(false);
 
+  useEffect(() => { onDirtyChange?.(preview !== null); }, [preview, onDirtyChange]);
+  useEffect(() => { onSavingChange?.(busy !== null); }, [busy, onSavingChange]);
+  useEffect(() => () => { onDirtyChange?.(false); onSavingChange?.(false); }, [onDirtyChange, onSavingChange]);
+
   async function loadStatus() {
     try {
       setStatusLoading(true);
       const res = await api.status();
+      if (!alive.current) return;
       setStatus(res.components);
       setError("");
     } catch (err) {
+      if (!alive.current) return;
       setError(String(err).replace(/^Error:\s*/, ""));
     } finally {
-      setStatusLoading(false);
+      if (alive.current) setStatusLoading(false);
     }
   }
 
@@ -183,16 +193,18 @@ export default function SyncPanel({
         includePush,
         sources
       );
+      if (!alive.current) return;
       setPreview(plan);
       setDeletionsReviewed(false);
       showToast(text.previewReady);
     } catch (err) {
+      if (!alive.current) return;
       const msg = String(err).replace(/^Error:\s*/, "");
       setPreview(null);
       setError(msg);
       showToast(msg, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -206,13 +218,15 @@ export default function SyncPanel({
       const res = (await api.executeSync(
         preview.preview_token
       )) as SyncResultData;
+      if (!alive.current) return;
       setResult(res);
       setPreview(null);
       setDeletionsReviewed(false);
       showToast(t("sync.completed"));
       await loadStatus();
-      onSyncDone?.();
+      if (alive.current) onSyncDone?.();
     } catch (err) {
+      if (!alive.current) return;
       const msg = String(err).replace(/^Error:\s*/, "");
       setPreview(null);
       setError(msg);
@@ -221,7 +235,7 @@ export default function SyncPanel({
         "error"
       );
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -460,6 +474,7 @@ export default function SyncPanel({
             <label className="checkbox-field sync-deletion-review">
               <input
                 type="checkbox"
+                disabled={anyBusy}
                 checked={deletionsReviewed}
                 onChange={(event) => setDeletionsReviewed(event.target.checked)}
               />

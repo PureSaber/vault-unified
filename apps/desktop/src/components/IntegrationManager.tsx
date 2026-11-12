@@ -10,6 +10,7 @@ import { useI18n } from "../i18n";
 import { useToast } from "./Toast";
 import ConfirmDialog from "./ConfirmDialog";
 import PathPicker from "./PathPicker";
+import { useTaskLifetime } from "./useTaskLifetime";
 
 const copy = {
   zh: {
@@ -114,11 +115,13 @@ function enabledSources(prefs: SyncPrefs, items: Integration[]): string[] {
   return prefs.enabled_sources;
 }
 
-export default function IntegrationManager() {
+export default function IntegrationManager({ onDirtyChange, onSavingChange }: { onDirtyChange?: (value: boolean) => void; onSavingChange?: (value: boolean) => void }) {
+  const alive = useTaskLifetime();
   const { locale } = useI18n();
   const text = copy[locale];
   const { showToast } = useToast();
   const [items, setItems] = useState<Integration[]>([]);
+  const [savedPrefs, setSavedPrefs] = useState<SyncPrefs | null>(null);
   const [prefs, setPrefs] = useState<SyncPrefs | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({});
   const [selected, setSelected] = useState<string | null>(null);
@@ -136,13 +139,15 @@ export default function IntegrationManager() {
     setError("");
     try {
       const [connections, syncPrefs] = await Promise.all([api.integrations(), api.getPrefs()]);
+      if (!alive.current) return;
       setItems(connections);
       setDrafts(initialDrafts(connections));
-      setPrefs(syncPrefs);
+      setPrefs(syncPrefs); setSavedPrefs(syncPrefs);
     } catch (loadError) {
+      if (!alive.current) return;
       setError(String(loadError).replace(/^Error:\s*/, ""));
     } finally {
-      setLoading(false);
+      if (alive.current) setLoading(false);
     }
   }, []);
 
@@ -154,6 +159,10 @@ export default function IntegrationManager() {
     () => Object.fromEntries(items.map((item) => [item.source, item])),
     [items],
   );
+  const dirty = JSON.stringify(drafts) !== JSON.stringify(initialDrafts(items)) || JSON.stringify(prefs) !== JSON.stringify(savedPrefs) || preview !== null;
+  useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onSavingChange?.(busy !== null); }, [busy, onSavingChange]);
+  useEffect(() => () => { onDirtyChange?.(false); onSavingChange?.(false); }, [onDirtyChange, onSavingChange]);
   const selectedItem = selected ? bySource[selected] : undefined;
   const enabled = new Set(prefs ? enabledSources(prefs, items) : []);
 
@@ -185,7 +194,9 @@ export default function IntegrationManager() {
         const value = drafts[source]?.[field.key] ?? "";
         if (!field.secret || value) values[field.key] = value;
       }
-      replaceItem(await api.saveIntegration(source, values));
+      const updated = await api.saveIntegration(source, values);
+      if (!alive.current) return;
+      replaceItem(updated);
       setTests((previous) => {
         const next = { ...previous };
         delete next[source];
@@ -194,11 +205,12 @@ export default function IntegrationManager() {
       setPreview(null);
       showToast(text.saved);
     } catch (saveError) {
+      if (!alive.current) return;
       const message = String(saveError).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -207,15 +219,17 @@ export default function IntegrationManager() {
     setError("");
     try {
       const result = await api.testIntegration(source);
+      if (!alive.current) return;
       setTests((previous) => ({ ...previous, [source]: result }));
       setPreview(null);
       showToast(result.message, result.available ? "success" : "error");
     } catch (testError) {
+      if (!alive.current) return;
       const message = String(testError).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -223,13 +237,16 @@ export default function IntegrationManager() {
     setBusy(`preview:${source}`);
     setError("");
     try {
-      setPreview(await api.previewSync(true, false, [source]));
+      const result = await api.previewSync(true, false, [source]);
+      if (!alive.current) return;
+      setPreview(result);
     } catch (previewError) {
+      if (!alive.current) return;
       const message = String(previewError).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -239,15 +256,17 @@ export default function IntegrationManager() {
     try {
       const nextEnabled = Array.from(new Set([...enabledSources(prefs, items), source]));
       const saved = await api.savePrefs({ ...prefs, enabled_sources: nextEnabled });
-      setPrefs(saved);
+      if (!alive.current) return;
+      setPrefs(saved); setSavedPrefs(saved);
       setPreview(null);
       showToast(text.enabledDone);
     } catch (enableError) {
+      if (!alive.current) return;
       const message = String(enableError).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -257,7 +276,9 @@ export default function IntegrationManager() {
     setClearSource(null);
     setBusy(`clear:${source}`);
     try {
-      replaceItem(await api.clearIntegration(source));
+      const updated = await api.clearIntegration(source);
+      if (!alive.current) return;
+      replaceItem(updated);
       setPreview(null);
       setTests((previous) => {
         const next = { ...previous };
@@ -266,11 +287,12 @@ export default function IntegrationManager() {
       });
       showToast(text.cleared);
     } catch (clearError) {
+      if (!alive.current) return;
       const message = String(clearError).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -278,14 +300,17 @@ export default function IntegrationManager() {
     if (!prefs) return;
     setBusy("advanced");
     try {
-      setPrefs(await api.savePrefs(prefs));
+      const saved = await api.savePrefs(prefs);
+      if (!alive.current) return;
+      setPrefs(saved); setSavedPrefs(saved);
       showToast(text.advancedSaved);
     } catch (advancedError) {
+      if (!alive.current) return;
       const message = String(advancedError).replace(/^Error:\s*/, "");
       setError(message);
       showToast(message, "error");
     } finally {
-      setBusy(null);
+      if (alive.current) setBusy(null);
     }
   }
 
@@ -312,6 +337,7 @@ export default function IntegrationManager() {
         onConfirm={clearConnection}
         onCancel={() => setClearSource(null)}
       />
+      <fieldset className="form-controls" disabled={busy !== null}>
       <h3 id="integration-heading" className="section-title">{text.title}</h3>
       <p className="field-hint">{text.hint}</p>
 
@@ -332,7 +358,6 @@ export default function IntegrationManager() {
                   aria-pressed={selected === item.source}
                   onClick={() => {
                     setSelected(selected === item.source ? null : item.source);
-                    setPreview(null);
                     setShowSelectedTechnical(false);
                   }}
                 >
@@ -496,6 +521,7 @@ export default function IntegrationManager() {
       )}
 
       {error && <div className="error" role="alert">{error}</div>}
+      </fieldset>
     </section>
   );
 }
