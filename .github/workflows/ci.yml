@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   python:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/python-unused' || 'python' }}
     if: ${{ !inputs.sync_repetitions }}
     runs-on: windows-latest
     steps:
@@ -40,6 +41,7 @@ jobs:
         run: .\.venv\Scripts\python scripts\scan_repository_secrets.py --repo-root .
 
   desktop:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/desktop-unused' || 'desktop' }}
     if: ${{ !inputs.sync_repetitions }}
     # Server 2025 WebView2 automation currently fails before opening its DevTools
     # port: actions/runner-images#14738. Keep native GUI checks on Server 2022;
@@ -103,6 +105,7 @@ jobs:
           }
 
   ui-journey:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/repeated-journeys' || 'ui-journey' }}
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -161,6 +164,7 @@ jobs:
           }
 
   rustsec:
+    name: ${{ inputs.sync_repetitions && 'sync-diagnostic/rustsec-unused' || 'rustsec' }}
     if: ${{ !inputs.sync_repetitions }}
     runs-on: windows-latest
     steps:
