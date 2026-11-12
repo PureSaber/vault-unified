@@ -227,6 +227,81 @@ def test_editor_transaction_is_idempotent_and_rejects_stale_generation(client):
     assert "reload" in stale.json()["detail"].lower()
 
 
+@pytest.mark.parametrize("changed", [
+    {"password": "generated-unsaved-draft"},
+    {"notes": "generated-unsaved-note"},
+    {"entry_id": None},
+    {"expected_updated_at": "another-generation"},
+    {"template_data": {"recovery_codes": ["generated-code"]}},
+    {"website_rules": {"match_mode": "exact_host"}},
+    {"add_attachments": [{"filename": "generated.txt", "mime_type": "text/plain", "data_b64": "eA=="}]},
+    {"remove_attachment_ids": ["generated-attachment"]},
+    {"restore_history_id": "generated-history"},
+])
+def test_editor_transaction_rejects_reused_id_with_changed_payload(client, changed):
+    headers = unlock_headers(client)
+    created = client.post("/api/entries", headers=headers,
+                          json={"title": "Saved entry", "password": "generated-original"}).json()
+    payload = _transaction(created, "generated-payload-bound-receipt", username="saved-user")
+    first = client.post("/api/entries/commit", headers=headers, json=payload)
+    assert first.status_code == 200
+    vault_path = Path(client.get("/api/auth/vault-info", headers=headers).json()["path"])
+    before = vault_path.read_bytes()
+
+    refused = client.post("/api/entries/commit", headers=headers, json={**payload, **changed})
+
+    assert refused.status_code == 409
+    assert "different" in refused.json()["detail"].lower()
+    assert "generated-unsaved" not in refused.text
+    assert vault_path.read_bytes() == before
+    saved = client.get(f"/api/entries/{created['id']}?reveal=true", headers=headers).json()
+    assert saved == first.json()
+    retry = client.post("/api/entries/commit", headers=headers, json=dict(reversed(list(payload.items()))))
+    assert retry.status_code == 200
+    assert retry.json() == first.json()
+
+
+def test_concurrent_retries_create_exactly_one_entry(client, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event, Lock
+    from vault_unified.session import sessions
+
+    headers = unlock_headers(client)
+    vault = sessions.get(headers["Authorization"].removeprefix("Bearer "))
+    real_commit = vault.local.commit_entry
+    first_entered, second_entered, release_first = Event(), Event(), Event()
+    count_lock = Lock()
+    call_count = 0
+
+    def paused_commit(*args, **kwargs):
+        nonlocal call_count
+        with count_lock:
+            call_count += 1
+            first = call_count == 1
+        if first:
+            first_entered.set()
+            assert release_first.wait(5)
+        else:
+            second_entered.set()
+        return real_commit(*args, **kwargs)
+
+    monkeypatch.setattr(vault.local, "commit_entry", paused_commit)
+    payload = {"transaction_id": "generated-concurrent-retry", "title": "One entry",
+               "password": "generated-concurrent-secret"}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(client.post, "/api/entries/commit", headers=headers, json=payload)
+        assert first_entered.wait(5)
+        second = pool.submit(client.post, "/api/entries/commit", headers=headers, json=payload)
+        # Without receipt synchronization the second call reaches commit while
+        # the first is paused. With it, the second waits and replays the receipt.
+        second_entered.wait(0.5)
+        release_first.set()
+        results = [first.result(timeout=5), second.result(timeout=5)]
+    assert [result.status_code for result in results] == [200, 200]
+    assert len(client.get("/api/entries", headers=headers).json()) == 1
+    assert results[0].json()["id"] == results[1].json()["id"]
+
+
 def test_attachment_batch_failure_leaves_file_and_memory_unchanged(
     client,
     monkeypatch,

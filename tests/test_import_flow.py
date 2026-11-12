@@ -491,6 +491,57 @@ def test_undo_is_refused_after_a_later_edit(api_client) -> None:
     assert titles == ["Imported once", "Later edit"]
 
 
+def test_undo_refuses_write_between_import_commit_and_receipt(api_client, monkeypatch) -> None:
+    from vault_unified.models import SecretEntry
+
+    client, vault_path = api_client
+    headers, token = _unlock(client)
+    vault = sessions.get(token)
+    preview = _preview(client, headers, _json_transfer([_item("Imported A")])).json()
+    real_commit = vault.local.commit_import_batch
+
+    def interleaved_commit(*args, **kwargs):
+        result = real_commit(*args, **kwargs)
+        # Another writer acquires the lock after the import commit returns,
+        # before its caller can construct the public receipt.
+        vault.local.add(SecretEntry(title="Independent B"))
+        return result
+
+    monkeypatch.setattr(vault.local, "commit_import_batch", interleaved_commit)
+    applied = client.post("/api/transfer/import/apply", headers=headers,
+                          json={"preview_token": preview["preview_token"]})
+    assert applied.status_code == 200, applied.text
+    before_undo = vault_path.read_bytes()
+    refused = client.post("/api/transfer/import/undo", headers=headers,
+                          json={"transaction_id": applied.json()["receipt"]["transaction_id"]})
+    assert refused.status_code == 409
+    assert vault_path.read_bytes() == before_undo
+    assert {entry.title for entry in vault.local.list_entries()} == {"Imported A", "Independent B"}
+
+
+@pytest.mark.parametrize("format_name", ["json", "csv"])
+@pytest.mark.parametrize("limit", ["entries", "bytes"])
+def test_export_api_refuses_unimportable_artifact(api_client, monkeypatch, format_name, limit):
+    from vault_unified.models import SecretEntry
+    from vault_unified.transfer import MAX_TRANSFER_ENTRIES
+
+    client, vault_path = api_client
+    headers, token = _unlock(client)
+    vault = sessions.get(token)
+    entries = ([SecretEntry(title=f"Generated {index}") for index in range(MAX_TRANSFER_ENTRIES + 1)]
+               if limit == "entries" else
+               [SecretEntry(title=f"Generated {index}", notes="x" * 99_000) for index in range(107)])
+    monkeypatch.setattr(vault.local, "list_entries", lambda: entries)
+    before = vault_path.read_bytes()
+    response = client.post("/api/transfer/export", headers=headers,
+                           json={"format": format_name, "confirm_plaintext": True})
+    assert response.status_code == 400
+    assert "encrypted backup" in response.json()["detail"].lower()
+    assert "content" not in response.json()
+    assert "filename" not in response.json()
+    assert vault_path.read_bytes() == before
+
+
 def test_mid_apply_failure_leaves_vault_bytes_and_memory_unchanged(api_client, monkeypatch) -> None:
     client, vault_path = api_client
     headers, token = _unlock(client)

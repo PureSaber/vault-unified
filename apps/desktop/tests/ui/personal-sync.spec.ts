@@ -172,7 +172,14 @@ for (const locale of ["en", "zh"] as const) for (const delayed of [false, true])
     await expect.poll(async () => await other.getByLabel(text("Password", "密码"), { exact: true }).inputValue() === testData.entryPassword + "-first").toBe(true);
     await connections(other);
     await section(other).getByLabel(text("Sync automatically while unlocked", "解锁期间自动同步"), { exact: true }).check();
-    await section(other).getByRole("button", { name: text("Save sync settings", "保存同步设置"), exact: true }).click();
+    const [savedSettings] = await Promise.all([
+      other.waitForResponse(response => response.request().method() === "PUT" && response.url().endsWith("/personal-sync/settings")),
+      section(other).getByRole("button", { name: text("Save sync settings", "保存同步设置"), exact: true }).click(),
+    ]);
+    expect(savedSettings.status()).toBe(200);
+    // Disabled Save also means "still saving". Wait for the working controls
+    // and clean baseline before asking the navigation guard to leave.
+    await expect(section(other).getByLabel(text("This computer's name", "这台电脑的名称"), { exact: true })).toBeEnabled();
     await expect(section(other).getByRole("button", { name: text("Save sync settings", "保存同步设置"), exact: true })).toBeDisabled();
     await other.getByRole("button", { name: text("Passwords", "密码"), exact: true }).click();
     await expect(other.getByRole("button", { name: text(`Open ${title}`, `打开 ${title}`), exact: true })).toBeVisible();

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ConnectionTools from "../components/ConnectionTools";
 import IntegrationManager from "../components/IntegrationManager";
 import { useI18n } from "../i18n";
@@ -9,13 +9,27 @@ interface Props {
   conflictCount: number;
   onOpenConflicts: () => void;
   onSyncDone: () => void;
+  onDirtyChange: (value: boolean) => void;
+  onSavingChange: (value: boolean) => void;
 }
 
-export default function Connections({ conflictCount, onOpenConflicts, onSyncDone }: Props) {
+export default function Connections({ conflictCount, onOpenConflicts, onSyncDone, onDirtyChange, onSavingChange }: Props) {
   const { locale } = useI18n();
   const zh = locale === "zh";
   const [showSyncDetails, setShowSyncDetails] = useState(false);
+  const [syncDetailsOpened, setSyncDetailsOpened] = useState(false);
 
+  const [integrationDirty, setIntegrationDirty] = useState(false);
+  const [integrationBusy, setIntegrationBusy] = useState(false);
+  const [personalDirty, setPersonalDirty] = useState(false);
+  const [personalBusy, setPersonalBusy] = useState(false);
+  const [syncDirty, setSyncDirty] = useState(false);
+  const [syncBusy, setSyncBusy] = useState(false);
+  const dirty = integrationDirty || personalDirty || syncDirty;
+  const busy = integrationBusy || personalBusy || syncBusy;
+  useEffect(() => { onDirtyChange(dirty); }, [dirty, onDirtyChange]);
+  useEffect(() => { onSavingChange(busy); }, [busy, onSavingChange]);
+  useEffect(() => () => { onDirtyChange(false); onSavingChange(false); }, [onDirtyChange, onSavingChange]);
   return (
     <div className="card">
       <h2>{zh ? "连接" : "Connections"}</h2>
@@ -39,8 +53,8 @@ export default function Connections({ conflictCount, onOpenConflicts, onSyncDone
       )}
 
       <ConnectionTools />
-      <PersonalSync />
-      <IntegrationManager />
+      <PersonalSync onDirtyChange={setPersonalDirty} onSavingChange={setPersonalBusy} />
+      <IntegrationManager onDirtyChange={setIntegrationDirty} onSavingChange={setIntegrationBusy} />
 
       <section className="settings-section" aria-labelledby="sync-details-heading">
         <h3 id="sync-details-heading" className="section-title">
@@ -51,14 +65,12 @@ export default function Connections({ conflictCount, onOpenConflicts, onSyncDone
             ? "正常同步会在后台进行。只有待同步、失败或冲突时才需要查看详情。"
             : "Normal sync runs in the background. Open details only for pending changes, failures, or conflicts."}
         </p>
-        <button type="button" className="secondary" onClick={() => setShowSyncDetails((value) => !value)} aria-expanded={showSyncDetails}>
+        <button type="button" className="secondary" disabled={syncBusy} onClick={() => { setSyncDetailsOpened(true); setShowSyncDetails((value) => !value); }} aria-expanded={showSyncDetails}>
           {showSyncDetails ? (zh ? "隐藏同步详情" : "Hide sync details") : (zh ? "查看同步详情" : "Review sync details")}
         </button>
-        {showSyncDetails && (
-          <div className="nested-panel">
-            <SyncPanel onOpenConflicts={onOpenConflicts} onSyncDone={onSyncDone} />
-          </div>
-        )}
+        {syncDetailsOpened && <div className="nested-panel" hidden={!showSyncDetails}>
+            <SyncPanel onOpenConflicts={onOpenConflicts} onSyncDone={onSyncDone} onDirtyChange={setSyncDirty} onSavingChange={setSyncBusy} />
+          </div>}
       </section>
     </div>
   );

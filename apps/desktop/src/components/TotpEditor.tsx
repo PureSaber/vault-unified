@@ -5,9 +5,9 @@ import { useI18n } from "../i18n";
 import PasswordField from "./PasswordField";
 import { useToast } from "./Toast";
 
-interface Props { value: string; onChange: (value: string) => void; savedValue?: string; entryId?: string }
+interface Props { value: string; onChange: (value: string) => void; savedValue?: string; entryId?: string; onReadingChange?: (value: boolean) => void }
 
-export default function TotpEditor({ value, onChange, savedValue, entryId }: Props) {
+export default function TotpEditor({ value, onChange, savedValue, entryId, onReadingChange }: Props) {
   const alive = useTaskLifetime();
   const { locale } = useI18n();
   const zh = locale === "zh";
@@ -17,6 +17,8 @@ export default function TotpEditor({ value, onChange, savedValue, entryId }: Pro
   const [clock, setClock] = useState(performance.now());
   const [error, setError] = useState("");
   const [reading, setReading] = useState(false);
+  useEffect(() => { onReadingChange?.(reading); }, [reading, onReadingChange]);
+  useEffect(() => () => { onReadingChange?.(false); }, [onReadingChange]);
   const sequence = useRef(0);
   const picker = useRef<HTMLInputElement>(null);
   useEffect(() => () => { ++sequence.current; }, []);
@@ -54,6 +56,7 @@ export default function TotpEditor({ value, onChange, savedValue, entryId }: Pro
       const picture = new Image();
       picture.src = objectUrl;
       await picture.decode();
+      if (!alive.current || stamp !== sequence.current) return;
       if (!picture.width || !picture.height || picture.width * picture.height > 16_777_216) throw new Error();
       const scale = Math.min(1, 2048 / Math.max(picture.width, picture.height));
       const canvas = document.createElement("canvas");
@@ -65,11 +68,12 @@ export default function TotpEditor({ value, onChange, savedValue, entryId }: Pro
       const decoded = jsQR(context.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height);
       canvas.width = 0; canvas.height = 0;
       if (!decoded || !decoded.data.toLowerCase().startsWith("otpauth://totp/") || decoded.data.length > 1024) throw new Error();
+      if (!alive.current || stamp !== sequence.current) return;
       const checked = await api.previewTotp(decoded.data);
       if (!checked.valid) throw new Error();
-      if (stamp === sequence.current) { onChange(decoded.data); showToast(zh ? "二维码已载入草稿，保存后生效" : "QR code loaded into the draft; save to keep it"); }
-    } catch { if (stamp === sequence.current) setError(zh ? "未识别到有效的 TOTP 二维码。请选择 PNG、JPEG 或 WebP 图片，最大 4 MiB。" : "No valid TOTP QR code found. Choose a PNG, JPEG or WebP image up to 4 MiB."); }
-    finally { if (objectUrl) URL.revokeObjectURL(objectUrl); if (stamp === sequence.current) setReading(false); }
+      if (alive.current && stamp === sequence.current) { onChange(decoded.data); showToast(zh ? "二维码已载入草稿，保存后生效" : "QR code loaded into the draft; save to keep it"); }
+    } catch { if (alive.current && stamp === sequence.current) setError(zh ? "未识别到有效的 TOTP 二维码。请选择 PNG、JPEG 或 WebP 图片，最大 4 MiB。" : "No valid TOTP QR code found. Choose a PNG, JPEG or WebP image up to 4 MiB."); }
+    finally { if (objectUrl) URL.revokeObjectURL(objectUrl); if (alive.current && stamp === sequence.current) setReading(false); }
   }
   async function copyCode() {
     if (!entryId || savedValue !== value) return;

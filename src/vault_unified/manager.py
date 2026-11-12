@@ -997,7 +997,7 @@ class UnifiedVault:
         self.keepassxc = KeePassXCAdapter()
         self.gopass = GopassAdapter()
         self.sync = MetadataPreservingSyncEngine(self)
-        self._entry_transactions: dict[str, tuple[str, str]] = {}
+        self._entry_transactions: dict[str, tuple[str, str, str]] = {}
 
     @classmethod
     def create(cls, vault_path: Path, password: str) -> UnifiedVault:
@@ -1118,76 +1118,104 @@ class UnifiedVault:
     ) -> SecretEntry:
         """Commit the complete editor draft with one encrypted vault write."""
 
-        receipt = self._entry_transactions.get(transaction_id)
-        if receipt is not None:
-            receipt_entry_id, receipt_updated_at = receipt
-            current = self.local.get(receipt_entry_id)
-            if current is not None and current.updated_at == receipt_updated_at:
-                return current
-            raise EntryTransactionConflict(
-                "This save request was already used and the entry has since changed"
-            )
-
-        create = entry_id is None
-        if create:
-            candidate = SecretEntry(title=title, source=Source.LOCAL)
-        else:
-            current = self.resolve(entry_id)
-            if expected_updated_at is None or current.updated_at != expected_updated_at:
+        # Only retain a canonical digest, never a second copy of draft secrets.
+        request_digest = canonical_digest({
+            "entry_id": entry_id,
+            "expected_updated_at": expected_updated_at,
+            "title": title,
+            "username": username,
+            "password": password,
+            "url": url,
+            "notes": notes,
+            "tags": tags,
+            "entry_type": entry_type,
+            "custom_fields": custom_fields,
+            "totp_secret": totp_secret,
+            "add_attachments": add_attachments,
+            "remove_attachment_ids": remove_attachment_ids,
+            "restore_history_id": restore_history_id,
+            "template_data": template_data,
+            "website_rules": website_rules,
+        })
+        # The receipt lookup, mutation and receipt publication are one critical
+        # section, shared with every local vault writer (including sync).
+        with self.local._lock:
+            receipt = self._entry_transactions.get(transaction_id)
+            if receipt is not None:
+                receipt_entry_id, receipt_updated_at, receipt_digest = receipt
+                if receipt_digest != request_digest:
+                    raise EntryTransactionConflict(
+                        "This save request was already used with a different draft; "
+                        "reload the saved entry before submitting a new save request"
+                    )
+                current = self.local.get(receipt_entry_id)
+                if current is not None and current.updated_at == receipt_updated_at:
+                    return current
                 raise EntryTransactionConflict(
-                    "Entry changed after this editor was opened; reload before saving"
+                    "This save request was already used and the entry has since changed"
                 )
-            candidate = copy.deepcopy(current)
-            if restore_history_id:
-                restore_history(candidate, restore_history_id)
+
+            create = entry_id is None
+            if create:
+                candidate = SecretEntry(title=title, source=Source.LOCAL)
             else:
-                record_history(candidate)
+                current = self.resolve(entry_id)
+                if expected_updated_at is None or current.updated_at != expected_updated_at:
+                    raise EntryTransactionConflict(
+                        "Entry changed after this editor was opened; reload before saving"
+                    )
+                candidate = copy.deepcopy(current)
+                if restore_history_id:
+                    restore_history(candidate, restore_history_id)
+                else:
+                    record_history(candidate)
 
-        candidate.title = title
-        candidate.username = username
-        candidate.password = password
-        candidate.url = url
-        candidate.notes = notes
-        candidate.tags = list(tags)
-        update_data(
-            candidate,
-            entry_type=entry_type,
-            custom_fields=custom_fields,
-            totp_secret=totp_secret,
-        )
-
-        from vault_unified.template_data import NEW_ENTRY_TYPES, set_template, template_for
-        if template_data is not None:
-            set_template(candidate, template_data)
-        from vault_unified.website_rules import set_rules, rules_for
-        set_rules(candidate, website_rules if website_rules is not None else rules_for(candidate))
-        if entry_type in NEW_ENTRY_TYPES and not password.strip():
-            raise PersonalDataError("A license key or API token is required")
-        if entry_type == "recovery_code" and not (template_for(candidate).get("recovery_codes") or password or notes):
-            raise PersonalDataError("Add at least one recovery code")
-
-        for attachment_id in remove_attachment_ids:
-            get_attachment(candidate, attachment_id)
-            if not delete_attachment(candidate, attachment_id):
-                raise KeyError(attachment_id)
-        for attachment in add_attachments:
-            add_attachment(
+            candidate.title = title
+            candidate.username = username
+            candidate.password = password
+            candidate.url = url
+            candidate.notes = notes
+            candidate.tags = list(tags)
+            update_data(
                 candidate,
-                filename=attachment["filename"],
-                mime_type=attachment["mime_type"],
-                data_b64=attachment["data_b64"],
+                entry_type=entry_type,
+                custom_fields=custom_fields,
+                totp_secret=totp_secret,
             )
 
-        candidate.mark_dirty()
-        committed = self.local.commit_entry(
-            candidate,
-            create=create,
-            expected_updated_at=expected_updated_at,
-        )
-        self._entry_transactions[transaction_id] = (
-            committed.id,
-            committed.updated_at,
-        )
+            from vault_unified.template_data import NEW_ENTRY_TYPES, set_template, template_for
+            if template_data is not None:
+                set_template(candidate, template_data)
+            from vault_unified.website_rules import set_rules, rules_for
+            set_rules(candidate, website_rules if website_rules is not None else rules_for(candidate))
+            if entry_type in NEW_ENTRY_TYPES and not password.strip():
+                raise PersonalDataError("A license key or API token is required")
+            if entry_type == "recovery_code" and not (template_for(candidate).get("recovery_codes") or password or notes):
+                raise PersonalDataError("Add at least one recovery code")
+
+            for attachment_id in remove_attachment_ids:
+                get_attachment(candidate, attachment_id)
+                if not delete_attachment(candidate, attachment_id):
+                    raise KeyError(attachment_id)
+            for attachment in add_attachments:
+                add_attachment(
+                    candidate,
+                    filename=attachment["filename"],
+                    mime_type=attachment["mime_type"],
+                    data_b64=attachment["data_b64"],
+                )
+
+            candidate.mark_dirty()
+            committed = self.local.commit_entry(
+                candidate,
+                create=create,
+                expected_updated_at=expected_updated_at,
+            )
+            self._entry_transactions[transaction_id] = (
+                committed.id,
+                committed.updated_at,
+                request_digest,
+            )
 
         # The encrypted local write is the save boundary. Optional background
         # sync must not turn a successful commit into a misleading failure.

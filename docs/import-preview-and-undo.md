@@ -28,6 +28,13 @@ import entry point on Passwords. See [browser password import](browser-password-
 for accepted columns and the partial-update rules that preserve existing
 personal fields absent from browser exports.
 
+JSON and CSV plaintext exports also enforce the importer's aggregate limits:
+5,000 active entries and 10 MiB for the complete serialized UTF-8 file, including
+JSON wrappers and base64 attachments. Exports above either limit fail before a
+download is delivered and recommend an encrypted backup for full-vault migration.
+These aggregate limits do not replace the importer's individual field validation
+or change CSV's existing omission of attachments.
+
 ## Deterministic duplicate rules
 
 Text comparison uses Unicode normalization. Titles and usernames are trimmed,
@@ -78,6 +85,10 @@ unchanged. A verified pre-import backup may remain, and the error says so. Retry
 the same preview token cannot repeat the batch.
 
 ## Receipt and undo
+
+The post-import digest and generation are captured under the same mutation lock
+as the import commit. An independent write after that lock is released cannot be
+included in the import receipt and cannot be undone with the import batch.
 
 The in-memory receipt contains only:
 

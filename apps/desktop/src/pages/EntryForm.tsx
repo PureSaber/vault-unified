@@ -10,6 +10,7 @@ import PasswordField from "../components/PasswordField";
 import { useToast } from "../components/Toast";
 import { useI18n } from "../i18n";
 import AutoTypeButton from "../components/AutoTypeButton";
+import { useTaskLifetime } from "../components/useTaskLifetime";
 
 interface Props {
   entry?: Entry | null;
@@ -266,6 +267,7 @@ function interpolate(template: string, values: Record<string, string | number>) 
 }
 
 export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange }: Props) {
+  const alive = useTaskLifetime();
   const { t, locale } = useI18n();
   const text = copy[locale];
   const { showToast } = useToast();
@@ -282,6 +284,8 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   const [historyToRestore, setHistoryToRestore] = useState<string | null>(null);
   const [generationOptions, setGenerationOptions] = useState(defaultGenerationOptions);
   const [generating, setGenerating] = useState(false);
+  const [readingTotp, setReadingTotp] = useState(false);
+  const draftBusy = generating || readingTotp;
   const [showGenerationHistory, setShowGenerationHistory] = useState(false);
   const generationSequence = useRef(0);
   const latestPassword = useRef(draft.password);
@@ -308,8 +312,8 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   }, [dirty, onDirtyChange]);
 
   useEffect(() => {
-    onSavingChange?.(saving);
-  }, [saving, onSavingChange]);
+    onSavingChange?.(saving || draftBusy);
+  }, [saving, draftBusy, onSavingChange]);
 
   useEffect(() => () => {
     onDirtyChange?.(false);
@@ -400,7 +404,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
   }
 
   async function handleGenerate() {
-    if (generating) return;
+    if (generating || saving || !alive.current) return;
     const stamp = ++generationSequence.current;
     const previous = draft.password;
     setGenerating(true);
@@ -408,13 +412,13 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
       const result = personalReady
         ? await api.generateSaved(generationOptions, draft.url, clientId())
         : await api.generate(generationOptions.length, generationOptions.symbols);
-      if (stamp !== generationSequence.current) return;
+      if (!alive.current || stamp !== generationSequence.current) return;
       if (latestPassword.current === previous) patchDraft({ password: result.password });
       showToast(personalReady ? (locale === "zh" ? "已生成并加入加密历史" : "Generated and kept in encrypted history") : t("form.generated"));
     } catch (generateError) {
-      if (stamp === generationSequence.current) showToast(locale === "zh" ? "生成失败，请检查字符限制或重试。" : "Could not generate. Check character restrictions or try again.", "error");
+      if (alive.current && stamp === generationSequence.current) showToast(locale === "zh" ? "生成失败，请检查字符限制或重试。" : "Could not generate. Check character restrictions or try again.", "error");
     } finally {
-      if (stamp === generationSequence.current) setGenerating(false);
+      if (alive.current && stamp === generationSequence.current) setGenerating(false);
     }
   }
 
@@ -429,7 +433,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
   async function handleSave(event: React.FormEvent) {
     event.preventDefault();
-    if (saving || loading || (entry && loadedFor !== entry)) return;
+    if (!alive.current || saving || draftBusy || loading || (entry && loadedFor !== entry)) return;
     const invalidCustomField = draft.customFields.some((field) => !field.label.trim());
     if (invalidCustomField) {
       setAdvancedError(text.customFieldError);
@@ -448,6 +452,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
           data_b64: await fileToBase64(file),
         })),
       );
+      if (!alive.current) return;
       const keptIds = new Set(draft.attachments.map((attachment) => attachment.id));
       await api.commitEntry({
         transaction_id: transactionId.current,
@@ -468,12 +473,14 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
         remove_attachment_ids: original.attachments.filter((attachment) => !keptIds.has(attachment.id)).map((attachment) => attachment.id),
         restore_history_id: draft.restoreHistoryId,
       });
+      if (!alive.current) return;
       setDraft(emptyDraft());
       setOriginal(emptyDraft());
       onDirtyChange?.(false);
       showToast(entry ? t("form.updated") : t("form.added"));
       onDone(true);
     } catch (saveError) {
+      if (!alive.current) return;
       let message = String(saveError).replace(/^Error:\s*/, "");
       if (/website rules|HTTP or HTTPS website|twenty websites|Base domain matching/i.test(message)) {
         setShowMore(true);
@@ -482,7 +489,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
       setError(message);
       showToast(message || t("form.saveError"), "error");
     } finally {
-      setSaving(false);
+      if (alive.current) setSaving(false);
     }
   }
 
@@ -526,7 +533,8 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
     <div className="card entry-editor-card">
       {showGenerationHistory && <GenerationHistory onClose={() => setShowGenerationHistory(false)} onUse={password => patchDraft({ password })} />}
       <h2>{heading()}</h2>
-      <form onSubmit={handleSave} aria-busy={saving}>
+      <form onSubmit={handleSave} aria-busy={saving || draftBusy}>
+        <fieldset className="form-controls" disabled={saving}>
         {!isEdit && (
           <div className="field">
             <label className="field-label" htmlFor="entry-type">{text.type}</label>
@@ -605,6 +613,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
           <button
             type="button"
             className="secondary"
+            disabled={readingTotp}
             onClick={() => setShowMore((value) => !value)}
             aria-expanded={showMore}
             aria-controls="entry-more-options"
@@ -620,7 +629,7 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
         {showMore && (
           <div id="entry-more-options" className="entry-more-options">
-            <TotpEditor value={draft.totpSecret} onChange={totpSecret => patchDraft({ totpSecret })} savedValue={original.totpSecret} entryId={entry?.id} />
+            <TotpEditor onReadingChange={setReadingTotp} value={draft.totpSecret} onChange={totpSecret => patchDraft({ totpSecret })} savedValue={original.totpSecret} entryId={entry?.id} />
             {advancedError && <div className="error" role="alert" id="entry-advanced-error" tabIndex={-1}>{advancedError}</div>}
 
             <section className="settings-section" aria-labelledby="entry-tags-heading">
@@ -743,10 +752,11 @@ export default function EntryForm({ entry, onDone, onDirtyChange, onSavingChange
 
         {error && <div className="error" role="alert" id="entry-form-error">{error}</div>}
         <div className="button-row entry-editor-actions">
-          <button className="primary" type="submit" disabled={saving}>{saving ? t("form.saving") : t("form.save")}</button>
-          <button className="secondary" type="button" onClick={() => onDone()} disabled={saving}>{t("form.cancel")}</button>
-          {entry && <AutoTypeButton entry={entry} disabled={saving || loading || dirty} />}
+          <button className="primary" type="submit" disabled={saving || draftBusy}>{saving ? t("form.saving") : t("form.save")}</button>
+          <button className="secondary" type="button" onClick={() => onDone()} disabled={saving || draftBusy}>{t("form.cancel")}</button>
+          {entry && <AutoTypeButton entry={entry} disabled={saving || draftBusy || loading || dirty} />}
         </div>
+        </fieldset>
       </form>
       {entry && historyToRestore && <HistoryReview entryId={entry.id} historyId={historyToRestore}
         current={{ title: draft.title, username: draft.username, password: draft.password, url: draft.url, notes: draft.notes, tags: draft.tags, entry_type: draft.entryType, custom_fields: draft.customFields.map(({ label, value, concealed }) => ({ label, value, concealed })), totp_secret: draft.totpSecret, template_data: draft.templateData, website_rules: draft.websiteRules }}
