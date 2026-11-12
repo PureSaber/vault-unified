@@ -1,0 +1,2597 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vault Unified UI/UX 审计与改进交接</title>
+<style>
+:root {
+  --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef2f6; --border: #dde3ea;
+  --text: #111827; --text-2: #374151; --text-3: #5b6575; --accent: #1d5fa6; --code-bg: #f1f4f8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1419; --surface: #151b24; --surface-2: #1c2430; --border: #2a3441;
+    --text: #e7ecf3; --text-2: #c5d0de; --text-3: #8b9bb4; --accent: #7fb2ea; --code-bg: #0c1016;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1419; --surface: #151b24; --surface-2: #1c2430; --border: #2a3441;
+  --text: #e7ecf3; --text-2: #c5d0de; --text-3: #8b9bb4; --accent: #7fb2ea; --code-bg: #0c1016;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.7 "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif; }
+.layout { display: grid; grid-template-columns: 280px minmax(0, 1fr); max-width: 1440px; margin: 0 auto; }
+nav.toc { position: sticky; top: 0; height: 100vh; overflow: auto; padding: 24px 16px; border-right: 1px solid var(--border); font-size: 13px; }
+nav.toc .toc-title { font-weight: 600; margin: 0 0 12px; color: var(--text-2); }
+nav.toc ul { list-style: none; margin: 0; padding-left: 12px; }
+nav.toc > div > ul { padding-left: 0; }
+nav.toc a { display: block; padding: 3px 6px; border-radius: 4px; color: var(--text-2); text-decoration: none; line-height: 1.45; }
+nav.toc a:hover { background: var(--surface-2); color: var(--text); }
+main { padding: 32px 40px 80px; min-width: 0; }
+article { max-width: 1040px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 32px 40px; }
+h1 { font-size: 28px; line-height: 36px; margin: 0 0 16px; }
+h2 { font-size: 22px; line-height: 30px; margin: 48px 0 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+h3 { font-size: 18px; line-height: 26px; margin: 32px 0 12px; }
+h4 { font-size: 15px; margin: 24px 0 8px; }
+h1, h2, h3, h4 { font-weight: 600; scroll-margin-top: 16px; }
+p, li { color: var(--text); }
+a { color: var(--accent); overflow-wrap: anywhere; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 32px 0; }
+code { font-family: "Cascadia Mono", Consolas, "Microsoft YaHei UI", monospace; font-size: 0.88em;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; overflow-x: auto; line-height: 1.45; }
+pre code { border: 0; padding: 0; background: none; font-size: 13px; white-space: pre; font-family: "Cascadia Mono", "Sarasa Mono SC", "Microsoft YaHei Mono", Consolas, "Microsoft YaHei UI", monospace; }
+.table-wrap { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; line-height: 1.55; }
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface-2); font-weight: 600; }
+blockquote { margin: 16px 0; padding: 8px 16px; border-left: 4px solid var(--accent); background: var(--surface-2); border-radius: 0 6px 6px 0; }
+blockquote p { margin: 4px 0; }
+.theme-toggle { position: fixed; right: 16px; bottom: 16px; padding: 6px 12px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 960px) {
+  .layout { grid-template-columns: minmax(0, 1fr); }
+  nav.toc { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  main { padding: 16px; }
+  article { padding: 20px 16px; }
+}
+@media print {
+  nav.toc, .theme-toggle { display: none; }
+  .layout { display: block; }
+  article { border: 0; padding: 0; }
+  pre code { white-space: pre-wrap; }
+}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc" aria-label="目录"><p class="toc-title">目录</p><div class="toc">
+<ul>
+<li><a href="#0-结论摘要">0. 结论摘要</a></li>
+<li><a href="#1-证据范围-方法与可信度">1. 证据范围、方法与可信度</a><ul>
+<li><a href="#1-1-做了什么">1.1 做了什么</a></li>
+<li><a href="#1-2-没有做到的-需要补充的证据">1.2 没有做到的（需要补充的证据）</a></li>
+<li><a href="#1-3-文档与代码的不一致-实施前应同步更新文档">1.3 文档与代码的不一致（实施前应同步更新文档）</a></li>
+</ul>
+</li>
+<li><a href="#2-现状审计">2. 现状审计</a><ul>
+<li><a href="#2-1-全局外壳与导航">2.1 全局外壳与导航</a></li>
+<li><a href="#2-2-视觉层级与按钮体系">2.2 视觉层级与按钮体系</a></li>
+<li><a href="#2-3-排版与间距">2.3 排版与间距</a></li>
+<li><a href="#2-4-首次使用与解锁">2.4 首次使用与解锁</a></li>
+<li><a href="#2-5-密码列表">2.5 密码列表</a></li>
+<li><a href="#2-6-条目详情与编辑器">2.6 条目详情与编辑器</a></li>
+<li><a href="#2-7-快捷搜索">2.7 快捷搜索</a></li>
+<li><a href="#2-8-浏览器填充-扩展">2.8 浏览器填充（扩展）</a></li>
+<li><a href="#2-9-导入">2.9 导入</a></li>
+<li><a href="#2-10-安全与恢复">2.10 安全与恢复</a></li>
+<li><a href="#2-11-连接与同步">2.11 连接与同步</a></li>
+<li><a href="#2-12-分享">2.12 分享</a></li>
+<li><a href="#2-13-设置">2.13 设置</a></li>
+<li><a href="#2-14-反馈与状态">2.14 反馈与状态</a></li>
+<li><a href="#2-15-可访问性">2.15 可访问性</a></li>
+<li><a href="#2-16-中英文呈现">2.16 中英文呈现</a></li>
+<li><a href="#2-17-问题严重度汇总">2.17 问题严重度汇总</a></li>
+</ul>
+</li>
+<li><a href="#3-参考矩阵">3. 参考矩阵</a><ul>
+<li><a href="#r-01-1password-for-windows-主窗口三栏-查看与编辑分离">R-01 1Password for Windows：主窗口三栏，查看与编辑分离</a></li>
+<li><a href="#r-02-1password-quick-access-系统级快速搜索">R-02 1Password Quick Access：系统级快速搜索</a></li>
+<li><a href="#r-03-1password-watchtower-问题分组-条目上的提醒横幅">R-03 1Password Watchtower：问题分组 + 条目上的提醒横幅</a></li>
+<li><a href="#r-04-bitwarden-浏览器扩展-自动填充与输入框内菜单">R-04 Bitwarden 浏览器扩展：自动填充与输入框内菜单</a></li>
+<li><a href="#r-05-bitwarden-vault-health-reports-泄露结果的措辞">R-05 Bitwarden Vault Health Reports：泄露结果的措辞</a></li>
+<li><a href="#r-06-keepassxc-预览面板-hello-快速解锁-浏览器连接命名">R-06 KeePassXC：预览面板、Hello 快速解锁、浏览器连接命名</a></li>
+<li><a href="#r-07-proton-pass-桌面版-三栏结构与显式-edit">R-07 Proton Pass 桌面版：三栏结构与显式 Edit</a></li>
+<li><a href="#r-08-microsoft-windows-设计指南-fluent">R-08 Microsoft Windows 设计指南（Fluent）</a></li>
+<li><a href="#r-09-enpass-在用户自己的存储上同步">R-09 Enpass：在用户自己的存储上同步</a></li>
+<li><a href="#r-10-raycast-action-panel-主动作-可搜索的动作列表">R-10 Raycast Action Panel：主动作 + 可搜索的动作列表</a></li>
+<li><a href="#评估过但未采用">评估过但未采用</a></li>
+<li><a href="#标准依据">标准依据</a></li>
+</ul>
+</li>
+<li><a href="#4-设计方向">4. 设计方向</a><ul>
+<li><a href="#4-1-三个候选方向">4.1 三个候选方向</a></li>
+<li><a href="#4-2-推荐-a-b-的令牌整理作为第一阶段-c-的动作列表放进快捷搜索">4.2 推荐：A；B 的令牌整理作为第一阶段；C 的动作列表放进快捷搜索</a></li>
+<li><a href="#4-3-设计令牌与组件规则">4.3 设计令牌与组件规则</a></li>
+</ul>
+</li>
+<li><a href="#5-屏幕与流程提案">5. 屏幕与流程提案</a><ul>
+<li><a href="#5-1-首次使用与解锁-优先级最高">5.1 首次使用与解锁（优先级最高）</a></li>
+<li><a href="#5-2-应用外壳与导航">5.2 应用外壳与导航</a></li>
+<li><a href="#5-3-密码列表与条目详情-优先级最高">5.3 密码列表与条目详情（优先级最高）</a></li>
+<li><a href="#5-4-浏览器填充-优先级最高">5.4 浏览器填充（优先级最高）</a></li>
+<li><a href="#5-5-快捷搜索">5.5 快捷搜索</a></li>
+<li><a href="#5-6-导入">5.6 导入</a></li>
+<li><a href="#5-7-安全与恢复">5.7 安全与恢复</a></li>
+<li><a href="#5-8-连接与同步">5.8 连接与同步</a></li>
+<li><a href="#5-9-分享">5.9 分享</a></li>
+<li><a href="#5-10-设置">5.10 设置</a></li>
+</ul>
+</li>
+<li><a href="#6-实施计划与排序后的待办">6. 实施计划与排序后的待办</a><ul>
+<li><a href="#6-1-约定">6.1 约定</a></li>
+<li><a href="#6-2-总表">6.2 总表</a></li>
+<li><a href="#6-3-快速修复-不改结构">6.3 快速修复（不改结构）</a></li>
+<li><a href="#6-4-结构性重设计">6.4 结构性重设计</a></li>
+</ul>
+</li>
+<li><a href="#7-可用性验证">7. 可用性验证</a><ul>
+<li><a href="#7-1-与现有计划的关系">7.1 与现有计划的关系</a></li>
+<li><a href="#7-2-参与者">7.2 参与者</a></li>
+<li><a href="#7-3-任务">7.3 任务</a></li>
+<li><a href="#7-4-测量指标">7.4 测量指标</a></li>
+<li><a href="#7-5-判定规则">7.5 判定规则</a></li>
+</ul>
+</li>
+<li><a href="#8-未决问题-需要所有者决定">8. 未决问题（需要所有者决定）</a></li>
+<li><a href="#附录-a-实测数据-基线-a2aa07a-生成数据">附录 A：实测数据（基线 a2aa07a，生成数据）</a></li>
+<li><a href="#附录-b-对比度核算-wcag-2-x-相对亮度">附录 B：对比度核算（WCAG 2.x 相对亮度）</a></li>
+<li><a href="#附录-c-证据文件索引-基线提交">附录 C：证据文件索引（基线提交）</a></li>
+</ul>
+</div>
+</nav>
+  <main><article>
+<h1 id="vault-unified-ui-ux-审计与改进交接文档">Vault Unified UI/UX 审计与改进交接文档</h1>
+<ul>
+<li><strong>审阅基线</strong>：<code>PureSaber/vault-unified</code> <code>main</code> @ <code>a2aa07a2143e4cf06affbfaf717e1c0b39aad1e4</code>（2026-10-14，v1.4.0 个人版候选；v1.3.0 仍为稳定版）</li>
+<li><strong>审阅日期</strong>：2026-10-21</li>
+<li><strong>读者</strong>：负责落地的前端工程师（React/TypeScript/Tauri）与仓库所有者</li>
+<li><strong>语言约定</strong>：说明用中文；产品名、组件名、文件路径、CSS 类名、API 字段保留英文；下文 "VU" 指 Vault Unified</li>
+<li><strong>路径约定</strong>：未写前缀的 <code>*.tsx</code> 位于 <code>apps/desktop/src/</code>（<code>pages/</code> 或 <code>components/</code>），<code>*.py</code> 位于 <code>src/vault_unified/</code>，<code>popup.*</code>、<code>connection.js</code> 位于 <code>apps/browser-extension/</code></li>
+</ul>
+<hr />
+<h2 id="0-结论摘要">0. 结论摘要</h2>
+<ol>
+<li><strong>功能与安全边界扎实，界面结构没有跟上功能增长。</strong> 预览、确认、撤销、事务式编辑、锁定清草稿等边界都已实现，但界面仍是"单列卡片 + 每个功能追加一个 section"。v1.3 信息架构规定的 5 个固定入口已变成顶部 7 个同级按钮；"安全与恢复"一页在 1280×800 下高 2747px，含 11 个标题、15 个按钮。</li>
+<li><strong>最高频的日常任务路径太长。</strong> 点击条目直接进入编辑表单，没有只读详情；验证码在"更多选项"里，展开后位于页面约 1479px 处，还要再点"显示验证码"。在 Tauri 默认窗口 1000×700 下，密码列表从 y=301px 开始，只能完整显示 4 行。</li>
+<li><strong>按钮层级失效。</strong> 密码页一屏同时有 7 个实心主色按钮（每行一个"复制密码"）；编辑已保存条目时，最醒目的控件是"生成密码"；连接页 4 个可选外部服务各有一个主按钮，而浏览器扩展排在它们下面。</li>
+<li><strong>有几处状态显示与实际不符。</strong> 没有配置任何同步时，9/9 条目都显示"等待同步"；第一次写入后"尚未设置备份"提醒就消失了（因为自动恢复备份被计入了备份数），但安全页同时显示"最近一次成功备份：尚未备份"；安全状态摘要无论状态如何都是绿色"成功"底色。</li>
+<li><strong>中英文没有对齐。</strong> 中文界面输错主密码时显示英文 <code>Invalid password or vault</code>；首次启动默认中文，首启页和解锁页都没有语言切换；<code>&lt;html lang="en"&gt;</code> 写死不变；源码中约 779 处内联 <code>zh ? … : …</code> 文案，而走 <code>t()</code> 字典的只有 131 处；"保险库/密码库"两种叫法混用（20/26 处）；扩展里同一条提示的中英文内容不一致。</li>
+<li><strong>视觉系统有设计令牌，但已经漂移。</strong> 后加的组件写死数值；<code>.card h3</code> 的选择器优先级覆盖了 <code>.section-title</code>，导致英文分区标题变成 16px 全大写；输入框边框对比度只有 1.5–1.6:1（WCAG 1.4.11 要求 ≥3:1）；主按钮 hover 状态白字对比度 4.03:1；"跳到主内容"链接在未聚焦时露出 4.6px 的蓝条。</li>
+<li><strong>建议方向</strong>：采用 Windows 原生风格（参照 Fluent）的"左侧导航 + 列表/详情"桌面结构（方向 A）。分三步落地：先修语义与可访问性缺陷（不动结构），再建立令牌和基础组件，最后重排结构。全程不改数据格式，不改安全边界。</li>
+</ol>
+<p><strong>优先级最高的 10 项</strong>（完整清单与验收标准见第 6 节）</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>ID</th>
+<th>内容</th>
+<th>类型</th>
+<th>相对工作量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>QW-01</td>
+<td>本地化后端错误；动态设置 <code>&lt;html lang&gt;</code>；首启/解锁页提供语言切换</td>
+<td>快速修复</td>
+<td>S</td>
+</tr>
+<tr>
+<td>2</td>
+<td>QW-02</td>
+<td>修正"等待同步"徽标与"未设置备份"提醒的判断条件</td>
+<td>快速修复</td>
+<td>S</td>
+</tr>
+<tr>
+<td>3</td>
+<td>QW-03</td>
+<td>按钮层级：列表行复制降为次级，编辑器"生成密码"降级，每个区域只留一个主按钮</td>
+<td>快速修复</td>
+<td>S</td>
+</tr>
+<tr>
+<td>4</td>
+<td>QW-04/05</td>
+<td>状态颜色按严重程度显示；修复 CSS 缺陷（跳转链接、标题优先级、未样式按钮、边框对比度）</td>
+<td>快速修复</td>
+<td>S</td>
+</tr>
+<tr>
+<td>5</td>
+<td>QW-06/07</td>
+<td>Toast 与确认对话框：错误不自动消失；确认内容结构化，按钮用具体动词</td>
+<td>快速修复</td>
+<td>S–M</td>
+</tr>
+<tr>
+<td>6</td>
+<td>ST-01</td>
+<td>设计令牌 v2 与基础组件（Button / IconButton / Field / InfoBar / Dialog / Menu / StatusChip）</td>
+<td>基础</td>
+<td>M</td>
+</tr>
+<tr>
+<td>7</td>
+<td>ST-04</td>
+<td>密码页改为列表/详情双栏，增加只读详情视图（验证码、复制、健康提示都在详情里）</td>
+<td>结构重排</td>
+<td>L</td>
+</tr>
+<tr>
+<td>8</td>
+<td>ST-05</td>
+<td>首启/解锁重设计：主路径优先，恢复入口收起，Hello 引导，主密码强度反馈</td>
+<td>结构重排</td>
+<td>M</td>
+</tr>
+<tr>
+<td>9</td>
+<td>ST-02</td>
+<td>中英文文案收敛到字典，CI 检查两种语言的键是否一致，执行统一术语表</td>
+<td>基础</td>
+<td>M–L</td>
+</tr>
+<tr>
+<td>10</td>
+<td>ST-06</td>
+<td>"安全与恢复"拆为概览 + 子页；只保留一种备份文件夹概念</td>
+<td>结构重排</td>
+<td>L</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-证据范围-方法与可信度">1. 证据范围、方法与可信度</h2>
+<h3 id="1-1-做了什么">1.1 做了什么</h3>
+<table>
+<thead>
+<tr>
+<th>证据类型</th>
+<th>范围</th>
+<th>标记</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>源码审阅</td>
+<td><code>apps/desktop/src</code> 全部页面与组件、<code>styles.css</code>（1852 行）、<code>i18n/index.tsx</code>、<code>api/client.ts</code>；<code>apps/browser-extension</code> 的 popup / inline / frame-confirm；后端相关路由（<code>src/vault_unified/api/routes/auth.py</code>、<code>entries.py</code>、<code>session.py</code>）</td>
+<td><strong>[代码]</strong></td>
+</tr>
+<tr>
+<td>实际渲染</td>
+<td>在本机用 Vite 运行渲染层，后端用仓库内真实 Python API，数据目录隔离，内容全部是生成的 <code>example.invalid</code> 假数据（与仓库 UI 测试 <code>tests/ui/live-sidecar.ts</code> 的做法相同，只替换运行配置注入）。视口：1280×800、1000×700（<code>tauri.conf.json</code> 默认窗口）、900×700、640×700；中文与英文各看一遍</td>
+<td><strong>[实测]</strong></td>
+</tr>
+<tr>
+<td>文档截图</td>
+<td><code>docs/screenshots/*.png</code>：多为单个组件的隔离测试状态，部分已过期（见 1.3）</td>
+<td><strong>[截图]</strong></td>
+</tr>
+<tr>
+<td>数值计算</td>
+<td>用 WCAG 相对亮度公式计算现有与建议颜色令牌的对比度；用正则统计内联文案</td>
+<td><strong>[计算]</strong></td>
+</tr>
+<tr>
+<td>推断</td>
+<td>没有原生环境或真实用户可以验证的行为</td>
+<td><strong>[推断]</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>置信度</strong>：高 = 实测或代码直接证明；中 = 代码明确但未在原生壳中验证，或影响程度依赖使用场景；低 = 推断。</p>
+<h3 id="1-2-没有做到的-需要补充的证据">1.2 没有做到的（需要补充的证据）</h3>
+<ul>
+<li><strong>原生 Tauri 壳没有运行</strong>：托盘、全局快捷键、Windows Hello 弹窗、"输入到应用"（auto-type）、系统锁屏联动只读了代码。要确认 F-06、F-08 的实际体验，需要在安装版里录屏或做走查。</li>
+<li><strong>浏览器扩展没有在真实 Chrome/Edge 中加载</strong>：依据是代码与 <code>docs/screenshots</code> 中的扩展截图。</li>
+<li><strong>分享服务（<code>deploy/sharing</code>）没有部署</strong>：分享页依据代码与 <code>desktop-sharing-zh.png</code>。</li>
+<li><strong>没有真实用户数据</strong>：文中不提供任何"完成率/耗时"基线，第 7 节给出测量方案。</li>
+<li><strong>高 DPI（125%/150% 缩放）、Windows 高对比度主题、读屏软件</strong>没有实测，A-07 等条目为代码推断。</li>
+</ul>
+<h3 id="1-3-文档与代码的不一致-实施前应同步更新文档">1.3 文档与代码的不一致（实施前应同步更新文档）</h3>
+<table>
+<thead>
+<tr>
+<th>文档</th>
+<th>文档说法</th>
+<th>当前代码</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>docs/product-information-architecture.md</code></td>
+<td>解锁后"恰好 5 个固定入口"；设置只含"语言、关于、版本"</td>
+<td><code>App.tsx:388-425</code> 共 7 个：密码、安全与恢复、连接、分享、设置、快捷搜索、立即锁定；设置页已包含快捷搜索与托盘、Windows Hello、应用更新</td>
+</tr>
+<tr>
+<td><code>docs/ux-terminology.md</code></td>
+<td><code>recovery_code</code> 标为"恢复代码（兼容）"；"产品能生成验证码之前不要称为内置验证器"</td>
+<td>恢复码已是可新建的模板类型（<code>EntryForm.tsx:41</code>）；产品已能生成和填充验证码（<code>TotpEditor.tsx</code>），这条措辞规则需要改写</td>
+</tr>
+<tr>
+<td><code>apps/desktop/references/vault-design-tokens.md</code></td>
+<td><code>--color-text-faint: #6b7a90</code></td>
+<td><code>styles.css:14</code> 为 <code>#8b9bb4</code>（与 <code>--color-text-muted</code> 相同，令牌冗余）</td>
+</tr>
+<tr>
+<td><code>docs/screenshots/desktop-updates-zh.png</code></td>
+<td>设置 → 版本显示 1.3.0</td>
+<td><code>apps/desktop/package.json</code> 为 1.4.0；截图为旧版本或测试状态</td>
+</tr>
+<tr>
+<td><code>docs/screenshots/password-health-zh.png</code> 等</td>
+<td>无页面外框的组件截图</td>
+<td>实际嵌在"安全与恢复"长页中部（实测）</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="2-现状审计">2. 现状审计</h2>
+<p>每条格式：<strong>ID 标题</strong> · 影响的屏幕/流程 · 置信度。证据中的行号对应基线提交。</p>
+<h3 id="2-1-全局外壳与导航">2.1 全局外壳与导航</h3>
+<p><strong>G-01 顶部 7 个同级导航按钮，入口变扁平</strong> · 全局 · 高
+- 证据：<code>App.tsx:388-425</code> 渲染 5 个页面按钮，外加"快捷搜索"和"立即锁定"；"分享"的文案写死为 <code>locale === "zh" ? "分享" : "Sharing"</code>，没有走 i18n 键（<code>App.tsx:392</code>）。[实测] 640px 宽时导航折成两行，页头高 113px；900px 英文界面下应用名 "Vault Unified" 折成两行。
+- 影响：功能型入口（快捷搜索是一个弹窗动作，不是页面）与目的地混在一起；窗口变窄时页头挤占内容。Windows <code>NavigationView</code> 指南建议：5 个以内同等重要的类别用顶部导航，5–10 个用左侧导航（见参考 R-08）。</p>
+<p><strong>G-02 子页面没有导航定位，返回方式也不一致</strong> · 编辑器、导入、冲突 · 高
+- 证据：<code>App.tsx:414</code> 只在 <code>page === id</code> 时高亮，编辑器、导入、冲突页都不属于 <code>TopPage</code>。[实测] 打开条目后导航没有任何项高亮。导入页和冲突页有"返回"按钮（<code>App.tsx:461</code>、<code>488</code>），编辑器没有，只能点底部的"取消"或顶部导航。
+- 影响：用户失去位置感；从编辑器离开的方式不统一。</p>
+<p><strong>G-03 固定 960px 单列，没有列表/详情布局</strong> · 全局 · 高
+- 证据：<code>styles.css:138-145</code>（<code>.main { max-width: 960px }</code>）。[实测] 1280px 宽时内容区 960px，两侧留白；"详情"即是整页编辑表单。
+- 影响：宽窗口浪费空间，窄窗口又要长距离滚动；在列表和条目之间来回切换要丢失列表上下文。</p>
+<p><strong>G-04 默认窗口下列表可见行太少</strong> · 密码页 · 高
+- 证据：[实测] 1000×700（<code>tauri.conf.json:16-17</code> 的默认尺寸）、英文界面：页头 65px，页面标题 + 3 个按钮 + 搜索 + 位置下拉 + "筛选与批量整理"卡片之后，列表从 y=301px 开始，只有 4 行完整可见；行高 95px（带标签）或 66px（不带标签）。
+- 影响：密码管理器最常见的动作是扫一眼、找到、复制，可见行少直接拖慢这一动作。</p>
+<p><strong>G-05 卡片层层嵌套，边框过多</strong> · 安全与恢复、连接、分享 · 中
+- 证据：<code>SecurityRecovery.tsx:58-63</code>（<code>.card</code> 里放 <code>.security-summary.card</code>，里面每一行状态又带边框，见 <code>styles.css:1475-1485</code>）；<code>styles.css:1374-1377</code>（<code>.nested-panel &gt; .card</code>）；<code>BackupCenter.tsx</code> 每条备份都是 <code>article.card</code>。
+- 影响：视觉噪声大，层级靠边框而不是靠排版和间距表达。</p>
+<h3 id="2-2-视觉层级与按钮体系">2.2 视觉层级与按钮体系</h3>
+<p><strong>V-01 实心主色按钮泛滥</strong> · 密码页、连接页、分享页、安全页 · 高
+- 证据：[实测] 1280×800 密码页同时可见 7 个 <code>button.primary</code>：页头"添加密码"1 个，每行"复制密码"6 个（<code>VaultList.tsx:331</code>）。连接页 4 个（"设置此连接"/"继续设置"，<code>IntegrationManager.tsx:408</code>）。安全页 2 个（"保存自动锁定与自动备份设置"、"立即创建加密备份"）。分享页截图中至少 4 个（预览分享、预览新共享库、预览加入、添加共享账号，另有一个已禁用的"复制链接"）。
+- 影响：主按钮失去"这是本区域的下一步"的含义；列表靠颜色块排出节奏，阅读噪声大。</p>
+<p><strong>V-02 编辑已保存条目时，"生成密码"最醒目</strong> · 编辑器 · 高（层级）/ 中（误操作风险为推断）
+- 证据：<code>EntryForm.tsx:553</code>，密码输入框旁的"生成密码"是 <code>primary</code>；[实测] 打开已有条目后，它是表单里唯一的主色控件（"保存"在底部，需滚动才能看到）。
+- 影响：最强的视觉引导指向"替换已保存的密码"；虽然要保存后才生效，但会诱发不必要的操作和"放弃更改"确认。</p>
+<p><strong>V-03 导航激活态与主按钮外观相同</strong> · 全局 · 中
+- 证据：<code>.nav button.active</code> 与 <code>button.primary</code> 都是实心 <code>--color-accent</code>（<code>styles.css:744-748</code>、<code>669-674</code>）。
+- 影响：页头导航与页面主操作在视觉上争夺注意力。</p>
+<p><strong>V-04 危险样式的语义错位</strong> · 备份、列表菜单、分享 · 中–高
+- 证据：只读预览"预览恢复影响"用了 <code>danger</code> 样式（<code>BackupCenter.tsx:399-405</code>）；可恢复的"移到回收站"在行菜单里也是 <code>danger</code>（<code>VaultList.tsx:348-355</code>）；分享确认对话框没有传 <code>variant</code>，"移除成员"这类不可逆操作也是普通主色"确认"（<code>Sharing.tsx:157-159</code>）。
+- 影响：红色不再意味着"不可逆"，用户对真正的危险操作反而不敏感。</p>
+<p><strong>V-05 状态颜色与实际状态相反</strong> · 安全与恢复 · 高
+- 证据：<code>.security-summary</code> 固定为绿色底和绿色边框（<code>styles.css:1278-1288</code>）；[实测] 新建保险库时，摘要中"最近一次成功备份：尚未备份""自动备份位置：尚未设置""恢复包：尚未创建"都显示在绿色框里。<code>PersonalCenter.tsx:276-282</code> 在自动备份关闭时显示绿色 <code>.success</code> 框："设置已保存；自动备份目前未启用。"
+- 影响：最重要的风险（没有任何可用于灾难恢复的备份）被包装成"一切正常"。</p>
+<p><strong>V-06 状态提示本身不准确</strong> · 密码列表、备份提醒 · 高
+- 证据 1：[实测] 新保险库没有配置任何外部服务或多电脑同步，9 条条目全部显示"等待同步"徽标（<code>VaultList.tsx:317-319</code>，只要 <code>sync_status === "dirty"</code> 就显示）。<code>docs/screenshots/account-organization-generated.png</code> 中同样如此。
+- 证据 2：<code>App.tsx:133-146</code> 用 <code>api.backups().count</code> 判断是否提醒；[实测] 第一次写入后 <code>count=11</code>（自动恢复备份，<code>local_atomic</code>），"尚未设置备份"提醒随即消失；同一时间"安全与恢复"显示"最近一次成功备份：尚未备份"。
+- 影响：与 IA 文档"正常同步状态不占用主要界面"的原则相反；备份提醒在用户最需要它的时候消失了。</p>
+<p><strong>V-07 没有图标体系，列表缺少视觉锚点</strong> · 全局 · 中
+- 证据：所有动作都是纯文字按钮（显示/隐藏、复制、更多操作）；收藏用文本字符"★"直接拼在标题后（<code>VaultList.tsx:311</code>，[实测]"Generated Bank 网银★"）；列表行没有网站首字母或图标。
+- 影响：扫描只能靠读文字；文字按钮在中英文之间宽度变化大，布局不稳定。</p>
+<h3 id="2-3-排版与间距">2.3 排版与间距</h3>
+<p><strong>T-01 标题层级混乱，英文出现全大写</strong> · 设置、安全、连接 · 高
+- 证据：<code>.card h3</code>（选择器优先级 0,1,1，<code>styles.css:187-197</code>）覆盖了 <code>.section-title</code>（0,1,0，<code>styles.css:199-206</code>）的字号，但 <code>text-transform: uppercase</code> 仍然生效。[实测] 计算样式："当前保护状态" 16px + uppercase；英文界面显示为 16px 全大写（截图中的 "WINDOWS HELLO"）。此外 <code>DesktopUpdates.tsx</code> 的 h3 没有类名，<code>RecoveryRehearsal.tsx</code> 用 h4，<code>PayloadUpgrade.tsx</code> 是卡中卡里的 h3。一个页面里至少有三种分区标题样式。
+- 影响：层级不可预测；中英文界面的视觉权重不一致；全大写违反 Windows "所有 UI 文本用 sentence case" 的指南（R-08）。</p>
+<p><strong>T-02 没有中文排版规则</strong> · 全局 · 中
+- 证据：标题统一 <code>letter-spacing: -0.02em</code>，对中文同样生效（<code>styles.css:92</code>、<code>166</code>、<code>192</code>）；字体栈 <code>"Segoe UI", system-ui, …</code> 没有列出中文 UI 字体（<code>styles.css:36</code>）；文档语言固定为英文（A-01）。
+- 影响：中文标题字距被压缩；中文字形回退依赖系统猜测（字形影响为推断）。Windows 推荐简体中文 UI 字体为 Microsoft YaHei UI（R-08）。</p>
+<p><strong>T-03 间距令牌存在，但后加组件不用</strong> · 全局 · 中
+- 证据：<code>styles.css:463-485</code>、<code>797-800</code>、<code>1829-1852</code> 是后期一行式规则，写死 <code>18px</code>、<code>16px</code>、<code>10px</code> 圆角、<code>font: 2rem monospace</code>，px 与 rem 混用。[实测] 首启页"创建新保险库/从备份恢复"按钮行与下方"主密码"标签之间没有间距；空状态的"添加第一个密码"按钮紧贴说明文字。
+- 影响：每次加功能都会进一步偏离视觉系统。</p>
+<p><strong>T-04 表单控件不分场合拉满宽度</strong> · 设置、安全 · 中
+- 证据：[截图 <code>desktop-updates-zh.png</code>] 语言和全局快捷键的下拉框宽约 860px；<code>styles.css:228-241</code> 规定所有 <code>input, select, textarea { width: 100% }</code>。
+- 影响：短选项配超宽控件，比例失衡，扫读困难。Windows 设置页的通行做法是"左侧说明、右侧控件"的设置卡片。</p>
+<h3 id="2-4-首次使用与解锁">2.4 首次使用与解锁</h3>
+<p><strong>F-01 解锁页把低频操作放在主密码之前</strong> · 解锁 · 高
+- 证据：<code>Unlock.tsx:337-363</code>，从上到下依次是"技术细节"、"使用紧急恢复包"、"从另一台电脑迁入"，然后才是主密码输入框。[实测] 截图与此一致。
+- 影响：每天都要做的解锁，被两个灾难恢复入口和一个技术开关挡在前面。</p>
+<p><strong>F-02 首启页同屏 4 条路径，切换控件缺少语义</strong> · 首启 · 高
+- 证据：[实测] 同时出现：技术细节、从另一台电脑迁入、创建新保险库/从备份恢复（二选一）、表单、使用紧急恢复包。二选一用 <code>primary/secondary</code> 两种按钮表示选中状态，没有 <code>role="tab"</code> 或 <code>aria-pressed</code>（<code>Unlock.tsx:407-430</code>），同屏出现两个实心主色按钮（选中的"创建新保险库"和提交按钮"创建并解锁"）。副标题写"新的密码库"，按钮写"新保险库"。
+- 影响：新用户需要先理解 4 个概念才能开始；读屏用户无法得知当前选中的是哪一项。</p>
+<p><strong>F-03 首启默认中文，且没有语言入口</strong> · 首启、解锁 · 高
+- 证据：<code>i18n/index.tsx:404-412</code> 读取不到本地存储时返回 <code>"zh"</code>；<code>Unlock.tsx</code> 没有语言控件；<code>styles.css:95-113</code> 的 <code>.header-locale</code> 样式没有任何地方使用。
+- 影响：英文用户必须在全中文的界面里完成创建保险库、设置主密码，然后到"设置"里才能切换。</p>
+<p><strong>F-04 中文界面输错主密码显示英文错误</strong> · 解锁 · 高
+- 证据：<code>auth.py:363</code> 返回 <code>detail="Invalid password or vault"</code>，<code>client.ts:160-161</code> 原样抛出，<code>Unlock.tsx:175-180</code> 只映射了网络错误。[实测] 中文界面错误框显示 "Invalid password or vault"。
+- 影响：最高频流程里最高频的错误没有本地化。同类问题遍布各处：大多数 <code>catch</code> 直接 <code>showToast(String(err))</code>。</p>
+<p><strong>F-05 创建主密码没有强度反馈或最低要求</strong> · 首启、恢复设新密码 · 高（事实）/ 中–高（影响）
+- 证据：<code>session.py:154-160</code> 只校验两次输入一致；前端只检查非空（<code>Unlock.tsx:204-211</code>）。后端已依赖 <code>zxcvbn</code>（<code>password_health.py:10</code>），但只用于检查条目。
+- 影响：主密码是所有加密的根，却没有任何强度引导。是否强制最低标准需要所有者决定（见第 8 节 Q-02）。</p>
+<p><strong>F-06 Windows Hello 每次启动都要到设置页手动启用</strong> · 解锁、设置 · 中–高（代码，未在原生壳实测）
+- 证据：<code>HelloSettings.tsx:27-29</code> 的说明是"每次启动先使用主密码，然后在此通过一次 Hello 验证，启用本次运行的快速解锁"；解锁成功后没有任何引导（<code>Unlock.tsx</code>、<code>App.tsx</code>）；Hello 可用时，它在解锁页也只是次要按钮（<code>Unlock.tsx:572</code>）。
+- 影响：功能存在，但大多数用户不会每次启动都去设置页启用它。KeePassXC 的做法是主密码解锁成功后直接弹出 Hello 验证来设置（R-05）。</p>
+<p><strong>F-07 两种快捷解锁并存，含义不清</strong> · 首启、解锁 · 中（推断）
+- 证据："在此电脑记住（Windows 凭据管理器）"复选框出现在创建、恢复、解锁三个表单中（<code>Unlock.tsx:462-470</code>、<code>503-511</code>、<code>544-552</code>），同时还有 Windows Hello。
+- 影响：用户难以分辨"记住主密码"与"Hello 快速解锁"的风险差异。</p>
+<p><strong>F-08 锁定后不说明原因</strong> · 解锁 · 中（代码）
+- 证据：<code>lockToUnlock</code>（<code>App.tsx:65-78</code>）不记录锁定原因（闲置超时、手动锁定、系统锁屏或休眠、托盘请求），解锁页只显示固定副标题。
+- 影响：草稿被清除后，用户不知道发生了什么。</p>
+<h3 id="2-5-密码列表">2.5 密码列表</h3>
+<p><strong>L-01 每行 3–4 个交互区，默认就是批量模式</strong> · 密码页 · 中–高
+- 证据：[实测] 每行依次是复选框、标题按钮、"复制密码"、"更多操作"；只要 <code>personalReady</code> 为真，复选框就常驻（<code>VaultList.tsx:302-303</code>）。
+- 影响：单条操作与批量操作混在一起，Tab 键路径变长。</p>
+<p><strong>L-02 "更多操作"菜单用 <code>&lt;details&gt;</code> 实现</strong> · 密码页 · 中
+- 证据：<code>VaultList.tsx:334-357</code>。没有菜单语义，不支持方向键，点击外部或按 Esc 不会关闭，可以同时展开多行。
+- 影响：键盘与读屏用户的体验差，鼠标用户也会留下多个悬浮层。</p>
+<p><strong>L-03 归档、回收站、收藏、筛选的入口都藏起来了</strong> · 密码页 · 中–高
+- 证据：[实测/截图] 归档和回收站在搜索框右边的"位置"下拉里，选项名为"密码库/Vault"；收藏、标签、类型、排序、批量操作、批量加标签全部在"筛选与批量整理"折叠卡片里（<code>VaultList.tsx:256-279</code>），展开后占满大半屏（<code>account-organization-generated.png</code>）。
+- 影响：可发现性差；展开后又反过来挤占列表。</p>
+<p><strong>L-04 行内信息价值低</strong> · 密码页 · 中
+- 证据：每行固定显示 <code>••••••••</code>（<code>VaultList.tsx:314-316</code>）；不显示网站域名、是否有验证码、是否有健康问题。
+- 影响：用户无法从列表区分同名账号（例如多个邮箱账号），只能逐个打开。</p>
+<p><strong>L-05 英文确认框里出现中文顿号</strong> · 密码页 · 高（bug）
+- 证据：<code>VaultList.tsx:217</code> 用 <code>.join("、")</code> 连接条目标题，不区分语言。
+- 影响：英文界面出现 "A、B、C"。</p>
+<p><strong>L-06 同一类型在不同位置叫法不同</strong> · 列表、编辑器、文档 · 中
+- 证据：列表类型名是"账号""安全笔记"（<code>VaultList.tsx:130</code>）；编辑器是"登录信息""安全备注"（<code>EntryForm.tsx:53-54</code>）；<code>ux-terminology.md</code> 规定为"登录信息""安全备注"。</p>
+<p><strong>L-07 可恢复操作的确认成本不一致</strong> · 密码页 · 中
+- 证据：单条"收藏"立即执行（<code>immediate=true</code>），单条"归档"要走预览确认对话框（<code>VaultList.tsx:337-338</code>），"移到回收站"同样需要对话框，而回收站本身就保留 30 天。
+- 影响：可以撤销的操作也被打断。是否改为"直接执行 + 撤销提示"需要所有者确认（第 8 节 Q-04）。</p>
+<h3 id="2-6-条目详情与编辑器">2.6 条目详情与编辑器</h3>
+<p><strong>E-01 没有只读详情：查看就是编辑</strong> · 列表 → 条目 · 高
+- 证据：<code>App.tsx:449-453</code>，点击行直接 <code>setPage("editor")</code>；[实测] 标题为"编辑密码"，所有字段都是可编辑输入框，没有复制按钮。
+- 影响：日常"看一眼、复制"也处在编辑态，容易误改；误触后离开会触发"放弃未保存的更改？"确认。1Password、Proton Pass、KeePassXC 都是先显示详情，再点"编辑"（R-01、R-05、R-06）。</p>
+<p><strong>E-02 验证码路径太深</strong> · 编辑器 · 高
+- 证据：TOTP 位于"更多选项"中，排在网站匹配规则和标签之后（<code>EntryForm.tsx:601-642</code>）；[实测] 1280×800 中文界面展开"更多选项"后页高 2396px，"动态验证码"标题位于约 1479px；还要点"显示验证码"才出现数字（<code>TotpEditor.tsx:84-87</code>）。快捷搜索里也没有验证码操作（<code>QuickSearch.tsx</code>）。
+- 影响：桌面端获取验证码 = 打开条目 → 展开 → 滚动约两屏 → 点击显示 → 复制。浏览器扩展可以填验证码，但桌面端与其他应用中的登录做不到快捷获取。</p>
+<p><strong>E-03 "更多选项"是装了 7 个部分的大抽屉</strong> · 编辑器 · 中–高
+- 证据：网站匹配规则、标签、动态验证码、自定义字段、附件、历史版本、技术来源与同步信息（[实测] 标题列表）。其中历史和技术信息与编辑无关。
+- 影响：展开后需要长距离滚动，用户难以预期某个字段在哪。</p>
+<p><strong>E-04 保存/取消不固定</strong> · 编辑器 · 中
+- 证据：[实测] 收起"更多选项"时页高 900px，超过 800px 视口；保存/取消在表单末尾（<code>EntryForm.tsx:723-727</code>），展开后距离更远。</p>
+<p><strong>E-05 通行密钥信息插在表单中间</strong> · 编辑器 · 低–中
+- 证据：<code>EntryForm.tsx:537-541</code>，以 <code>context-notice</code> 的形式插在标题和用户名之间。</p>
+<h3 id="2-7-快捷搜索">2.7 快捷搜索</h3>
+<p><strong>Q-01 结果密度低，空值用"—"占位</strong> · 快捷搜索 · 中
+- 证据：[实测] 每条结果占 3 行（标题、用户名、网址），缺失的字段显示"—"；安全备注显示两行"—"（<code>QuickSearch.tsx:61-63</code>）；没有类型标识。约 5 条结果就占满一屏。</p>
+<p><strong>Q-02 缺少验证码等常用动作，Enter 不随类型变化</strong> · 快捷搜索 · 中–高
+- 证据：Enter 只复制密码，Shift+Enter 复制用户名（<code>QuickSearch.tsx:52-55</code>）；对安全备注、恢复码按 Enter 没有效果；底部 5 个按钮。</p>
+<p><strong>Q-03 复制提示写死"45 秒"</strong> · 快捷搜索 · 低
+- 证据：<code>QuickSearch.tsx:45</code> 写死 45 秒；后端返回 <code>clears_in_seconds</code>（<code>entries.py:212-213</code>、<code>486</code>），验证码复制已正确使用该字段（<code>TotpEditor.tsx:74</code>）。</p>
+<p><strong>Q-04 默认全局快捷键与 1Password 相同</strong> · 设置、快捷搜索 · 低–中
+- 证据：<code>desktop.rs:30</code> 默认 <code>Control+Shift+Space</code>，与 1Password Quick Access 的 Windows 默认快捷键相同（R-02）。已有"快捷键不可用"提示（<code>Settings.tsx:52</code>）。
+- 影响：从 1Password 迁移、两者并存的用户首次使用时会遇到冲突。</p>
+<h3 id="2-8-浏览器填充-扩展">2.8 浏览器填充（扩展）</h3>
+<p><strong>B-01 首次配对要手动搬运两个值</strong> · 扩展配对 · 中–高
+- 证据：扩展配对表单需要"本机地址"和"一次性配对码"两个字段（<code>popup.html:7-13</code>）；还没有配对状态时不做本机发现（<code>connection.js:49</code>，<code>!state</code> 时直接返回）；桌面端分别提供"复制本机地址""复制一次性配对码"（<code>ConnectionTools.tsx:136-147</code>）。</p>
+<p><strong>B-02 扩展中英文提示的内容不对等</strong> · 扩展 · 高（事实）
+- 证据（<code>popup.js:45-57</code>）：
+  - <code>noMatches</code>：中文"此网站还没有保存的账号，可以读取页面或手动添加。"；英文 "No saved login URL matches this page."（英文缺少下一步提示）
+  - <code>choose</code>：中文"选择账号填充，或更新已修改的密码。"；英文 "Choose an entry to fill."
+  - <code>ambiguous</code>：中文"请手动填写账号信息"；英文 "Nothing was filled."</p>
+<p><strong>B-03 匹配行的按钮含义不清</strong> · 扩展 popup · 中
+- 证据：每个匹配是一整块实心主色按钮（标题 + 用户名，点击即填充），右侧是"更新"，有验证码时再加一个"填入验证码"（<code>popup.js:201-235</code>）。"更新"实际是"更新此账号的已保存密码"。</p>
+<p><strong>B-04 扩展与桌面视觉分叉</strong> · 扩展 · 中
+- 证据：<code>popup.css</code> 自带写死的配色与控件样式，焦点环为 3px <code>#90cdf4</code>，输入边框 <code>#718096</code>；桌面端焦点为 2px accent <code>box-shadow</code>，输入边框 <code>#2f3b4a</code>。[计算] 扩展的焦点环（10.1:1）与输入边框（4.75:1）都明显优于桌面（3.2:1、1.5:1），桌面应向扩展看齐。</p>
+<p><strong>B-05 Passkey 开关藏在"输入框内选择账号"的折叠里</strong> · 扩展 · 中
+- 证据：<code>popup.html:46-54</code>。</p>
+<p><strong>B-06 扩展语言与桌面语言各自独立</strong> · 扩展 · 中
+- 证据：<code>popup.js:5</code> 按 <code>navigator.language</code> 决定语言；桌面语言存在渲染层的 <code>localStorage</code>（<code>i18n/index.tsx:404-436</code>）。</p>
+<p><strong>B-07 输入框内的账号选择器固定为深色</strong> · 扩展 inline · 低
+- 证据：[截图 <code>inline-picker-generated.png</code>] 浅色网页上出现深色面板。功能与"不自动提交"的提示都合理。</p>
+<h3 id="2-9-导入">2.9 导入</h3>
+<p><strong>I-01 两个导入入口</strong> · 密码页、安全与恢复 · 中–高
+- 证据：密码页"从浏览器导入"打开独立页面（<code>App.tsx:459-467</code>）；"安全与恢复 → 导入与导出"又内嵌一个 <code>ImportWizard</code>（<code>PersonalCenter.tsx:301</code>）。</p>
+<p><strong>I-02 步骤条状态错误</strong> · 导入 · 高（bug）
+- 证据：<code>ImportWizard.tsx:232-239</code>："解析与验证""确认应用"永远不会高亮；有可能重复项时，"预览"和"处理重复项"会同时高亮；没有 <code>aria-current="step"</code>。</p>
+<p><strong>I-03 预览没有决策优先级</strong> · 导入 · 中–高
+- 证据：10 个同等权重的数字格（<code>ImportWizard.tsx:304-315</code>），下面平铺全部条目（单次上限 5,000 条），需要用户决定的"可能重复"散落在列表中。</p>
+<h3 id="2-10-安全与恢复">2.10 安全与恢复</h3>
+<p><strong>S-01 一页装了 8 个子系统</strong> · 安全与恢复 · 高
+- 证据：[实测] 1280×800 下页高 2747px，h2–h4 共 11 个，<code>main</code> 内按钮 15 个：当前保护状态、个人版数据格式、密码检查、自动锁定与定时备份、导入与导出、紧急恢复包、换电脑与恢复演练、手动备份与恢复（含历史与清理）。</p>
+<p><strong>S-02 两种备份文件夹，需要大段文字解释</strong> · 安全与恢复 · 高
+- 证据：自动备份有自己的文件夹（<code>PersonalCenter.tsx:246-257</code>），手动备份还有"本次手动备份的文件夹（不会启用自动备份）"（<code>BackupCenter.tsx</code> 的 <code>copy.destination</code>），两段说明文字专门解释二者的区别（<code>PersonalCenter.tsx:211-215</code>）。</p>
+<p><strong>S-03 摘要只有状态，没有建议的下一步</strong> · 安全与恢复 · 高
+- 证据：<code>SecurityRecovery.tsx:63-77</code> 列出 8 行状态加一个"刷新状态"按钮；"保险库：已加密"永远不变；颜色问题见 V-05。</p>
+<p><strong>S-04 "从恢复包恢复"无确认就锁定</strong> · 安全与恢复 · 中（代码）
+- 证据：<code>PersonalCenter.tsx:172-181</code> 点击后立即调用 <code>api.lock()</code> 并重新加载页面。</p>
+<p><strong>S-05 密码检查结果不回到列表或详情</strong> · 安全与恢复 → 密码 · 中
+- 证据：<code>PasswordHealth.tsx</code> 需要手动点"检查本地密码"才有结果，结果只在这一节里显示；列表和条目上没有任何标记。1Password 的 Watchtower 会在条目上显示提醒横幅（R-03）。</p>
+<h3 id="2-11-连接与同步">2.11 连接与同步</h3>
+<p><strong>C-01 页面顺序与视觉权重不符合多数用户的需要</strong> · 连接 · 高
+- 证据：[实测] 1280×800 下页高 1514px，顺序是：多电脑同步（次要按钮）→ 4 个可选外部服务卡片（各有主按钮）→ 浏览器和其他设备（浏览器扩展在首屏之下）→ 同步状态。</p>
+<p><strong>C-02 两套冲突提示，入口不同</strong> · 密码页、连接页 · 中–高
+- 证据：外部服务冲突提示（<code>App.tsx:430-437</code>，进入"冲突"页）与多电脑同步冲突提示（<code>PersonalSyncRunner.tsx:30-34</code>，进入连接页），文案不同、去向不同。</p>
+<p><strong>C-03 浏览器授权区的细节</strong> · 连接 · 中
+- 证据：还没有配对时也显示"断开临时浏览器连接"（<code>ConnectionTools.tsx:130-132</code>）；[截图 <code>trusted-browser-devices-generated.png</code>] 已授权浏览器列表是默认的圆点 <code>&lt;ul&gt;</code>。</p>
+<h3 id="2-12-分享">2.12 分享</h3>
+<p><strong>SH-01 限时链接与家庭共享库挤在一页</strong> · 分享 · 中–高
+- 证据：[截图 <code>desktop-sharing-zh.png</code>] 多个主按钮；家庭共享库切换是一排按钮（<code>Sharing.tsx:118-122</code>）。</p>
+<p><strong>SH-02 分享确认对话框说不清后果</strong> · 分享 · 高
+- 证据：<code>Sharing.tsx:157-159</code>，对话框正文用" · "把标题、服务器、字段名、时长、次数拼成一行；确认按钮是默认的"确认"，没有传 <code>confirmLabel</code> 和 <code>variant</code>。
+- 影响：分享是把秘密发出本机的操作，用户需要清楚看到"分享哪些字段、给谁（链接）、多久、几次、能否撤回"。</p>
+<p><strong>SH-03 只能从分享页发起分享</strong> · 条目 → 分享 · 中（推断）
+- 证据：分享页用下拉框选择条目（截图）。一般用户的心智是"在这个账号上点分享"。</p>
+<h3 id="2-13-设置">2.13 设置</h3>
+<p><strong>SET-01 控件布局与分组</strong> · 设置 · 中
+- 证据：[截图] 下拉框全宽；Hello 状态是一段说明文字；"退出 Vault Unified"放在"快捷搜索与托盘"一节里（<code>Settings.tsx:58</code>）。</p>
+<p><strong>SET-02 保存模型不一致</strong> · 设置、安全与恢复 · 中
+- 证据：设置页改动立即保存（<code>Settings.tsx:13-18</code>）；自动锁定与自动备份必须点"保存自动锁定与自动备份设置"，未保存时还会显示警告（<code>PersonalCenter.tsx:269-287</code>）。</p>
+<h3 id="2-14-反馈与状态">2.14 反馈与状态</h3>
+<p><strong>FB-01 Toast 2.4 秒自动消失，错误也一样</strong> · 全局 · 高
+- 证据：<code>Toast.tsx:32-34</code>；许多错误只通过 toast 显示（如 <code>PersonalCenter.tsx:69</code>、<code>93</code>、<code>106</code>）。
+- 影响：WCAG 2.2.1（可调节时限）的风险；读得慢、视线不在右下角的用户会错过错误。</p>
+<p><strong>FB-02 确认对话框正文是一整段字符串</strong> · 恢复、迁入、备份恢复、分享、整理 · 高
+- 证据：<code>ConfirmDialog.tsx:86-88</code> 只渲染一个 <code>&lt;p&gt;</code>；启动恢复的对话框把"时间 · 路径 · KiB. 影响"拼成一行（<code>Unlock.tsx:581</code>），恢复包对话框同理（<code>Unlock.tsx:596</code>）。
+- 影响：<code>ux-terminology.md</code> 要求破坏性确认写清"对象、数量、去向、后果"，目前信息虽在，但扫读困难。</p>
+<p><strong>FB-03 对话框按钮顺序与 Windows 惯例相反</strong> · 全局 · 低–中（需决策）
+- 证据：<code>ConfirmDialog.tsx:89-100</code> 是"取消 | 确认"；Windows <code>ContentDialog</code> 指南是"执行"按钮在左、安全按钮在右（R-08）。改不改见第 8 节 Q-06。</p>
+<h3 id="2-15-可访问性">2.15 可访问性</h3>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>问题</th>
+<th>证据</th>
+<th>置信度</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>A-01</td>
+<td><code>&lt;html lang="en"&gt;</code> 写死，中文界面也被声明为英文（WCAG 3.1.1）</td>
+<td><code>index.html:2</code>；源码中没有任何 <code>document.documentElement.lang</code> 赋值（扩展的 <code>popup.js</code> 有设置）</td>
+<td>高</td>
+</tr>
+<tr>
+<td>A-02</td>
+<td>输入框和复选框边界对比度 1.52–1.63:1，低于 3:1（WCAG 1.4.11）</td>
+<td><code>--color-border-strong #2f3b4a</code> 对 <code>#151b24</code> 为 1.52:1，对 <code>#0f1419</code> 为 1.63:1；次要按钮底色对卡片仅 1.15:1</td>
+<td>高 [计算]</td>
+</tr>
+<tr>
+<td>A-03</td>
+<td>主按钮 hover 状态白字对比度 4.03:1（14px 正文要求 4.5:1）</td>
+<td>白字对 <code>--color-accent-hover #3182ce</code></td>
+<td>高 [计算]</td>
+</tr>
+<tr>
+<td>A-04</td>
+<td>"跳到主内容"链接未聚焦时露出约 94×4.6px 的蓝条</td>
+<td><code>styles.css:372-389</code>，<code>translateY(-120%)</code> 不足以移出视口；[实测] <code>getBoundingClientRect().bottom = 4.6</code>；截图左上角可见</td>
+<td>高</td>
+</tr>
+<tr>
+<td>A-05</td>
+<td>菜单和切换按钮缺少语义</td>
+<td>L-02、F-02</td>
+<td>高</td>
+</tr>
+<tr>
+<td>A-06</td>
+<td>列表骨架屏的 <code>aria-label</code> 写死英文</td>
+<td><code>LoadingSkeleton.tsx:7</code> <code>"Loading vault entries"</code></td>
+<td>高</td>
+</tr>
+<tr>
+<td>A-07</td>
+<td>焦点样式用 <code>box-shadow</code>，Windows 高对比度（forced-colors）下会被移除；桌面端没有 forced-colors 规则</td>
+<td><code>styles.css:43</code>、<code>346-357</code>；扩展有 <code>@media (forced-colors: active)</code>（<code>popup.css:35</code>）</td>
+<td>中 [推断]</td>
+</tr>
+<tr>
+<td>A-08</td>
+<td>现有 axe 检查覆盖不到以上问题：axe 不检查 1.4.11 非文本对比度，也无法判断 lang 与内容不符</td>
+<td><code>tests/ui/*.spec.ts</code> 使用 <code>AxeBuilder</code>；未见 <code>toHaveScreenshot</code> 视觉基线</td>
+<td>高</td>
+</tr>
+</tbody>
+</table>
+<p>正面发现：正文文本对比度充足（主文本对背景 15.6:1，次要文本 6.1–6.6:1，错误红 7.1:1）；已支持 <code>prefers-reduced-motion</code>（<code>styles.css:47-55</code>）；对话框有焦点陷阱，危险对话框默认聚焦"取消"（<code>ConfirmDialog.tsx:39</code>）。</p>
+<h3 id="2-16-中英文呈现">2.16 中英文呈现</h3>
+<p><strong>I18N-01 文案大多在组件里内联</strong> · 全局 · 高 [代码统计]
+- 证据：用正则统计 <code>zh ?</code>、<code>locale === "zh" ?</code>、<code>text("…", "…")</code>，<code>apps/desktop/src</code> 共约 779 处；<code>t("…")</code> 调用 131 处。另外 <code>Unlock.tsx</code>、<code>EntryForm.tsx</code>、<code>BackupCenter.tsx</code> 各有本地 copy 字典。内联最多的文件：<code>PersonalSync.tsx</code>（93）、<code>Sharing.tsx</code>（87）、<code>ImportWizard.tsx</code>（71）、<code>PersonalCenter.tsx</code>（52）、<code>VaultList.tsx</code>（49）。
+- 影响：无法检查两种语言的键是否齐全，也无法统一术语，B-02 这类内容不对等会持续出现。</p>
+<p><strong>I18N-02 术语混用</strong> · 全局 · 高 [代码统计]
+- "保险库"20 处 vs "密码库"26 处（首启页同屏两种叫法，[实测]）；"通行密钥"与 "Passkey" 并存；登录类条目叫"账号""条目""密码""登录信息"；"安全备注"与"安全笔记"。</p>
+<p><strong>I18N-03 后端英文错误直接显示</strong> · 全局 · 高
+- F-04 的根因。<code>ImportWizard.tsx:18-35</code> 用英文原文作键做局部映射，这种做法很脆弱。
+- 后台维护通知同样直接显示：<code>App.tsx:185-189</code> 把后端的 <code>notice.message</code> 放进 toast，而后端文案是英文（如 <code>personal.py:184-200</code> 的 "Scheduled backup could not be created"、"N synchronization conflict(s) need attention"）。</p>
+<p><strong>I18N-04 英文更长，导致换行和按钮过长</strong> · 全局 · 中
+- [实测] 900px 英文界面应用名折行；按钮文案如 "Save auto-lock and automatic-backup settings"。</p>
+<p><strong>I18N-05 日期格式跟随系统而不是界面语言</strong> · 编辑器历史、备份列表等 · 中
+- 证据：<code>EntryForm.tsx:697</code>、<code>BackupCenter.tsx</code> 的 <code>toLocaleString()</code> 没有传 locale；<code>SecurityRecovery.tsx:18</code> 传了 locale。同一界面里日期格式可能不一致。</p>
+<p><strong>I18N-06 英文复数用 "(s)" 凑</strong> · 编辑器摘要 · 低
+- 证据：<code>EntryForm.tsx:154-158</code>，如 <code>{count} tag(s)</code>。</p>
+<h3 id="2-17-问题严重度汇总">2.17 问题严重度汇总</h3>
+<table>
+<thead>
+<tr>
+<th>严重度</th>
+<th>条目</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>高（影响核心任务、给出错误信息或属于明确缺陷）</td>
+<td>G-01, G-03, G-04, V-01, V-05, V-06, E-01, E-02, F-01, F-02, F-03, F-04, S-01, S-02, S-03, C-01, SH-02, FB-01, FB-02, I-02, L-05, A-01–A-04, A-06, I18N-01–03, B-02</td>
+</tr>
+<tr>
+<td>中</td>
+<td>G-02, G-05, V-02, V-03, V-04, V-07, T-01–T-04, F-05–F-08, L-01–L-04, L-06, L-07, E-03, E-04, Q-01, Q-02, B-01, B-03–B-06, I-01, I-03, S-04, S-05, C-02, C-03, SH-01, SH-03, SET-01, SET-02, A-05, A-07, I18N-04, I18N-05</td>
+</tr>
+<tr>
+<td>低</td>
+<td>E-05, Q-03, Q-04, B-07, FB-03, I18N-06</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="3-参考矩阵">3. 参考矩阵</h2>
+<p>选取标准：与"Windows 本地优先个人密码管理器 + 浏览器扩展"的任务流直接相关。所有来源的访问日期均为 <strong>2026-10-21</strong>。社区帖子只作为用户反馈旁证，不作为产品事实。</p>
+<h3 id="r-01-1password-for-windows-主窗口三栏-查看与编辑分离">R-01 1Password for Windows：主窗口三栏，查看与编辑分离</h3>
+<ul>
+<li><strong>界面/交互</strong>：侧栏（Favorites、tags、Watchtower、Archive、Recently Deleted）→ 条目列表（分类筛选 + 搜索）→ 选中后显示详情（只读）；<strong>Edit</strong>（Ctrl+E）进入编辑，<strong>Save</strong>（Ctrl+S）保存；右上角锁定按钮（Ctrl+Shift+L）。</li>
+<li><strong>来源</strong>：<a href="https://support.1password.com/getting-started-windows/">https://support.1password.com/getting-started-windows/</a></li>
+<li><strong>值得学习</strong>：浏览与编辑是两种状态；收藏、归档、最近删除作为一级筛选，而不是下拉框里的"位置"。</li>
+<li><strong>对应问题</strong>：G-03、G-04、E-01、L-03。</li>
+<li><strong>如何适配</strong>：左侧导航中，"密码"下设 全部/收藏/标签/归档/回收站；中栏为列表，右栏为只读详情；Ctrl+E 编辑、Ctrl+S 保存、Esc 取消（编辑时仍走现有的 <code>pendingAction</code> 脏数据确认）。</li>
+<li><strong>取舍/不要照搬</strong>：多账户/多集合切换器与 VU 的单个本地库无关；不要复制它庞大的条目分类，VU 只需要现有的 5 个可新建类型加上兼容类型。</li>
+</ul>
+<h3 id="r-02-1password-quick-access-系统级快速搜索">R-02 1Password Quick Access：系统级快速搜索</h3>
+<ul>
+<li><strong>界面/交互</strong>：Windows 默认快捷键 Ctrl+Shift+Space，也可从托盘打开；选中条目后的省略号菜单提供复制用户名/密码；"Open Item In New Window"；Esc 取消。</li>
+<li><strong>来源</strong>：<a href="https://support.1password.com/quick-access/">https://support.1password.com/quick-access/</a> （另见社区帖 <a href="https://www.1password.community/discussions/1password/how-can-i-change-shortcuts-in-quick-access-/90913">https://www.1password.community/discussions/1password/how-can-i-change-shortcuts-in-quick-access-/90913</a> ，用户反映可修改的快捷键有限，仅作旁证）</li>
+<li><strong>值得学习</strong>：一个窗口里集中处理"找到 → 复制/打开"；每个条目的动作集中在一个菜单里，并配有快捷键。</li>
+<li><strong>对应问题</strong>：Q-01、Q-02、Q-04。</li>
+<li><strong>如何适配</strong>：快捷搜索结果改为单行；Enter 的主动作随条目类型变化；Tab 打开动作列表（见 R-10）；在设置里提示 Ctrl+Shift+Space 可能与 1Password 冲突。</li>
+<li><strong>取舍/不要照搬</strong>：1Password 选中条目会"打开网站并填充"。VU 的安全模型是不自动提交、auto-type 要先确认目标窗口，所以 Enter 不应打开网站或自动输入。</li>
+</ul>
+<h3 id="r-03-1password-watchtower-问题分组-条目上的提醒横幅">R-03 1Password Watchtower：问题分组 + 条目上的提醒横幅</h3>
+<ul>
+<li><strong>界面/交互</strong>：按问题类型分组（compromised、vulnerable、weak、reused、unsecured websites、2FA 等），每组有建议动作；有问题的条目"在整个 1Password 中显示提醒横幅"。</li>
+<li><strong>来源</strong>：<a href="https://support.1password.com/watchtower/">https://support.1password.com/watchtower/</a></li>
+<li><strong>值得学习</strong>：健康检查的结果回流到条目本身。</li>
+<li><strong>对应问题</strong>：S-03、S-05。</li>
+<li><strong>如何适配</strong>：详情页对弱密码或重复密码显示 warning 级 InfoBar（"弱密码 · 与 1 个账号重复 [去网站修改] [更新已存密码]"）；列表增加"需要处理"筛选；安全概览卡片显示计数。只使用现有 <code>api.passwordHealth()</code> 的本地结果，不增加网络请求。</li>
+<li><strong>取舍/不要照搬</strong>：需要在线数据的类别（例如"网站支持 2FA"）与 VU 的离线默认冲突；泄露查询保持"本次访问单独同意"的现状。</li>
+</ul>
+<h3 id="r-04-bitwarden-浏览器扩展-自动填充与输入框内菜单">R-04 Bitwarden 浏览器扩展：自动填充与输入框内菜单</h3>
+<ul>
+<li><strong>界面/交互</strong>：Vault 页顶部 <strong>Autofill suggestions</strong>，点击条目即填充，查看要单独点 <strong>View</strong>；输入框内菜单（<strong>Show autofill suggestions on form fields</strong>），Esc 关闭；网址不匹配时提供 <strong>Autofill and add this website</strong> / <strong>Autofill without adding the website</strong>；默认在填充后自动复制 TOTP（<strong>Copy TOTP automatically</strong>）。</li>
+<li><strong>来源</strong>：<a href="https://bitwarden.com/help/auto-fill-browser/">https://bitwarden.com/help/auto-fill-browser/</a></li>
+<li><strong>值得学习</strong>：当前网站的匹配结果放在最上面，"整行即填充"，次要动作收进菜单；网址不匹配时把"是否加入匹配规则"做成显式选择。</li>
+<li><strong>对应问题</strong>：B-03、B-05、Q-02。</li>
+<li><strong>如何适配</strong>：popup 的匹配行改为中性样式的列表行，右侧固定一个"填充"按钮，"⋯"里放 填入验证码 / 更新已存密码 / 在桌面端打开；网址不匹配时复用现有的 <code>website_rules</code> 与跨源同意流程，先预览再确认。</li>
+<li><strong>取舍/不要照搬</strong>：默认自动复制 TOTP 会增加剪贴板暴露，VU 已有显式的"填入验证码"，最多作为可选项；Bitwarden 默认按 <strong>Base domain</strong> 匹配，VU 默认精确主机是有意设计，应保留。</li>
+</ul>
+<h3 id="r-05-bitwarden-vault-health-reports-泄露结果的措辞">R-05 Bitwarden Vault Health Reports：泄露结果的措辞</h3>
+<ul>
+<li><strong>界面/交互</strong>：Exposed / Reused / Weak / Unsecured Websites / Inactive 2FA 等报告；说明报告"在客户端本地运行"，并明确写出 "This report's result may not mean your account has been compromised."</li>
+<li><strong>来源</strong>：<a href="https://bitwarden.com/help/reports/">https://bitwarden.com/help/reports/</a></li>
+<li><strong>值得学习</strong>：先说清"被标记"意味着什么、不意味着什么，再给下一步。</li>
+<li><strong>对应问题</strong>：S-05，以及 <code>PasswordHealth.tsx:91</code>"此密码出现在泄露记录中（9 次）"缺少解释的问题。</li>
+<li><strong>如何适配</strong>：泄露结果文案改为三段："这个密码出现在公开泄露的数据中（9 次）。这不一定表示你的账号已被入侵，但别人可能会尝试它。建议：先在网站修改，再更新这里。"中英文同步。</li>
+<li><strong>取舍/不要照搬</strong>：Bitwarden 部分报告需要付费，与 VU 无关。</li>
+</ul>
+<h3 id="r-06-keepassxc-预览面板-hello-快速解锁-浏览器连接命名">R-06 KeePassXC：预览面板、Hello 快速解锁、浏览器连接命名</h3>
+<ul>
+<li><strong>界面/交互</strong>：
+  1. 主窗口的 <strong>Preview</strong> 面板："You can interact with most information stored in an entry from here without opening the entry for editing."
+  2. <strong>Quick Unlock</strong>：在 Windows 上，用完整凭据解锁数据库后会立即提示进行 Windows Hello 验证，以此启用快速解锁；用户取消则不启用，数据库照常解锁。锁定后按 Enter 或点 <em>Unlock Database</em> 即发起生物识别。
+  3. <strong>Browser Integration</strong>：扩展里点 <em>Connect</em> → 桌面端弹出关联对话框，输入唯一名称 → <em>Save and allow access</em>；扩展图标有 4 种状态（未运行/断开、未连接到当前数据库、已连接但数据库锁定、可用并显示匹配数）。
+  4. <strong>Auto-Type</strong> 默认序列是 <code>{USERNAME}{TAB}{PASSWORD}{ENTER}</code>。</li>
+<li><strong>来源</strong>（官方文档源文件）：</li>
+<li><a href="https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/UserInterface.adoc">https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/UserInterface.adoc</a></li>
+<li><a href="https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/DatabaseOperations.adoc">https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/DatabaseOperations.adoc</a></li>
+<li><a href="https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/BrowserIntegration.adoc">https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/BrowserIntegration.adoc</a></li>
+<li><a href="https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/AutoType.adoc">https://github.com/keepassxreboot/keepassxc/blob/develop/docs/topics/AutoType.adoc</a></li>
+<li>渲染版 <a href="https://keepassxc.org/docs/KeePassXC_UserGuide">https://keepassxc.org/docs/KeePassXC_UserGuide</a> 页面过大、抓取超时，以上述源文件为准</li>
+<li><strong>值得学习</strong>：(1) 详情预览与编辑分离；(2) 在用户刚输完主密码的那一刻引导启用 Hello，而不是让用户去设置页找；(3) 连接状态用少数几个明确的状态表示，并在扩展上可见。</li>
+<li><strong>对应问题</strong>：E-01、F-06、B-01、B-06。</li>
+<li><strong>如何适配</strong>：主密码解锁成功后，如果 Hello 可用但本次运行未启用，显示一次对话框"为本次运行启用 Windows Hello？[启用] [以后再说]"，调用现有 <code>api.enableHello()</code>；之后锁定时 Hello 作为主按钮并获得默认焦点。扩展 popup 顶部显示连接状态行（未配对 / 桌面未运行 / 已锁定 / 可用）。</li>
+<li><strong>取舍/不要照搬</strong>：KeePassXC 的密集工具栏和多列表格不适合新手；auto-type 默认按 Enter 与 VU "不自动提交"的原则冲突，VU 当前"用户名 → Tab → 密码，不按 Enter"应保留。</li>
+</ul>
+<h3 id="r-07-proton-pass-桌面版-三栏结构与显式-edit">R-07 Proton Pass 桌面版：三栏结构与显式 Edit</h3>
+<ul>
+<li><strong>界面/交互</strong>：左侧栏（vaults、Trash 等）→ 中间条目列表 → 右侧选中条目的详情；在中栏选中条目后点右侧的 <strong>Edit</strong> 按钮进行修改。</li>
+<li><strong>来源</strong>：<a href="https://proton.me/support/how-to-use-proton-pass-windows-app">https://proton.me/support/how-to-use-proton-pass-windows-app</a></li>
+<li><strong>值得学习</strong>：与 R-01 相同的结构在另一家产品中也成立，说明这是迁移用户熟悉的心智模型。</li>
+<li><strong>对应问题</strong>：G-03、E-01。</li>
+<li><strong>如何适配</strong>：同 R-01。</li>
+<li><strong>取舍/不要照搬</strong>：该文档同一处先说点 <em>Edit</em> 完成，后又说点 <em>Save</em>，前后不一致。教训：编辑态的完成按钮必须叫"保存"，查看态的按钮叫"编辑"，不要复用同一个词。</li>
+</ul>
+<h3 id="r-08-microsoft-windows-设计指南-fluent">R-08 Microsoft Windows 设计指南（Fluent）</h3>
+<ul>
+<li><strong>界面/交互与来源</strong>：</li>
+<li>排版：Segoe UI Variable；类型阶梯 12/16、14/20、14/20 semibold、18/24、20/28、28/36、40/52、68/92；所有 UI 文本用 sentence case；最小 14px semibold / 12px regular；简体中文推荐 <strong>Microsoft YaHei UI</strong>。<a href="https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography">https://learn.microsoft.com/en-us/windows/apps/design/signature-experiences/typography</a></li>
+<li>间距：按钮之间 8epx，控件与标题之间 8epx，控件与标签之间 12epx，内容区之间 12epx，表面边缘到文字 16epx。<a href="https://learn.microsoft.com/en-us/windows/apps/design/basics/content-basics">https://learn.microsoft.com/en-us/windows/apps/design/basics/content-basics</a></li>
+<li>导航：5 个以内同等重要的类别用顶部导航，5–10 个用左侧导航；默认自适应：≥1008px 展开左栏，641–1007px 只显示图标（LeftCompact）。<a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/navigationview">https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/navigationview</a></li>
+<li>对话框：按钮文案用针对问题的具体回答；"执行"按钮在左，安全按钮在右；校验错误放在页面内，不用对话框。<a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs">https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/dialogs-and-flyouts/dialogs</a></li>
+<li>InfoBar：用于需要用户知晓或处理的应用状态，默认停留到用户关闭或状态解决；Severity 必须与内容一致；不要用 InfoBar 回应用户刚做的操作。<a href="https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar">https://learn.microsoft.com/en-us/windows/apps/develop/ui/controls/infobar</a></li>
+<li><strong>对应问题</strong>：G-01、T-01–T-04、V-05、V-06、FB-01–FB-03、F-02。</li>
+<li><strong>如何适配</strong>：第 4 节的令牌与组件规则直接采用这些数值；备份未设置、同步失败、冲突待处理、格式可升级用 InfoBar；操作结果（已复制、已保存）用 toast。</li>
+<li><strong>取舍/不要照搬</strong>：不需要改用 WinUI 重写；Mica/Acrylic 在 WebView2 里只能用模糊效果模拟，有性能代价、收益低，不建议；不要为了"像 Windows"而放弃中文排版规则。</li>
+</ul>
+<h3 id="r-09-enpass-在用户自己的存储上同步">R-09 Enpass：在用户自己的存储上同步</h3>
+<ul>
+<li><strong>界面/交互</strong>：Settings → Vaults → Add new vault → 选择 WebDAV → 填地址（可指定专用文件夹）与凭据 → <strong>Connect</strong>；Android 手册说明每次解锁时自动同步，前台时定期同步。社区里有用户反映"难以看出某台设备同步到哪个文件夹"。</li>
+<li><strong>来源</strong>：</li>
+<li><a href="https://help.enpass.io/personal/latest/all/storage-sync-via-webdav">https://help.enpass.io/personal/latest/all/storage-sync-via-webdav</a></li>
+<li><a href="https://support.enpass.io/docs/manual-android/_sources/sync.rst.txt">https://support.enpass.io/docs/manual-android/_sources/sync.rst.txt</a></li>
+<li>用户反馈旁证：<a href="https://discussion.enpass.io/topic/6638-webdav-show-syncing-folder-configure-location/">https://discussion.enpass.io/topic/6638-webdav-show-syncing-folder-configure-location/</a></li>
+<li><strong>值得学习</strong>：同步配置是一个短流程；同步时机可预期（解锁时 + 定期）。</li>
+<li><strong>对应问题</strong>：C-01、C-02。</li>
+<li><strong>如何适配</strong>：连接页的"我的电脑之间同步"卡片固定显示 位置（文件夹或 WebDAV 主机）、上次同步时间、已连接电脑数、状态；设置流程保留 VU 现有的"预览 → 确认"。</li>
+<li><strong>取舍/不要照搬</strong>："跳过 SSL 证书验证"这类选项不要放在主流程里；断开时"同时删除云端数据"必须配合清晰的预览，不能只是一个复选框。</li>
+</ul>
+<h3 id="r-10-raycast-action-panel-主动作-可搜索的动作列表">R-10 Raycast Action Panel：主动作 + 可搜索的动作列表</h3>
+<ul>
+<li><strong>界面/交互</strong>：Enter 执行第一个（主）动作；⌘K / Ctrl+K 打开当前条目的全部动作，支持模糊搜索，每个动作右侧显示快捷键；Esc 返回。</li>
+<li><strong>来源</strong>：<a href="https://manual.raycast.com/action-panel">https://manual.raycast.com/action-panel</a></li>
+<li><strong>值得学习</strong>：动作可发现，同时快捷键能在使用中学会。</li>
+<li><strong>对应问题</strong>：Q-02、B-03。</li>
+<li><strong>如何适配</strong>：VU 已用 Ctrl+K 打开快捷搜索，因此在快捷搜索内部用 Tab 或 → 打开动作列表，列表项右侧显示快捷键；主窗口条目的"⋯"菜单同样显示快捷键。</li>
+<li><strong>取舍/不要照搬</strong>：插件生态、AI 命令、无限扩展的命令集都不适合密码管理器；动作列表只放与当前条目相关的动作。</li>
+</ul>
+<h3 id="评估过但未采用">评估过但未采用</h3>
+<table>
+<thead>
+<tr>
+<th>候选</th>
+<th>不采用的原因</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Linear</td>
+<td>面向团队的 Web SaaS 项目管理工具；键盘优先与高密度两点已由 Raycast 与 Fluent 覆盖；照搬其品牌化深色风格容易变成"做得更现代"，解决不了本报告列出的问题</td>
+</tr>
+<tr>
+<td>Apple Passwords</td>
+<td>不在 Windows 上</td>
+</tr>
+<tr>
+<td>LastPass / Dashlane</td>
+<td>以云账户为中心，与本地优先的信任模型差异大</td>
+</tr>
+</tbody>
+</table>
+<h3 id="标准依据">标准依据</h3>
+<ul>
+<li>WCAG 2.2 1.4.11 Non-text Contrast：<a href="https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html">https://www.w3.org/WAI/WCAG22/Understanding/non-text-contrast.html</a></li>
+<li>WCAG 2.2 3.1.1 Language of Page：<a href="https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html">https://www.w3.org/WAI/WCAG22/Understanding/language-of-page.html</a></li>
+<li>WCAG 2.2 2.2.1 Timing Adjustable：<a href="https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html">https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable.html</a></li>
+<li>WCAG 2.2 4.1.3 Status Messages：<a href="https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html">https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html</a></li>
+</ul>
+<hr />
+<h2 id="4-设计方向">4. 设计方向</h2>
+<h3 id="4-1-三个候选方向">4.1 三个候选方向</h3>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>A. Windows 原生工作台（<strong>推荐</strong>）</th>
+<th>B. 深色保险箱精修</th>
+<th>C. 键盘优先命令中心</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>结构</td>
+<td>左侧导航 + 列表/详情；管理类页面用"概览 + 子页"</td>
+<td>保留顶部导航与单列，只做减法</td>
+<td>以快捷搜索为主入口，主窗口退为管理后台</td>
+</tr>
+<tr>
+<td>视觉</td>
+<td>Fluent 排版与间距；浅色/深色跟随系统；中性色为主，accent 只用于主操作和选中态</td>
+<td>保留深色品牌，修令牌、按钮层级、卡片层级</td>
+<td>深色、极简、高密度</td>
+</tr>
+<tr>
+<td>能解决</td>
+<td>G-01–G-05、E-01–E-04、L-01–L-04、S-01–S-03、V-<em>、T-</em></td>
+<td>V-<em>、T-</em>、FB-<em>、A-</em>；<strong>解决不了</strong> E-01、E-02、G-03、G-04</td>
+<td>Q-<em>、日常复制/填充；备份、恢复、分享等低频高风险流程</em><em>更难发现</em>*</td>
+</tr>
+<tr>
+<td>代价</td>
+<td>L（分阶段，可逐页迁移）</td>
+<td>S–M</td>
+<td>M，且与 IA"新手优先、按需披露"冲突</td>
+</tr>
+<tr>
+<td>风险</td>
+<td>改动面大，需要视觉回归基线</td>
+<td>只改善"看起来"，任务效率基本不变</td>
+<td>新手学习成本高</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4-2-推荐-a-b-的令牌整理作为第一阶段-c-的动作列表放进快捷搜索">4.2 推荐：A；B 的令牌整理作为第一阶段；C 的动作列表放进快捷搜索</h3>
+<p><strong>结合用户与任务的理由</strong>
+1. <strong>用户</strong>：Windows 上的个人用户，IA 文档明确以"不了解密码管理器实现的新手"为默认对象；不少人会从 Chrome/Edge、Bitwarden、KeePassXC、Proton Pass 迁移过来（VU 已支持这些导入或连接）。列表/详情是这些产品共同的心智模型（R-01、R-06、R-07），迁移用户不必重新学习。
+2. <strong>任务频率</strong>：
+   - 每天：找到 → 复制/填充 → 偶尔看验证码。需要列表常驻、详情即看即复制。
+   - 每周：整理、改密码、处理健康问题。需要批量模式，以及问题回流到条目。
+   - 很少但关键：备份、恢复、换机、同步配置、分享。需要清晰的结构、预览与确认，不能和日常操作挤在一起。
+   - 方向 A 按频率分层：日常操作在"密码"的双栏里完成；低频高风险操作进入"安全与恢复/连接/分享"的概览和子页，每一步保留现有的预览与确认。
+3. <strong>平台一致</strong>：产品只支持 Windows，并深度集成 Hello、托盘、全局快捷键与 auto-type，采用 Windows 的排版、导航与对话框约定能降低陌生感。
+4. <strong>中英文</strong>：方向 A 的组件化（Button/Field/Dialog/InfoBar）是把约 779 处内联文案收进字典的自然切入点；固定宽度的设置卡片和图标按钮能减少英文变长造成的换行。
+5. <strong>架构可行</strong>：全部基于现有 React + CSS 变量实现，不引入 UI 框架，不改 API 与数据格式。唯一可能新增的资源是图标（建议直接内置 SVG，见 4.3.6）。</p>
+<h3 id="4-3-设计令牌与组件规则">4.3 设计令牌与组件规则</h3>
+<blockquote>
+<p>以下颜色数值都已按 WCAG 公式核算（附录 B）。实现时放在新文件 <code>apps/desktop/src/tokens.css</code>，旧变量名先做别名映射，再逐页迁移。</p>
+</blockquote>
+<h4 id="4-3-1-字体与排版">4.3.1 字体与排版</h4>
+<pre><code class="language-css">:root {
+  --font-ui: &quot;Segoe UI Variable Text&quot;, &quot;Segoe UI&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, system-ui, sans-serif;
+  --font-display: &quot;Segoe UI Variable Display&quot;, &quot;Segoe UI&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, system-ui, sans-serif;
+  --font-mono: &quot;Cascadia Mono&quot;, Consolas, &quot;Microsoft YaHei UI&quot;, monospace; /* 密码里的中文字符也要有回退字体 */
+}
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>字号/行高（px）</th>
+<th>字重</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>caption</code></td>
+<td>12/16</td>
+<td>400</td>
+<td>辅助说明、列表副标题、时间戳（中文不小于 12px）</td>
+</tr>
+<tr>
+<td><code>body</code></td>
+<td>14/20（中文多行段落 14/22）</td>
+<td>400</td>
+<td>正文、字段值、标签</td>
+</tr>
+<tr>
+<td><code>body-strong</code></td>
+<td>14/20</td>
+<td>600</td>
+<td>列表标题、分区标题、按钮</td>
+</tr>
+<tr>
+<td><code>body-large</code></td>
+<td>18/24</td>
+<td>400</td>
+<td>验证码数字（另加 <code>font-variant-numeric: tabular-nums</code>，按"123 456"分组）</td>
+</tr>
+<tr>
+<td><code>subtitle</code></td>
+<td>20/28</td>
+<td>600</td>
+<td>页面标题、详情标题</td>
+</tr>
+<tr>
+<td><code>title</code></td>
+<td>28/36</td>
+<td>600</td>
+<td>只用于首启/解锁/空状态的主标题</td>
+</tr>
+</tbody>
+</table>
+<p>规则：
+- <strong>所有 UI 文本用 sentence case</strong>，删除 <code>text-transform: uppercase</code>；分区标题统一为 <code>body-strong</code> + <code>--text-secondary</code>。
+- <code>:lang(zh) { letter-spacing: 0 }</code>；负字距只用于 <code>:lang(en)</code> 下 ≥20px 的标题。
+- 只用 400 和 600 两个字重，不用 700（Windows 建议用 Semibold 表示强调）。
+- 正文行宽目标 50–60 个英文字符；中文说明段落宽度上限 36em。</p>
+<h4 id="4-3-2-间距-尺寸-圆角">4.3.2 间距、尺寸、圆角</h4>
+<table>
+<thead>
+<tr>
+<th>令牌/规则</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--space-1…8</code></td>
+<td>4, 8, 12, 16, 20, 24, 32, 40</td>
+<td>组件 CSS 中只允许使用这 8 个值</td>
+</tr>
+<tr>
+<td>按钮之间</td>
+<td>8</td>
+<td>同 Windows</td>
+</tr>
+<tr>
+<td>标签 → 控件</td>
+<td>8</td>
+<td>字段内部</td>
+</tr>
+<tr>
+<td>字段 → 字段</td>
+<td>16</td>
+<td></td>
+</tr>
+<tr>
+<td>分区 → 分区</td>
+<td>24（页面级大分区 32）</td>
+<td>用间距和分隔线分组，不再给每个分区套卡片</td>
+</tr>
+<tr>
+<td>页面内边距</td>
+<td>24（≥1008px）/ 16（&lt;1008px）</td>
+<td></td>
+</tr>
+<tr>
+<td>控件高度</td>
+<td>32（标准）；列表行 52（两行）/ 40（单行紧凑）</td>
+<td>点击区域 ≥24×24（WCAG 2.5.8）；图标按钮 32×32</td>
+</tr>
+<tr>
+<td>圆角</td>
+<td>控件 4；卡片、对话框、弹出层 8</td>
+<td>对齐 Windows 11；取消现有 12px 卡片圆角和 999px 胶囊</td>
+</tr>
+<tr>
+<td>栏宽</td>
+<td>左导航 200（展开）/ 48（紧凑）；列表 320–380；详情自适应，内容最大宽度 720</td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<h4 id="4-3-3-颜色-深色-浅色-默认跟随系统">4.3.3 颜色（深色 + 浅色，默认跟随系统）</h4>
+<pre><code class="language-css">:root, [data-theme=&quot;dark&quot;] {
+  --bg: #0f1419;             /* 窗口、左导航 */
+  --layer-1: #151b24;        /* 列表栏、详情栏、对话框 */
+  --layer-2: #1c2430;        /* 悬停行、嵌套面板、次要按钮底色 */
+  --layer-selected: #22324a; /* 选中行 */
+  --border-subtle: #2a3441;  /* 分隔线（装饰性，不承担识别） */
+  --border-control: #6b7a92; /* 输入框/复选框/次要按钮边框，对 bg/layer-1/layer-2 ≥3.59:1 */
+  --text-primary: #e7ecf3;
+  --text-secondary: #c5d0de;
+  --text-tertiary: #8b9bb4;  /* 对 layer-selected 仍有 4.59:1 */
+  --accent: #2b6cb0;         /* 主按钮底色，白字 5.42:1 */
+  --accent-hover: #2a62a3;   /* 白字 6.22:1，取代 #3182ce 的 4.03:1 */
+  --accent-pressed: #24578f;
+  --accent-text: #7fb2ea;    /* 链接、选中图标，对 layer-1 7.79:1 */
+  --focus: #90cdf4;          /* 焦点环，对所有层 ≥7.5:1，与扩展一致 */
+  --danger-fill: #c53030;    /* 只用于不可逆操作的最终确认按钮，白字 5.47:1 */
+  --danger-text: #fc8181;
+  --warning-text: #f6ad55;
+  --success-text: #68d391;
+  --info-text: var(--accent-text);
+  /* 状态底色 = 对应文字色以 12% 不透明度叠加在 layer-1 上（叠加后 warning 文字 7.19:1，danger 5.88:1） */
+}
+[data-theme=&quot;light&quot;] {
+  --bg: #f4f6f9; --layer-1: #ffffff; --layer-2: #eef2f6; --layer-selected: #e3edf9;
+  --border-subtle: #e1e6ed; --border-control: #7a869a; /* ≥3.11:1 */
+  --text-primary: #111827; --text-secondary: #374151; --text-tertiary: #5b6575; /* ≥4.98:1 */
+  --accent: #1d5fa6; --accent-hover: #184f8a; --accent-text: #1d5fa6; --focus: #1d5fa6;
+  --danger-fill: #b42318; --danger-text: #b42318; --warning-text: #8a5300; --success-text: #1e7a3e;
+}
+</code></pre>
+<ul>
+<li>主题选择：设置 → 外观：跟随系统（默认）/ 浅色 / 深色。用 <code>prefers-color-scheme</code> 加 <code>data-theme</code> 覆盖实现。浅色主题可以放到第三阶段（ST-12），但令牌命名在第一阶段就按语义定好。</li>
+<li><strong>颜色永远不是唯一信号</strong>：所有状态都同时带图标和文字（InfoBar、StatusChip）。</li>
+</ul>
+<h4 id="4-3-4-表面-边框-阴影">4.3.4 表面、边框、阴影</h4>
+<ul>
+<li><strong>最多两层表面</strong>：<code>bg</code> → <code>layer-1</code>（栏、对话框）→ <code>layer-2</code>（只用于悬停、嵌套面板、次要按钮）。禁止卡中卡。</li>
+<li>列表、状态清单、设置项用<strong>分隔线</strong>分组，不再给每一行加边框。</li>
+<li>阴影只用于浮层：菜单、弹出层用 <code>0 8px 16px rgb(0 0 0 / .28)</code>，对话框用 <code>0 16px 32px rgb(0 0 0 / .36)</code>。</li>
+</ul>
+<h4 id="4-3-5-焦点">4.3.5 焦点</h4>
+<pre><code class="language-css">:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.list-row:focus-visible { outline-offset: -2px; } /* 列表内用内描边，避免被相邻行遮挡 */
+@media (forced-colors: active) {
+  :focus-visible { outline-color: Highlight; }
+  button, input, select { border: 1px solid ButtonText; }
+}
+</code></pre>
+<p>用 <code>outline</code> 取代现在的 <code>box-shadow</code> 焦点环，Windows 高对比度模式下仍然可见（A-07）。</p>
+<h4 id="4-3-6-图标">4.3.6 图标</h4>
+<ul>
+<li>只用一种风格：建议从 Fluent UI System Icons（MIT 许可）挑约 30 个图标，作为内置 SVG 组件放到 <code>apps/desktop/src/icons/</code>，不引入运行时依赖；扩展复制同一批 SVG。</li>
+<li>尺寸：按钮内 16px，导航 20px，空状态 32px。</li>
+<li>纯图标按钮必须同时有 <code>aria-label</code> 和悬停/聚焦提示，提示里写出快捷键；<strong>破坏性操作不能只有图标</strong>。</li>
+<li>列表行的视觉锚点：标题首字母 + 由标题生成的固定色块（24px，圆角 4）。<strong>不在线获取网站图标</strong>，保持本地优先、零网络请求。</li>
+</ul>
+<h4 id="4-3-7-按钮与操作层级">4.3.7 按钮与操作层级</h4>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>外观</th>
+<th>规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Primary</td>
+<td><code>--accent</code> 底 + 白字</td>
+<td><strong>每个区域最多 1 个</strong>（页头、表单底部、对话框各算一个区域）；文案用具体动词："添加密码""创建密码库""导入 12 条"</td>
+</tr>
+<tr>
+<td>Secondary</td>
+<td><code>--layer-2</code> 底 + <code>--border-control</code> 边框</td>
+<td>同一区域里的其他动作</td>
+</tr>
+<tr>
+<td>Subtle</td>
+<td>透明，悬停显示 <code>--layer-2</code></td>
+<td>工具栏、行内动作、展开/收起</td>
+</tr>
+<tr>
+<td>Destructive（页内入口）</td>
+<td>Subtle 或 Secondary 外观 + <code>--danger-text</code> 文字 + 图标</td>
+<td>只用于不可逆操作的入口（永久删除、移除成员、断开并删除）</td>
+</tr>
+<tr>
+<td>Destructive（最终确认）</td>
+<td><code>--danger-fill</code> 底 + 白字</td>
+<td>只出现在确认对话框里，作为不可逆操作的最终按钮</td>
+</tr>
+<tr>
+<td>可恢复操作</td>
+<td>Subtle/Secondary，不用红色</td>
+<td>移到回收站、归档、取消收藏；配"撤销"toast（是否取消确认对话框见 Q-04）</td>
+</tr>
+<tr>
+<td>预览类</td>
+<td>Secondary</td>
+<td>"预览恢复影响""预览导入"不是破坏性操作，不用红色</td>
+</tr>
+</tbody>
+</table>
+<p>忙碌状态：按钮宽度不变，显示进度指示和"正在…"文案，设置 <code>aria-busy</code>。禁用状态透明度 0.4，并在旁边或提示里说明禁用原因。</p>
+<h4 id="4-3-8-反馈组件">4.3.8 反馈组件</h4>
+<table>
+<thead>
+<tr>
+<th>组件</th>
+<th>用途</th>
+<th>规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>InfoBar</strong>（新增）</td>
+<td>应用状态：未设置备份、同步失败、冲突待处理、可升级格式、扩展版本不一致</td>
+<td>内联在内容顶部；severity 取 info/success/warning/error，带图标；最多 1 个动作按钮；保留到状态解决或用户关闭；不用来回应用户刚做的操作</td>
+</tr>
+<tr>
+<td><strong>Toast</strong>（改造）</td>
+<td>用户刚做的操作的结果：已复制、已保存、已移到回收站</td>
+<td>成功/信息 4 秒，带"撤销"的 8 秒；悬停或聚焦时暂停计时；<strong>错误不用 toast</strong>，改为内联或 InfoBar；复制类 toast 显示剪贴板清除倒计时（取 API 的 <code>clears_in_seconds</code>）</td>
+</tr>
+<tr>
+<td><strong>ConfirmDialog v2</strong></td>
+<td>需要用户确认后果的操作</td>
+<td>标题是带对象的问题（"将 3 个账号移到回收站？"）；正文用 <code>&lt;dl&gt;</code> 分行列出 对象、数量、位置/去向、后果、能否撤销；按钮是具体动词 + "取消"；不可逆操作默认聚焦"取消"，回车不触发不可逆操作</td>
+</tr>
+<tr>
+<td><strong>StatusChip</strong></td>
+<td>列表、详情里的小状态</td>
+<td>中性/信息/警告/错误四种，图标 + 文字；只显示需要用户行动的状态</td>
+</tr>
+<tr>
+<td><strong>内联校验</strong></td>
+<td>表单错误</td>
+<td>放在字段下方，通过 <code>aria-describedby</code> 关联；表单级错误在表单顶部汇总，并把焦点移过去</td>
+</tr>
+</tbody>
+</table>
+<h4 id="4-3-9-其他组件">4.3.9 其他组件</h4>
+<ul>
+<li><strong>Menu</strong>：替换 <code>&lt;details&gt;</code>。<code>role="menu"</code>，支持方向键、Home/End，Esc 关闭并把焦点还给触发按钮，点击外部关闭，同时只开一个。</li>
+<li><strong>SegmentedControl</strong>：替换首启页的"创建/恢复"切换，使用 <code>role="radiogroup"</code>。</li>
+<li><strong>SettingsCard</strong>：左边标题 + 一行说明，右边控件（Toggle/Select/Button），控件最大宽度 280px。</li>
+<li><strong>Toggle switch</strong>：用于立即生效的设置（托盘、启动时检查更新）；复选框只用于需要提交的表单。</li>
+<li><strong>Stepper</strong>：一次只有一个当前步骤，<code>aria-current="step"</code>，步骤数 ≤4。</li>
+<li><strong>EmptyState</strong>：图标 + 一句话 + 一个主动作；空列表时隐藏页头的"添加"或降为次要，避免两个相同的主按钮。</li>
+</ul>
+<hr />
+<h2 id="5-屏幕与流程提案">5. 屏幕与流程提案</h2>
+<p>线框图中的 <code>[按钮]</code> 为按钮，<code>(•)</code> 为单选，<code>▸</code> 为可展开，<code>⋯</code> 为菜单，<code>⧉</code> 为复制图标按钮，<code>👁</code> 为显示/隐藏图标按钮。尺寸以 Tauri 默认窗口 1000×700 为基准。</p>
+<h3 id="5-1-首次使用与解锁-优先级最高">5.1 首次使用与解锁（优先级最高）</h3>
+<h4 id="5-1-1-解锁-已有保险库">5.1.1 解锁（已有保险库）</h4>
+<pre><code>┌──────────────────────────── 1000 × 700 ──────────────────────────────┐
+│                                                        [中文 ▾]  ①   │
+│                  ┌────────────────────────────────┐                  │
+│                  │ 🔒  Vault Unified                │                  │
+│                  │ 已锁定 · 15 分钟无操作  ②         │                  │
+│                  │                                  │                  │
+│                  │ [   使用 Windows Hello 解锁   ] ③│                  │
+│                  │ ──────────── 或 ────────────     │                  │
+│                  │ 主密码                            │                  │
+│                  │ [••••••••••••••••••      ][👁]   │                  │
+│                  │ ⚠ 主密码不正确。请检查大小写和键盘  │  ④               │
+│                  │   布局后重试。                    │                  │
+│                  │ [ 解锁 ]                          │                  │
+│                  │                                  │                  │
+│                  │ 无法解锁？ ▸  ⑤                   │                  │
+│                  └────────────────────────────────┘                  │
+│                              技术细节 ▸  ⑥                            │
+└───────────────────────────────────────────────────────────────────────┘
+</code></pre>
+<ol>
+<li><strong>语言切换</strong>：首启和解锁页右上角都显示，切换后立即生效，并写入同一偏好（解决 F-03）。</li>
+<li><strong>锁定原因</strong>：在 <code>lockToUnlock</code> 中记录 <code>reason: "idle" | "manual" | "system" | "tray" | "expired"</code>，解锁页显示一行原因；如果有草稿因锁定被清除，补一句"未保存的草稿已清除"（F-08）。</li>
+<li><strong>Hello 优先</strong>：本次运行已启用 Hello 时，它是唯一的主按钮并获得焦点，主密码区变为次要（"或"之后）；未启用时不显示该按钮，"解锁"是主按钮（F-06）。</li>
+<li><strong>本地化的内联错误</strong>：按状态码映射（401 → "主密码不正确，或这个保险库文件无法打开"），不显示后端原文；输入框设置 <code>aria-invalid</code> 并选中已输入内容，便于重新输入（F-04）。</li>
+<li><strong>"无法解锁？"</strong> 展开后是 3 个说明清楚的选项卡片，<strong>不出现在主密码之前</strong>（F-01）：
+   - 忘记了主密码 → 使用紧急恢复包
+   - 换了电脑 → 从另一台电脑迁入
+   - 保险库文件无法打开 → 说明可用的恢复方式（<code>info.format === "unreadable"</code> 时直接展开）。注意：现有的启动页"从备份恢复"会拒绝覆盖已有保险库（<code>Unlock.tsx</code> 中的 <code>restoreHint</code>、<code>auth.py:112</code>），是否为"文件无法识别"提供一个先保留原文件再替换的恢复流程，需要后端评估（Q-13）</li>
+<li><strong>技术细节</strong>（格式、路径）移到页面底部的小号链接。</li>
+</ol>
+<p>"在此电脑记住主密码"复选框从解锁页移到 设置 → 解锁方式，并在那里与 Windows Hello 一起解释两者的差异（F-07；需要所有者确认，见 Q-03）。</p>
+<p><strong>状态</strong></p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>表现</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加载中</td>
+<td>卡片骨架 + "正在检查本地保险库…"；超过 3 秒后补充"后台服务正在启动"（提示时间需要实测校准）</td>
+</tr>
+<tr>
+<td>后台服务不可达</td>
+<td>error InfoBar："无法连接后台服务。请重新打开应用。"+ [重试]；技术详情折叠</td>
+</tr>
+<tr>
+<td>解锁中</td>
+<td>按钮显示"正在解锁…"，输入框只读</td>
+</tr>
+<tr>
+<td>密码错误</td>
+<td>内联错误（见 ④）；不清空、不晃动</td>
+</tr>
+<tr>
+<td>Hello 取消/失败</td>
+<td>内联提示"Windows Hello 未完成，请使用主密码"，焦点移到主密码框</td>
+</tr>
+<tr>
+<td>文件无法识别</td>
+<td>不显示主密码表单；warning 卡片用普通语言说明情况，并直接展开"无法解锁？"中可用的选项（紧急恢复包；备份恢复取决于 Q-13）</td>
+</tr>
+</tbody>
+</table>
+<h4 id="5-1-2-首次使用-没有保险库">5.1.2 首次使用（没有保险库）</h4>
+<pre><code>┌───────────────────────────────────────────────────────────────┐
+│                                                   [English ▾] │
+│        ┌─────────────────────────────────────────────┐        │
+│        │ 开始使用 Vault Unified                        │        │
+│        │ 密码只在这台电脑上加密保存，不需要注册账户。     │        │
+│        │                                              │        │
+│        │ ((•) 创建新的密码库 | ( ) 我已有备份或恢复包 )   │ ① SegmentedControl
+│        │                                              │        │
+│        │ 主密码                                        │        │
+│        │ [                                  ][👁]     │        │
+│        │ ▓▓▓▓▓▓░░░░  较弱 · 建议用 4 个以上随机单词  ②   │        │
+│        │ 再次输入主密码                                 │        │
+│        │ [                                  ][👁]     │        │
+│        │ ⓘ 主密码无法由任何人找回。创建后，我们会提醒你   │ ③      │
+│        │   设置自动备份和紧急恢复包。                    │        │
+│        │                                              │        │
+│        │ [ 创建密码库 ]                                 │        │
+│        └─────────────────────────────────────────────┘        │
+│                          技术细节 ▸                            │
+└───────────────────────────────────────────────────────────────┘
+</code></pre>
+<ol>
+<li>两条路径用 SegmentedControl（<code>role="radiogroup"</code>）。"我已有备份或恢复包"内再分"加密备份 / 紧急恢复包 / 从另一台电脑迁入"，三者各自说明适用场景，复用现有 <code>PathPicker</code> 和预览确认流程。</li>
+<li><strong>强度反馈</strong>：后端已有 <code>zxcvbn</code>。可选做法：(a) 新增一个不落盘的强度评估接口；(b) 前端按需加载 zxcvbn。是否设最低门槛由所有者决定（Q-02）；不设门槛时，弱密码至少要求二次确认"我了解风险"。</li>
+<li>创建成功后进入空的密码页，顶部显示"开始使用"清单卡片（可关闭，每项完成后打勾）：
+   - 添加第一个密码 / 从浏览器导入
+   - 设置自动备份（链接到 安全与恢复 → 备份）
+   - 创建紧急恢复包
+   - 安装浏览器扩展
+   - 本次运行启用 Windows Hello（仅 Hello 可用时）</li>
+</ol>
+<h3 id="5-2-应用外壳与导航">5.2 应用外壳与导航</h3>
+<pre><code>≥1008px：左栏展开 200px                     641–1007px：左栏 48px，只显示图标
+┌────────────────┬──────────────────────     ┌────┬─────────────────────────
+│ Vault Unified  │ (内容区)                   │ ≡  │
+│ [🔍 搜索 Ctrl+K]│                           │ 🔍 │
+│ 🔑 密码        │                           │ 🔑 │
+│    全部   128  │                           │ 🛡•│
+│    ★ 收藏  12  │                           │ 🔗 │
+│    🏷 标签  ▸   │                           │ ↗  │
+│    🗄 归档   3  │                           │    │
+│    🗑 回收站 2  │                           │ ⚙  │
+│ 🛡 安全与恢复 • │ ← 圆点 = 有需要处理的状态    │ 🔒 │
+│ 🔗 连接        │                            └────┴─────────────────────────
+│ ↗ 分享         │
+│ ─────────────  │                           &lt;641px：顶部只保留 ≡ 菜单按钮，
+│ ⚙ 设置         │                           左栏作为抽屉覆盖内容
+│ 🔒 立即锁定 Ctrl+L│
+└────────────────┴──────────────────────
+</code></pre>
+<ul>
+<li>一级目的地 4 个（密码、安全与恢复、连接、分享）+ 底部的 设置、立即锁定。"快捷搜索"变成左栏顶部的搜索框（点击即打开现有 <code>QuickSearch</code> 弹窗），不再占一个导航按钮（G-01）。</li>
+<li>编辑器、导入、冲突页都属于某个一级目的地，对应项保持 <code>aria-current="page"</code>，内容区顶部显示面包屑式返回（G-02）。</li>
+<li>应用级状态（同步失败、冲突待处理、扩展版本不一致）以 InfoBar 显示在内容区顶部，同时在相应导航项上显示圆点；两类冲突合并为一个入口"需要你处理的修改（3）"，详情里再按"外部服务 / 另一台电脑"区分（C-02）。</li>
+<li>立即锁定快捷键：建议 Ctrl+L（需要确认不与现有快捷键冲突，见 Q-07）。</li>
+</ul>
+<h3 id="5-3-密码列表与条目详情-优先级最高">5.3 密码列表与条目详情（优先级最高）</h3>
+<pre><code>┌────────────────┬──────────────────────────────┬──────────────────────────────────────┐
+│ (左栏)          │ 密码 · 全部              [+ 添加]│ [G] Generated Mail        ★  [编辑] ⋯ │
+│                │ [🔍 筛选此列表…        ] [排序▾] │     mail.example.invalid               │
+│                │ ──────────────────────────────│ ─────────────────────────────────────│
+│                │ [G] Generated Bank 网银   ★    │ 用户名  alex.generated@example…  [⧉]   │
+│                │     gen-user-01 · bank.ex…  🔢 │ 密码    ••••••••••••••••    [👁] [⧉]   │
+│                │ [G] Generated Mail        ★  ◀│ 验证码  ••• •••   ◔ 18 秒       [⧉]  ①│
+│                │     alex.generated@… · mail…🔢 │ 网站    mail.example.invalid  [打开]   │
+│                │ [G] Generated Shop        ⚠    │ 标签    个人 · 邮箱                     │
+│                │     alex.generated@… · shop…   │ ─────────────────────────────────────│
+│                │ [G] Generated Forum            │ ⚠ 弱密码 · 与 1 个账号重复  ②            │
+│                │     （无用户名）· forum.ex…     │   [去网站修改] [生成新密码并编辑]          │
+│                │ …                              │ ─────────────────────────────────────│
+│                │                                │ ▸ 网站匹配规则：精确主机                  │
+│                │                                │ ▸ 附件（0）   ▸ 历史版本（2）             │
+│                │                                │ ▸ 通行密钥（1）                          │
+│                │                                │ 修改于 2026-10-21 20:01                 │
+└────────────────┴──────────────────────────────┴──────────────────────────────────────┘
+</code></pre>
+<p><strong>列表栏</strong>
+- 行高 52px，两行：标题（<code>body-strong</code>）+ 用户名 · 域名（<code>caption</code>）；左侧首字母色块；右侧只显示需要的小图标：🔢 有验证码、⚠ 有健康问题、同步错误或冲突（仅在配置了同步时）。不再显示 <code>••••••••</code>（L-04）。
+- 悬停或聚焦时，行尾出现 2 个 Subtle 图标按钮：复制用户名、复制密码（模板类型显示"复制密钥"，恢复码不显示复制）。<strong>整个列表不再出现实心主色按钮</strong>（V-01）。
+- 键盘：↑↓ 移动，Enter/→ 把焦点移到详情，复制快捷键沿用快捷搜索的约定，并在悬停提示中显示（具体组合见 Q-07）。
+- <strong>批量模式</strong>：工具栏的"选择"按钮或 Ctrl/Shift+单击进入；进入后才显示复选框，列表顶部出现操作条："已选 3 项 · [收藏] [添加标签] [归档] [移到回收站] · [比较并合并]（恰好选 2 项时）· [完成]"（L-01）。
+- 筛选：收藏/标签/归档/回收站在左栏；类型、"需要处理"、"重复账号"放在列表头的"筛选"菜单；归档/回收站视图顶部显示一行说明（"回收站保留 30 天…不会出现在浏览器填充建议中"）。
+- 在 1000×700、左栏紧凑时，列表栏约 340px，可完整显示约 10 行（估算：700 − 页头约 100 = 600 ÷ 52 ≈ 11）。验收时以实测为准，目标 ≥8 行（G-04）。</p>
+<p><strong>详情栏（只读）</strong>
+- 字段行：标签（<code>caption</code>，<code>--text-secondary</code>）+ 值 + 行尾动作。密码默认遮罩，[👁] 显示后沿用现有规则：30 秒、失焦、切换条目时隐藏。
+- ① <strong>验证码</strong>直接显示在详情里：默认遮罩为"••• •••"并显示倒计时圆环；[⧉] 不用先显示就能复制（调用现有 <code>api.copyTotp</code>）；点击遮罩显示数字，30 秒、失焦后隐藏（保留 <code>TotpEditor</code> 的现有规则）（E-02）。
+- ② 健康问题：如果本次会话已运行过密码检查，或进入详情时按需计算，显示 warning InfoBar（R-03）。
+- 网站匹配规则、附件、历史版本、通行密钥放在可展开分区，标题行显示摘要；历史版本的"比较并恢复"仍走现有 <code>HistoryReview</code>。
+- 头部"⋯"菜单：输入到应用、分享…（打开分享流程并预填此条目）、复制网址、收藏、归档、移到回收站、技术信息。
+- 仍是兼容类型的条目：在详情顶部显示 info InfoBar，沿用现有 <code>compatibilityHint</code> 文案。</p>
+<p><strong>编辑模式（同一栏内）</strong></p>
+<pre><code>┌──────────────────────────────────────┐
+│ 编辑 · Generated Mail                  │
+│ 网站或应用名称  [Generated Mail      ]  │
+│ 用户名          [alex.generated@…    ]  │
+│ 密码            [••••••••••][👁][⟳ ▾]  │ ← ⟳ = 生成（Subtle 图标按钮），▾ 打开生成选项与&quot;找回生成的密码&quot;
+│ 网址            [https://mail.example…]  │
+│ 备注            [                     ]  │
+│ ▸ 验证码（已设置）                        │
+│ ▸ 标签（2）   ▸ 网站匹配规则              │
+│ ▸ 自定义字段（0）   ▸ 附件（0）           │
+│ ─────────────────────────────────────│
+│ [ 保存 ]  [ 取消 ]        Ctrl+S / Esc   │ ← 粘性底栏，始终可见
+└──────────────────────────────────────┘
+</code></pre>
+<ul>
+<li>"生成密码"降为输入框内的图标按钮（V-02）。编辑已有条目时点击，先确认"用新生成的密码替换当前密码？保存后才会生效"（行内确认，不用模态框），或者至少把旧值保留在字段的"撤销"中——两种做法任选其一，需要与"生成后存入加密历史"的现有行为一起评估。</li>
+<li>分区顺序按使用频率：验证码 &gt; 标签 &gt; 网站匹配规则 &gt; 自定义字段 &gt; 附件；历史版本和技术信息移出编辑器，放到详情页（E-03）。</li>
+<li>保存/取消固定在栏底（E-04）；保存后回到详情视图，并显示"已保存"toast。</li>
+<li>数据层不变：继续使用 <code>api.commitEntry</code> 的事务与 <code>transaction_id</code>、<code>expected_updated_at</code>；<code>onDirtyChange</code>/<code>onSavingChange</code> 仍然连到 <code>App.tsx</code> 的 <code>pendingAction</code>。</li>
+</ul>
+<p><strong>状态</strong></p>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>列表栏</th>
+<th>详情栏</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>加载</td>
+<td>6 行骨架（<code>aria-busy</code>，本地化 <code>aria-label</code>）</td>
+<td>字段骨架</td>
+</tr>
+<tr>
+<td>空库</td>
+<td>EmptyState："还没有密码" + [添加第一个密码] + [从浏览器导入]（页头"添加"降为次要）</td>
+<td>显示"开始使用"清单</td>
+</tr>
+<tr>
+<td>无搜索结果</td>
+<td>"没有匹配的结果" + [清除筛选]</td>
+<td>保留上一次选中，或显示"未选择条目"</td>
+</tr>
+<tr>
+<td>加载失败</td>
+<td>error InfoBar + [重试]（不再只用 toast）</td>
+<td>同左</td>
+</tr>
+<tr>
+<td>回收站视图</td>
+<td>顶部说明保留期；行动作变为 [恢复] [永久删除…]</td>
+<td>只读，顶部 warning：已在回收站，不参与填充</td>
+</tr>
+<tr>
+<td>正在保存</td>
+<td>—</td>
+<td>保存按钮显示"正在保存…"，字段只读，离开时沿用现有"正在保存，请等待"提示</td>
+</tr>
+<tr>
+<td>保存冲突</td>
+<td>—</td>
+<td>内联 error：此条目已在别处修改，提供 [比较后合并]（复用历史比较组件，需评估）</td>
+</tr>
+<tr>
+<td>闲置即将锁定（有草稿）</td>
+<td>—</td>
+<td>保留现有倒计时警告（<code>App.tsx:496-502</code>），改为 warning InfoBar 样式</td>
+</tr>
+</tbody>
+</table>
+<h3 id="5-4-浏览器填充-优先级最高">5.4 浏览器填充（优先级最高）</h3>
+<h4 id="5-4-1-扩展-popup-360px">5.4.1 扩展 popup（360px）</h4>
+<pre><code>┌──────────── 360 ─────────────────┐
+│ VU  mail.example.invalid       ⋯ │ ← ⋯：语言、解除配对、打开桌面端
+│ ● 已连接 · 桌面端已解锁            │ ← 连接状态行（4 种状态，见下表）
+│ ──────────────────────────────── │
+│ 此网站的账号（2）                  │
+│ [G] Generated Mail       [填充] ⋯│ ← ⋯：填入验证码 / 更新已存密码 / 在桌面端打开
+│     alex.generated@…  🔢          │
+│ [G] Generated Mail (work)[填充] ⋯│
+│     ops-generated@…               │
+│ ──────────────────────────────── │
+│ [+ 保存此页面的账号]                │
+│ ▸ 在输入框中选择账号：此网站 关闭    │
+│ ▸ Passkey：已开启                  │
+└──────────────────────────────────┘
+</code></pre>
+<ul>
+<li>行用中性样式，每行只有一个次要"填充"按钮（B-03）；"更新"改为"⋯ → 更新已存密码"，并说明这是"网站已接受新密码之后"才用的操作。</li>
+<li>"Passkey"开关从"输入框内选择账号"的折叠里移出来，单独成行（B-05）。</li>
+<li><strong>不提供"搜索全部账号"</strong>：扩展只拿到当前网站匹配的条目，这是现有的安全边界，应该保持。</li>
+<li>颜色、字号、焦点从桌面端令牌生成一份 <code>popup-tokens.css</code>（扩展没有构建步骤，就提交一份副本，并用一个检查脚本保证与桌面令牌一致）；跟随 <code>prefers-color-scheme</code>。</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>popup 显示</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>未配对</td>
+<td>配对页（见 5.4.2）</td>
+</tr>
+<tr>
+<td>桌面端未运行</td>
+<td>"Vault Unified 没有在运行。请打开桌面应用。"[重试]</td>
+</tr>
+<tr>
+<td>桌面端已锁定</td>
+<td>"桌面端已锁定，草稿已清除。在桌面端解锁后点 [重新连接]"；如果地址可能已变，再显示"更新地址"小链接</td>
+</tr>
+<tr>
+<td>已连接，无匹配</td>
+<td>"这个网站没有保存的账号。"[读取页面中的账号] [手动添加]（中英文内容一致，B-02）</td>
+</tr>
+<tr>
+<td>已连接，有匹配</td>
+<td>匹配列表</td>
+</tr>
+<tr>
+<td>填充结果</td>
+<td>行内状态：已填入 / 发现多个表单，未填入（并说明可以改用输入框内选择）/ 这是注册或改密页面…</td>
+</tr>
+<tr>
+<td>保存草稿 → 预览 → 结果</td>
+<td>保持现有三步与"我已确认此密码可用"勾选；预览改为分行 <code>&lt;dl&gt;</code>（动作、名称、用户名、网站、保留什么）</td>
+</tr>
+<tr>
+<td>版本不一致</td>
+<td>warning："桌面端与扩展版本不同"+ 如何更新</td>
+</tr>
+</tbody>
+</table>
+<h4 id="5-4-2-首次配对">5.4.2 首次配对</h4>
+<ul>
+<li>桌面端（连接 → 浏览器扩展）：生成配对后显示<strong>一条可复制的"配对信息"</strong>（本机地址 + 一次性码）和到期倒计时，一个按钮 [复制配对信息]；保留分别复制两个值的次要入口（B-01）。</li>
+<li>扩展：一个粘贴框"粘贴配对信息"，自动拆分为地址和配对码；"授权此浏览器在重启后恢复连接"默认勾选（保持现状）；浏览器名称预填"Chrome · Windows"这样的值。</li>
+<li>安全说明：配对码仍然一次性、会过期、只走 loopback，组合字符串只是把用户原本要分两次复制的两段内容合在一起。<strong>实施前需要安全评审</strong>（Q-08）。</li>
+</ul>
+<h4 id="5-4-3-输入框内选择器与内嵌框架确认">5.4.3 输入框内选择器与内嵌框架确认</h4>
+<ul>
+<li>选择器跟随网页的 <code>color-scheme</code>（拿不到时跟随系统），保留"不会自动提交"一句（B-07）。</li>
+<li><code>frame-confirm.html</code>：现有 <code>dl</code>（打开的页面 / 填充目标 / 账号）是好的模式，统一成 ConfirmDialog v2 的样式；按钮文案用"在此内嵌页面填充"，不要用"确认"。</li>
+</ul>
+<h3 id="5-5-快捷搜索">5.5 快捷搜索</h3>
+<pre><code>┌──────────────────────────── 640 ───────────────────────────────┐
+│ 🔍 [gen                                                 ] Esc │
+│ ───────────────────────────────────────────────────────────── │
+│ ▶ [G] Generated Bank 网银 ★   gen-user-01      bank.example…  │ ← 单行 40px
+│   [G] Generated Mail ★        alex.generated…  mail.example…  │
+│   [G] Generated Wi-Fi note    安全备注                          │ ← 没有的字段不显示&quot;—&quot;
+│ ───────────────────────────────────────────────────────────── │
+│ Enter 复制密码 · Shift+Enter 复制用户名 · Ctrl+Enter 复制验证码    │
+│ Tab 更多操作                                                    │
+└────────────────────────────────────────────────────────────────┘
+Tab 打开动作列表（R-10）：
+   复制密码            Enter
+   复制用户名          Shift+Enter
+   复制验证码          Ctrl+Enter
+   在主窗口中打开       Ctrl+O
+   输入到应用…          Ctrl+T（需确认不冲突）
+</code></pre>
+<ul>
+<li>Enter 的主动作随类型变化：登录 → 复制密码；软件许可证/API 凭据 → 复制密钥；安全备注、恢复码 → 在主窗口打开（Q-02）。</li>
+<li>复制后的提示使用 API 返回的 <code>clears_in_seconds</code>（Q-03）。</li>
+<li>状态：搜索中（行骨架）、无结果（"没有匹配的条目，[在主窗口中添加]"）、失败（内联 error，不用 toast）、密码库已锁定（全局快捷键唤起时先显示解锁卡片，解锁后自动回到搜索——这正是现有 <code>pendingQuickSearch</code> 的逻辑，只是需要视觉化）。</li>
+</ul>
+<h3 id="5-6-导入">5.6 导入</h3>
+<pre><code>导入密码                                          步骤：选择文件 › 检查 › 确认 › 完成
+──────────────────────────────────────────────────────────────────────────
+来源：( Chrome ) ( Edge ) ( Vault Unified 导出文件 )      [选择文件…]
+▸ 如何从 Chrome 导出 CSV（3 步）
+
+检查结果（chrome-passwords.csv · 42 条）
+┌─────────────┬─────────────┬─────────────┐
+│ 将新增  36   │ 将更新   1   │ 将跳过   5   │   ← 3 个主数字
+└─────────────┴─────────────┴─────────────┘
+次要统计：完全重复 3 · 格式问题 2 · 不支持的字段 0 · 附件 0
+
+⚠ 需要你决定（2）                                      ← 默认展开，置顶
+  example.invalid · alex@…   可能与&quot;Generated Mail&quot;重复   [跳过（推荐）▾]
+▸ 将新增（36）     ← 折叠，可筛选；超过 200 条时分页或虚拟滚动
+▸ 将跳过（5）      ← 折叠，每条带原因
+▸ 技术细节
+
+☐ 我已查看新增、可能重复和跳过的原因
+[ 导入 36 条，更新 1 条 ]  [ 取消 ]
+</code></pre>
+<ul>
+<li>只保留一个导入入口：密码页工具栏"⋯ → 导入…"；"安全与恢复"只保留"导出（明文，仅用于迁移）"（I-01）。</li>
+<li>步骤条只有 4 步，一次只有一个当前步骤（I-02）。</li>
+<li>主按钮文案写出数量；"我已查看"勾选暂时保留（Q-05）。</li>
+<li>结果页：success InfoBar"已新增 36 条，更新 1 条，跳过 5 条" + [撤销本次导入] + [查看导入的账号]（跳到列表并按本次导入筛选）+ 提醒删除浏览器导出的 CSV。</li>
+<li>结果未知状态（现有 <code>uncertainOutcome</code>）保留，改用 warning InfoBar。</li>
+</ul>
+<h3 id="5-7-安全与恢复">5.7 安全与恢复</h3>
+<p><strong>概览页</strong></p>
+<pre><code>安全与恢复
+───────────────────────────────────────────────────────────────
+⚠ 还没有可用于恢复的备份                                   [设置自动备份]
+  电脑损坏或文件丢失时，没有备份将无法恢复密码。
+
+┌──────────────────────────┐ ┌──────────────────────────┐
+│ 💾 自动备份    ⚠ 未设置     │ │ 🧯 紧急恢复包   ⚠ 未创建     │
+│ 选择一个独立的文件夹         │ │ 用于忘记主密码或换电脑        │
+│ [设置自动备份]              │ │ [创建恢复包]                │
+└──────────────────────────┘ └──────────────────────────┘
+┌──────────────────────────┐ ┌──────────────────────────┐
+│ ✅ 最近验证    未验证        │ │ 🔐 自动锁定    15 分钟       │
+│ [验证最新备份]              │ │ [更改]                      │
+└──────────────────────────┘ └──────────────────────────┘
+┌──────────────────────────┐ ┌──────────────────────────┐
+│ 🩺 密码检查  2 弱 · 2 重复   │ │ ⬆ 数据格式   已是最新         │
+│ [查看]                     │ │ （需要升级时才显示动作）       │
+└──────────────────────────┘ └──────────────────────────┘
+子页：备份 · 恢复包与换电脑 · 密码检查 · 导出
+</code></pre>
+<ul>
+<li>每张卡片：状态（StatusChip，颜色按严重程度，V-05）+ 一句说明 + 一个动作；删去恒定不变的"保险库：已加密"（S-03）。</li>
+<li>页面顶部 InfoBar 只显示最严重的一条；判断条件改为 <code>!health.auto_backup_enabled &amp;&amp; !health.last_success_at</code>，<strong>不再用 <code>summary.count</code></strong>，因为 <code>count</code> 包含 <code>local_atomic</code> 自动恢复备份（V-06）。</li>
+<li><strong>备份子页</strong>：只有一个"备份文件夹"概念——自动备份的文件夹。手动"立即备份"默认写入同一文件夹；"备份到其他位置…"作为次要动作，在对话框里选择一次性位置（S-02）。备份历史、固定、保留策略清理、从备份恢复放在"管理备份历史"中（保持 IA 中"技术细节放在管理历史里"的原则）。</li>
+<li><strong>恢复包与换电脑子页</strong>：创建恢复包的三步流程（生成恢复码 → 抄写并重新输入确认 → 选择保存位置）用 Stepper；"恢复演练"和"迁移步骤"在同一页；"从恢复包恢复"点击后先弹出确认对话框"需要先锁定密码库，然后在启动页使用恢复包。现在锁定？"（S-04）。</li>
+<li><strong>密码检查子页</strong>：打开时自动做本地检查（只在本地计算，不联网）；泄露查询仍需本次单独勾选同意；结果文案按 R-05 改写。</li>
+<li>所有恢复类确认对话框改用 ConfirmDialog v2，分行列出：备份时间、文件位置、大小、包含的条目数、"当前保险库会先保留一份加密副本"、操作后需要重新解锁。</li>
+</ul>
+<h3 id="5-8-连接与同步">5.8 连接与同步</h3>
+<pre><code>连接
+───────────────────────────────────────────────────────────────
+浏览器扩展                                   ● 已授权 1 个浏览器
+  在 Chrome / Edge 中填充和保存账号。
+  [配对新浏览器]  [安装说明]
+  ▸ 已授权的浏览器（1）：Generated Chrome · 2026-10-05   [撤销…]
+
+我的电脑之间同步                              ○ 未设置
+  通过你自己的文件夹或 WebDAV 同步整个密码库，数据始终加密。
+  [设置同步]
+  （已设置时显示：位置 · 上次同步 20:01 · 已连接 2 台电脑 · [立即同步] ⋯）
+
+其他密码服务（可选）                                        ▸ 展开
+  Bitwarden · KeePassXC · gopass · Proton Pass        各自 [设置]（Secondary）
+
+▸ 同步记录与技术详情
+───────────────────────────────────────────────────────────────
+</code></pre>
+<ul>
+<li>顺序按大多数用户的需要：浏览器扩展 → 我的电脑之间同步 → 外部服务（默认折叠）（C-01）。外部服务卡片只用 Secondary 按钮。</li>
+<li>没有配对时，不显示"断开临时浏览器连接"（C-03）。</li>
+<li>冲突统一入口见 5.2。"处理修改"页面同时列出两种来源，每条标注来源；保持现有逐字段选择与"重新加载前保留未提交选择"的行为。</li>
+<li>同步状态卡片按 R-09 固定显示位置和上次同步时间。</li>
+</ul>
+<h3 id="5-9-分享">5.9 分享</h3>
+<pre><code>分享                                     [限时链接 | 家庭共享库]   ← 选项卡
+───────────────────────────────────────────────────────────────
+ⓘ 分享服务：share.example.invalid · 已连接            [更改]
+限时链接
+  [+ 分享一个账号…]
+  Generated personal share · 用户名、密码、网站 · 24 小时 · 1 次 · ● 有效
+                                           [复制链接] ⋯（显示链接、撤销…）
+  Old share · 已撤销 · 2026-10-15                             （置灰）
+</code></pre>
+<ul>
+<li>分享可以从条目详情"⋯ → 分享…"发起，进入同一个预览流程（SH-03）。</li>
+<li>确认对话框（SH-02）：</li>
+</ul>
+<pre><code>创建分享链接？
+  账号      Generated personal share
+  分享字段  用户名、密码、网站（不含备注）
+  有效期    24 小时（至 2026-10-22 20:10）
+  查看次数  最多 1 次
+  服务      share.example.invalid
+  之后      你可以随时撤销；对方已经看到的内容无法收回
+[ 创建链接 ]  [ 取消 ]
+</code></pre>
+<ul>
+<li>家庭共享库：左侧是库列表（显示角色），右侧是库内账号与成员；"管理成员"变成一个分区；移除成员使用 Destructive 确认，并写明"剩余成员会获得新密钥；对方已保存的旧内容不会被删除"（现有文案，保留）。</li>
+<li>待发送操作：在页面顶部显示 warning InfoBar"有 2 个操作尚未发送 [查看]"。</li>
+</ul>
+<h3 id="5-10-设置">5.10 设置</h3>
+<pre><code>设置
+───────────────────────────────────────────────────────────────
+外观
+  语言                   界面和浏览器扩展使用的语言          [中文 ▾]
+  主题                   跟随系统 / 浅色 / 深色             [跟随系统 ▾]
+解锁方式
+  Windows Hello          本次运行：已启用                  [关闭]
+  解锁后提示启用 Hello    每次启动后用主密码解锁时提示        [开 ●]
+  在这台电脑记住主密码    保存到 Windows 凭据管理器（风险说明 ▸）[关 ○]
+快捷搜索与托盘
+  全局快捷键             在任意应用中打开快捷搜索            [Ctrl+Shift+Space ▾]
+  关闭窗口时收起到托盘    收起后仍会按时自动锁定              [开 ●]
+更新
+  启动时检查更新          连接项目的 GitHub 发布页            [关 ○]
+                                                       [检查更新]
+关于
+  版本 1.4.0 · Windows                                     [退出 Vault Unified]
+</code></pre>
+<ul>
+<li>SettingsCard 布局（T-04、SET-01）；立即生效的选项用 Toggle，变更后显示简短的"已保存"toast（SET-02）。</li>
+<li>自动锁定时间留在"安全与恢复"，这里放一个链接即可（与 IA 一致）。</li>
+<li>扩展是否跟随桌面语言需要决定（Q-09）；如果跟随，桌面端通过已经存在的连接把语言偏好告诉扩展，扩展里只在未连接时显示自己的语言选择。</li>
+</ul>
+<hr />
+<h2 id="6-实施计划与排序后的待办">6. 实施计划与排序后的待办</h2>
+<h3 id="6-1-约定">6.1 约定</h3>
+<ul>
+<li><strong>优先级</strong>：P0 = 影响核心任务、显示错误信息或属于明确缺陷；P1 = 显著改善效率或理解；P2 = 一致性与完善。</li>
+<li><strong>相对工作量</strong>：XS = 单文件小改；S = 少数文件、无结构变化；M = 多个组件，或新增共享组件；L = 跨页面的结构重排；XL = 多个 L 的组合。未给出天数，因为没有团队速度数据。</li>
+<li><strong>通用约束</strong>（每一项都适用）：不改 vault 格式与 API 语义；预览 → 确认 → 撤销的边界只能变清楚，不能删除；中英文同时交付；现有 Playwright 旅程多用按钮文字定位（如 <code>getByRole("button", { name: … })</code>），改文案必须同步更新测试。</li>
+<li><strong>建议顺序</strong>：
+  1. 第 0 步：ST-13 先建立视觉基线，便于量化改动。
+  2. 第 1 阶段（快速修复）：QW-01 … QW-05。
+  3. 第 2 阶段（基础）：ST-01、ST-02（开始）、QW-06 … QW-12。
+  4. 第 3 阶段（结构）：ST-03、ST-04、ST-05。
+  5. 第 4 阶段：ST-06 … ST-09。
+  6. 第 5 阶段：ST-10 … ST-12。</li>
+</ul>
+<h3 id="6-2-总表">6.2 总表</h3>
+<table>
+<thead>
+<tr>
+<th>排序</th>
+<th>ID</th>
+<th>名称</th>
+<th>优先级</th>
+<th>类型</th>
+<th>工作量</th>
+<th>依赖</th>
+<th>解决</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>ST-13</td>
+<td>视觉回归与可访问性自动化基线</td>
+<td>P0</td>
+<td>支撑</td>
+<td>S–M</td>
+<td>—</td>
+<td>A-08，为后续改动提供度量</td>
+</tr>
+<tr>
+<td>2</td>
+<td>QW-01</td>
+<td>错误本地化、<code>&lt;html lang&gt;</code>、首启/解锁语言切换</td>
+<td>P0</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>F-03, F-04, A-01, A-06, I18N-03</td>
+</tr>
+<tr>
+<td>3</td>
+<td>QW-02</td>
+<td>"等待同步"徽标与备份提醒的判断条件</td>
+<td>P0</td>
+<td>快速</td>
+<td>S</td>
+<td>后端语义确认</td>
+<td>V-06</td>
+</tr>
+<tr>
+<td>4</td>
+<td>QW-03</td>
+<td>按钮层级：每个区域一个主按钮</td>
+<td>P0</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>V-01, V-02</td>
+</tr>
+<tr>
+<td>5</td>
+<td>QW-04</td>
+<td>状态颜色按严重程度</td>
+<td>P0</td>
+<td>快速</td>
+<td>XS–S</td>
+<td>—</td>
+<td>V-05, V-04</td>
+</tr>
+<tr>
+<td>6</td>
+<td>QW-05</td>
+<td>CSS 与可访问性缺陷修复</td>
+<td>P0</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>A-02–A-04, T-01, L-05</td>
+</tr>
+<tr>
+<td>7</td>
+<td>ST-01</td>
+<td>设计令牌 v2 + 基础组件</td>
+<td>P0</td>
+<td>基础</td>
+<td>M</td>
+<td>ST-13</td>
+<td>T-<em>, V-</em>, FB-*, A-07</td>
+</tr>
+<tr>
+<td>8</td>
+<td>ST-04</td>
+<td>密码页列表/详情 + 只读详情</td>
+<td>P0</td>
+<td>结构</td>
+<td>L</td>
+<td>ST-01（可先用旧样式起步）</td>
+<td>E-01–E-04, G-03, G-04, L-01–L-04</td>
+</tr>
+<tr>
+<td>9</td>
+<td>ST-05</td>
+<td>首启/解锁重设计</td>
+<td>P0</td>
+<td>结构</td>
+<td>M</td>
+<td>QW-01, ST-01</td>
+<td>F-01–F-08</td>
+</tr>
+<tr>
+<td>10</td>
+<td>ST-02</td>
+<td>文案收进字典 + 两种语言键一致性检查 + 术语执行</td>
+<td>P0/P1</td>
+<td>基础</td>
+<td>M–L（可按页面渐进）</td>
+<td>QW-12</td>
+<td>I18N-01–06, B-02</td>
+</tr>
+<tr>
+<td>11</td>
+<td>QW-06</td>
+<td>Toast 改造：错误不自动消失、撤销、剪贴板倒计时</td>
+<td>P1</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>FB-01, Q-03</td>
+</tr>
+<tr>
+<td>12</td>
+<td>QW-07</td>
+<td>确认对话框结构化</td>
+<td>P1</td>
+<td>快速</td>
+<td>S–M</td>
+<td>—</td>
+<td>FB-02, SH-02, L-05</td>
+</tr>
+<tr>
+<td>13</td>
+<td>QW-08</td>
+<td>解锁后 Hello 引导</td>
+<td>P1</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>F-06</td>
+</tr>
+<tr>
+<td>14</td>
+<td>QW-09</td>
+<td>快捷搜索：单行、按类型的主动作、验证码</td>
+<td>P1</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>Q-01–Q-03</td>
+</tr>
+<tr>
+<td>15</td>
+<td>QW-10</td>
+<td>扩展文案对齐 + 配对信息一次复制</td>
+<td>P1</td>
+<td>快速</td>
+<td>S</td>
+<td>安全评审（配对）</td>
+<td>B-01, B-02</td>
+</tr>
+<tr>
+<td>16</td>
+<td>QW-11</td>
+<td>编辑器：粘性保存栏、导航定位、验证码前移</td>
+<td>P1</td>
+<td>快速</td>
+<td>S</td>
+<td>—</td>
+<td>G-02, E-02（部分）, E-04</td>
+</tr>
+<tr>
+<td>17</td>
+<td>QW-12</td>
+<td>术语统一 + 文档更新</td>
+<td>P1</td>
+<td>快速</td>
+<td>S</td>
+<td>所有者决定（Q-01）</td>
+<td>I18N-02, L-06, 1.3 节</td>
+</tr>
+<tr>
+<td>18</td>
+<td>ST-03</td>
+<td>外壳与左侧导航</td>
+<td>P1</td>
+<td>结构</td>
+<td>M</td>
+<td>ST-01</td>
+<td>G-01, G-02, C-02</td>
+</tr>
+<tr>
+<td>19</td>
+<td>ST-06</td>
+<td>安全与恢复：概览 + 子页</td>
+<td>P1</td>
+<td>结构</td>
+<td>L</td>
+<td>ST-01, ST-03</td>
+<td>S-01–S-05</td>
+</tr>
+<tr>
+<td>20</td>
+<td>ST-07</td>
+<td>连接与同步重排</td>
+<td>P1</td>
+<td>结构</td>
+<td>M</td>
+<td>ST-01</td>
+<td>C-01–C-03</td>
+</tr>
+<tr>
+<td>21</td>
+<td>ST-08</td>
+<td>导入：单入口与预览分组</td>
+<td>P1</td>
+<td>结构</td>
+<td>M</td>
+<td>ST-01</td>
+<td>I-01–I-03</td>
+</tr>
+<tr>
+<td>22</td>
+<td>ST-09</td>
+<td>扩展 popup 重设计</td>
+<td>P1</td>
+<td>结构</td>
+<td>M</td>
+<td>QW-10, ST-01 令牌</td>
+<td>B-03–B-07</td>
+</tr>
+<tr>
+<td>23</td>
+<td>ST-10</td>
+<td>分享页重构</td>
+<td>P2</td>
+<td>结构</td>
+<td>M</td>
+<td>ST-01, ST-04（从详情发起）</td>
+<td>SH-01–SH-03</td>
+</tr>
+<tr>
+<td>24</td>
+<td>ST-11</td>
+<td>设置页 SettingsCard 与一致的保存模型</td>
+<td>P2</td>
+<td>结构</td>
+<td>S–M</td>
+<td>ST-01</td>
+<td>SET-01, SET-02, T-04</td>
+</tr>
+<tr>
+<td>25</td>
+<td>ST-12</td>
+<td>浅色主题与跟随系统</td>
+<td>P2</td>
+<td>结构</td>
+<td>M</td>
+<td>ST-01</td>
+<td>平台一致性</td>
+</tr>
+</tbody>
+</table>
+<h3 id="6-3-快速修复-不改结构">6.3 快速修复（不改结构）</h3>
+<h4 id="qw-01-错误本地化-html-lang-首启-解锁语言切换-p0-s">QW-01 错误本地化、<code>&lt;html lang&gt;</code>、首启/解锁语言切换 · P0 · S</h4>
+<ul>
+<li><strong>理由</strong>：最高频流程中的最高频错误是英文；英文用户第一次打开就被锁在中文界面里。</li>
+<li><strong>用户问题 → 预期结果</strong>：中文用户输错主密码看到中文提示；英文用户在首启页就能切换到英文；读屏软件按正确的语言朗读。</li>
+<li><strong>改动</strong>：
+  1. 在 <code>api/client.ts</code> 的 <code>request()</code> 中把非 2xx 响应包装成带 <code>status</code> 与 <code>path</code> 的错误对象；新增 <code>i18n/errors.ts</code>，按"接口 + 状态码"映射为本地化文案（例如 <code>/auth/unlock</code> 的 401 → "主密码不正确，或这个保险库文件无法打开"）；映射不到时显示通用文案"操作未完成"，后端原文放进"技术详情"。
+  2. 后台维护通知目前直接显示后端的英文 <code>notice.message</code>（<code>App.tsx:185-189</code>，来源 <code>personal.py:184-200</code> 等），改为按 <code>notice.code</code> 映射本地化文案。
+  3. <code>i18n/index.tsx</code> 在 locale 变化时设置 <code>document.documentElement.lang = locale === "zh" ? "zh-CN" : "en"</code>；<code>index.html</code> 保留默认值即可。
+  4. 首启页与解锁页右上角加语言选择（复用 <code>Settings.tsx</code> 的选项）；首次启动没有存储值时，按 <code>navigator.language</code> 选择默认语言（中文系统默认中文，其他默认英文）——这是行为变化，需确认（Q-09）。
+  5. <code>LoadingSkeleton.tsx:7</code> 的 <code>aria-label</code> 改为走字典。</li>
+<li><strong>相关文件（已核实）</strong>：<code>apps/desktop/src/api/client.ts:143-162</code>、<code>pages/Unlock.tsx:175-180</code>、<code>App.tsx:175-200</code>、<code>i18n/index.tsx:404-436</code>、<code>index.html:2</code>、<code>components/LoadingSkeleton.tsx:7</code>、<code>components/ImportWizard.tsx:18-35</code>（可迁移到新的映射表）、<code>src/vault_unified/api/routes/auth.py:363</code>。</li>
+<li><strong>依赖</strong>：无；后端可选择性增加稳定的 <code>code</code> 字段，但不是前提。</li>
+<li><strong>验收标准</strong>：</li>
+<li>中文界面输错主密码，错误框显示中文，且不包含 "Invalid"；</li>
+<li>切换语言后 <code>document.documentElement.lang</code> 为 <code>zh-CN</code> 或 <code>en</code>；</li>
+<li>首启页和解锁页可见语言选择，切换后立即生效，解锁后保持；</li>
+<li>维护通知在两种语言下都显示对应语言的文案。</li>
+<li><strong>回归/可用性检查</strong>：<code>core-journey.spec.ts</code>、<code>beginner-information-architecture.spec.ts</code>、<code>security-recovery-center.spec.ts</code>；新增"错误本地化"用例，覆盖 unlock 401、create 不一致、restore 401 三种情况；可用性任务 N1（第 7 节）。</li>
+</ul>
+<h4 id="qw-02-等待同步-徽标与备份提醒的判断条件-p0-s">QW-02 "等待同步"徽标与备份提醒的判断条件 · P0 · S</h4>
+<ul>
+<li><strong>理由</strong>：两个状态提示与事实相反，削弱用户对所有状态提示的信任。</li>
+<li><strong>用户问题 → 预期结果</strong>：没有配置同步时不再看到"等待同步"；没有真正的备份之前，提醒一直存在。</li>
+<li><strong>改动</strong>：
+  1. 后端 <code>models.py:54</code> 的 <code>sync_status</code> 默认值就是 <code>dirty</code>，任何本地修改也会置为 <code>dirty</code>（<code>models.py:66</code>、<code>77</code>）。因此前端只在<strong>至少启用了一个外部同步来源</strong>时才显示"等待同步"徽标（需要一个轻量状态，例如复用连接页已有的集成状态接口，或在 <code>listEntries</code> 响应中附带 <code>sync_targets_enabled</code>）。冲突徽标照常显示。
+  2. <code>App.tsx:133-146</code> 改为读取 <code>summary.health</code>：<code>!health.auto_backup_enabled &amp;&amp; !health.last_success_at</code> 时显示提醒；提醒改为 warning 级 InfoBar 样式。</li>
+<li><strong>相关文件（已核实）</strong>：<code>pages/VaultList.tsx:317-322</code>、<code>App.tsx:133-146</code>、<code>App.tsx:438-445</code>、<code>src/vault_unified/models.py:54-77</code>、<code>components/IntegrationManager.tsx</code>（集成状态）。</li>
+<li><strong>依赖</strong>：需要后端负责人确认 <code>dirty</code> 只表示"相对外部服务待推送"，与多电脑完整同步无关（<code>personal_sync/payload.py:68</code> 也会设置 <code>dirty</code>，需确认其含义）。</li>
+<li><strong>验收标准</strong>：</li>
+<li>新建保险库并添加 9 条后，<code>.badge-sync-dirty</code> 数量为 0；</li>
+<li>启用任一外部服务并修改一条后，只有这一条显示"等待同步"；</li>
+<li>新建保险库并写入若干条后，只要没有启用自动备份或手动备份成功，"尚未设置备份"提醒就一直显示；成功备份一次后消失。</li>
+<li><strong>回归/可用性检查</strong>：<code>contextual-conflicts.spec.ts</code>、<code>sync-item-preview.spec.ts</code>、<code>personal-sync.spec.ts</code>、<code>security-recovery-center.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-03-按钮层级-每个区域一个主按钮-p0-s">QW-03 按钮层级：每个区域一个主按钮 · P0 · S</h4>
+<ul>
+<li><strong>理由</strong>：主按钮泛滥后，用户无法一眼看出下一步该做什么。</li>
+<li><strong>用户问题 → 预期结果</strong>：列表回到"扫读"状态；编辑器的主操作是"保存"。</li>
+<li><strong>改动</strong>：</li>
+<li>列表行"复制密码"改为 <code>secondary</code>（第 3 阶段改为悬停出现的图标按钮）；</li>
+<li><code>EntryForm.tsx:553</code> 的"生成密码"改为 <code>secondary</code>；</li>
+<li>连接页的外部服务"设置此连接"改为 <code>secondary</code>；</li>
+<li>分享页只保留每个区域的一个 <code>primary</code>；</li>
+<li>空状态出现时，页头的"添加密码"改为 <code>secondary</code>。</li>
+<li><strong>相关文件（已核实）</strong>：<code>pages/VaultList.tsx:237-245,291-295,331</code>、<code>pages/EntryForm.tsx:553</code>、<code>components/IntegrationManager.tsx:408,435</code>、<code>pages/Sharing.tsx</code>（多处 <code>className="primary"</code>）。</li>
+<li><strong>依赖</strong>：无。</li>
+<li><strong>验收标准</strong>：</li>
+<li>1280×800、9 条测试数据时，密码页可见的 <code>button.primary</code> 数量 = 1（现为 7）；</li>
+<li>连接页 = 0 或 1（现为 4）；</li>
+<li>编辑器中唯一的 <code>primary</code> 是"保存"。</li>
+<li><strong>回归/可用性检查</strong>：<code>account-organization.spec.ts</code>、<code>core-journey.spec.ts</code>、<code>generator-recovery.spec.ts</code>；可用性任务 N3、E1。</li>
+</ul>
+<h4 id="qw-04-状态颜色按严重程度-p0-xs-s">QW-04 状态颜色按严重程度 · P0 · XS–S</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li><code>.security-summary</code> 不再固定绿色：没有备份或备份出错时用 warning/error 样式，全部正常时才用 success；</li>
+<li><code>PersonalCenter.tsx:276-282</code> 在自动备份关闭时改为中性或 warning 文案"自动备份未开启"；</li>
+<li><code>BackupCenter.tsx:399-405</code>"预览恢复影响"改为 <code>secondary</code>；</li>
+<li>行菜单里的"移到回收站"改为中性样式（<code>VaultList.tsx:348-355</code>），"永久删除"保持危险样式。</li>
+<li><strong>相关文件（已核实）</strong>：<code>styles.css:1278-1302</code>、<code>pages/SecurityRecovery.tsx:63-77</code>、<code>components/PersonalCenter.tsx:269-282</code>、<code>components/BackupCenter.tsx:399-405</code>、<code>pages/VaultList.tsx:348-355</code>。</li>
+<li><strong>验收标准</strong>：新建保险库时，安全摘要显示 warning 样式，并带"设置自动备份"动作；全部配置完成并验证后显示 success 样式。</li>
+<li><strong>回归</strong>：<code>security-recovery-center.spec.ts</code>、<code>account-organization.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-05-css-与可访问性缺陷修复-p0-s">QW-05 CSS 与可访问性缺陷修复 · P0 · S</h4>
+<ul>
+<li><strong>改动</strong>：
+  1. <code>.skip-link</code> 未聚焦时完全移出视口（例如 <code>top: 0; transform: translateY(-200%)</code>，或改用 <code>.sr-only</code> + <code>:focus</code> 显示）；
+  2. 分区标题：删除 <code>text-transform: uppercase</code> 与 <code>letter-spacing</code>，用 <code>:where(.card) h3</code> 降低选择器优先级，或给分区标题单独定义类名，使 <code>.section-title</code> 生效；
+  3. <code>PayloadUpgrade.tsx:41</code> 的按钮加 <code>className="primary"</code>；
+  4. 补齐 <code>page-lead</code>、<code>muted</code>、<code>mono</code>、<code>import-preview</code>、<code>import-browser-guide</code>、<code>recovery-code-row</code> 的样式，或删除这些类名；
+  5. 新增 <code>--border-control: #6b7a92</code>，用于 <code>input/select/textarea/checkbox</code> 与次要按钮边框；
+  6. <code>--color-accent-hover</code> 改为 <code>#2a62a3</code>；
+  7. 焦点改为 <code>outline</code> 方案并加 <code>forced-colors</code> 规则（4.3.5）；
+  8. <code>VaultList.tsx:217</code> 用 <code>new Intl.ListFormat(locale === "zh" ? "zh-CN" : "en", { type: "conjunction" })</code> 连接标题。</li>
+<li><strong>相关文件（已核实）</strong>：<code>styles.css:16-17,43,199-206,346-357,372-389</code>、<code>components/PayloadUpgrade.tsx:41</code>、<code>pages/VaultList.tsx:217</code>；未定义类的使用位置：<code>SecurityRecovery.tsx:60</code>、<code>Unlock.tsx:349</code>、<code>BackupCenter.tsx:351,385</code>、<code>EntryForm.tsx:539</code>、<code>PasskeyRequests.tsx:53</code>、<code>ImportWizard.tsx:252,299</code>、<code>CredentialTemplateFields.tsx:34</code>。</li>
+<li><strong>验收标准</strong>：</li>
+<li>未聚焦时 <code>.skip-link</code> 的 <code>getBoundingClientRect().bottom ≤ 0</code>；</li>
+<li>英文界面任何分区标题的 <code>text-transform</code> 都是 <code>none</code>；</li>
+<li>输入框边框对相邻背景的对比度 ≥3:1；主按钮各状态白字 ≥4.5:1（由 ST-13 的对比度脚本检查）；</li>
+<li>英文的移到回收站确认框里没有"、"。</li>
+<li><strong>回归</strong>：全部旅程的 axe 检查；ST-13 的截图比对。</li>
+</ul>
+<h4 id="qw-06-toast-错误不自动消失-撤销-剪贴板倒计时-p1-s">QW-06 Toast：错误不自动消失、撤销、剪贴板倒计时 · P1 · S</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li><code>ToastProvider</code> 支持 <code>{ type, message, action?, duration? }</code>；<code>error</code> 类型不自动消失并带关闭按钮（逐步把错误迁移到内联或 InfoBar）；</li>
+<li>悬停或聚焦时暂停计时；</li>
+<li>复制类 toast 使用 API 返回的 <code>clears_in_seconds</code>（<code>QuickSearch.tsx:45</code> 目前写死 45）；</li>
+<li>归档、移到回收站的 toast 带"撤销"（调用现有的 <code>restore</code> 整理动作，仍走预览令牌，见 Q-04）。</li>
+<li><strong>相关文件（已核实）</strong>：<code>components/Toast.tsx:25-55</code>、<code>components/QuickSearch.tsx:39-48</code>、<code>pages/VaultList.tsx:181-197</code>、<code>src/vault_unified/api/routes/entries.py:212-213,486</code>。</li>
+<li><strong>验收标准</strong>：error toast 在用户关闭前一直存在；复制密码的提示里的秒数与 API 返回一致；读屏只播报一次。</li>
+<li><strong>回归</strong>：<code>quick-search.spec.ts</code>、<code>account-organization.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-07-确认对话框结构化-p1-s-m">QW-07 确认对话框结构化 · P1 · S–M</h4>
+<ul>
+<li><strong>改动</strong>：<code>ConfirmDialog</code> 增加 <code>details?: { label: string; value: ReactNode }[]</code> 与 <code>consequence?: string</code>，以 <code>&lt;dl&gt;</code> 渲染；所有调用点都传入具体动词的 <code>confirmLabel</code>。优先改这些调用点：</li>
+<li>启动恢复、恢复包、迁入（<code>Unlock.tsx:577-608</code>）；</li>
+<li>备份恢复与清理（<code>BackupCenter.tsx</code>）；</li>
+<li>分享（<code>Sharing.tsx:157-159</code>，同时根据操作类型设置 <code>variant</code>）；</li>
+<li>整理（<code>VaultList.tsx:215-220</code>）；</li>
+<li>格式升级（<code>PayloadUpgrade.tsx:44-46</code>）。</li>
+<li>按钮顺序见 Q-06。</li>
+<li><strong>验收标准</strong>：每个 <code>variant="danger"</code> 的对话框都有具体动词标签、至少"对象"和"后果"两行明细；英文界面不出现中文标点。</li>
+<li><strong>回归</strong>：<code>personal-payload.spec.ts</code>、<code>desktop-sharing.spec.ts</code>、<code>migration-rehearsal.spec.ts</code>、<code>import-preview-undo.spec.ts</code>、<code>security-recovery-center.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-08-解锁后-windows-hello-引导-p1-s">QW-08 解锁后 Windows Hello 引导 · P1 · S</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li>主密码解锁成功后，如果 <code>helloStatus.supported &amp;&amp; !ready &amp;&amp; !busy</code>，显示一次对话框："为本次运行启用 Windows Hello？下次锁定后可以用指纹、人脸或 PIN 解锁。[启用] [以后再说]"，[启用] 调用 <code>api.enableHello()</code>；</li>
+<li>"不再提示"写入桌面偏好（需要在 <code>DesktopPreferences</code> 增加字段，涉及 Rust 侧的少量改动），或先存在渲染层；</li>
+<li>解锁页在 <code>helloReady</code> 时把 Hello 设为 <code>primary</code> 并 <code>autoFocus</code>。</li>
+<li><strong>相关文件（已核实）</strong>：<code>pages/Unlock.tsx:115-131,558-573</code>、<code>components/HelloSettings.tsx</code>、<code>desktop.ts</code>、<code>App.tsx:396-402</code>、<code>src-tauri/src/desktop.rs</code>（偏好结构）。</li>
+<li><strong>验收标准</strong>（需在安装版上走查）：主密码解锁后提示出现一次；选择"以后再说"则本次运行不再提示；启用后，闲置锁定时解锁页的主按钮是 Hello 并已聚焦。</li>
+<li><strong>回归</strong>：原生 Hello 验收（<code>docs/windows-hello.md</code> 的流程）；<code>core-journey.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-09-快捷搜索-单行-按类型的主动作-验证码-p1-s">QW-09 快捷搜索：单行、按类型的主动作、验证码 · P1 · S</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li>结果改为单行（标题 · 用户名 · 域名，缺失的字段直接省略）并显示类型；</li>
+<li>Enter 的主动作按类型决定；</li>
+<li>新增 Ctrl+Enter 复制验证码（<code>api.copyTotp(entry.id)</code>，只对 <code>has_totp_secret</code> 为真的条目可用；该字段已在 <code>src/vault_unified/api/schemas.py:146</code> 与 <code>api/client.ts:198</code> 中定义）；</li>
+<li>底部提示列出全部快捷键；</li>
+<li>Tab 动作列表可以放到第 3 阶段。</li>
+<li><strong>相关文件（已核实）</strong>：<code>components/QuickSearch.tsx</code>、<code>api/client.ts</code>（<code>copyTotp</code>）。</li>
+<li><strong>验收标准</strong>：对有验证码的条目按 Ctrl+Enter 后，toast 显示"验证码已复制，N 秒后清除"；对安全备注按 Enter 打开条目；结果中不出现"—"。</li>
+<li><strong>回归</strong>：<code>quick-search.spec.ts</code>、<code>totp-workflow.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-10-扩展文案对齐与配对信息一次复制-p1-s">QW-10 扩展文案对齐与配对信息一次复制 · P1 · S</h4>
+<ul>
+<li><strong>改动</strong>：
+  1. 逐条核对 <code>popup.js:17-79</code>、<code>inline.js</code>、<code>frame-confirm.js</code>、<code>inline-settings.js</code> 的中英文，保证每条都包含相同的事实和下一步；
+  2. 桌面端增加"复制配对信息"，扩展的地址输入框接受"地址 + 配对码"的组合字符串并自动拆分（格式需安全评审，Q-08）；
+  3. 没有配对时隐藏"断开临时浏览器连接"（<code>ConnectionTools.tsx:130-132</code>）。</li>
+<li><strong>验收标准</strong>：中英文文案对照表评审通过（附在 PR 中）；从桌面复制一次、在扩展粘贴一次即可完成配对。</li>
+<li><strong>回归</strong>：<code>browser-extension-popup.spec.ts</code>、<code>browser-inline.spec.ts</code>、<code>otp-extension-fill.spec.ts</code>、<code>browser-extension-delivery.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-11-编辑器-粘性保存栏-导航定位-验证码前移-p1-s">QW-11 编辑器：粘性保存栏、导航定位、验证码前移 · P1 · S</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li><code>.entry-editor-actions</code> 改为 <code>position: sticky; bottom: 0</code>；</li>
+<li>编辑器、导入、冲突页时，"密码"导航项设置 <code>aria-current</code>，并在内容顶部加"← 密码"返回链接；</li>
+<li>"更多选项"内的分区顺序改为 验证码 &gt; 标签 &gt; 网站匹配规则 &gt; 自定义字段 &gt; 附件 &gt; 历史 &gt; 技术信息。</li>
+<li><strong>相关文件（已核实）</strong>：<code>App.tsx:410-418,459-493</code>、<code>pages/EntryForm.tsx:599-727</code>、<code>styles.css:898-901</code>。</li>
+<li><strong>验收标准</strong>：在 1000×700 中滚动到任意位置，"保存"都可见；编辑时"密码"导航项处于选中态；展开"更多选项"后，验证码标题位于网站匹配规则之前。</li>
+<li><strong>回归</strong>：<code>progressive-entry-editor.spec.ts</code>、<code>history-field-restore.spec.ts</code>、<code>totp-workflow.spec.ts</code>、<code>credential-templates.spec.ts</code>。</li>
+</ul>
+<h4 id="qw-12-术语统一与文档更新-p1-s">QW-12 术语统一与文档更新 · P1 · S</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li>所有者在 Q-01 做决定后，把"保险库/密码库"、条目类型名称、通行密钥、恢复码等写进 <code>docs/ux-terminology.md</code>，并按表替换文案；</li>
+<li>同步更新 <code>docs/product-information-architecture.md</code>（7 个入口的现状和目标结构）与 <code>apps/desktop/references/vault-design-tokens.md</code>（改为指向 <code>tokens.css</code>）。</li>
+<li><strong>验收标准</strong>：在 <code>apps/desktop/src</code> 和 <code>apps/browser-extension</code> 中 grep 被弃用的词，结果为 0；类型名称在列表、编辑器、过滤器中一致。</li>
+</ul>
+<h3 id="6-4-结构性重设计">6.4 结构性重设计</h3>
+<h4 id="st-13-视觉回归与可访问性自动化基线-p0-s-m-建议最先做">ST-13 视觉回归与可访问性自动化基线 · P0 · S–M（建议最先做）</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li>在现有 Playwright 套件中，为关键屏幕加 <code>toHaveScreenshot</code> 基线：首启、解锁、密码列表（空/有数据）、编辑器、快捷搜索、安全与恢复、连接、设置、导入预览；每个屏幕覆盖 zh/en × 1000×700 / 640×700，主题完成后再加深色/浅色；</li>
+<li>新增 <code>scripts/check-contrast.mjs</code>，读取令牌文件，校验令牌对之间的 4.5:1 与 3:1；</li>
+<li>新增 <code>i18n</code> 键一致性测试；</li>
+<li>在 CI 中 grep 禁止 <code>locale === "zh" ?</code> 的新增（允许已有的白名单，随 ST-02 逐步缩小）。</li>
+<li><strong>相关文件</strong>：<code>apps/desktop/tests/ui/*.spec.ts</code>、<code>apps/desktop/playwright.config.ts</code>、<code>.github/workflows/</code>。</li>
+<li><strong>验收标准</strong>：基线截图提交入库；对比度脚本在当前令牌上<strong>会失败</strong>（证明它能发现 A-02/A-03），在 QW-05 合并后通过。</li>
+<li><strong>注意</strong>：截图只使用生成数据，沿用仓库现有的产物秘密扫描。</li>
+</ul>
+<h4 id="st-01-设计令牌-v2-与基础组件-p0-m">ST-01 设计令牌 v2 与基础组件 · P0 · M</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li>新增 <code>src/tokens.css</code>（4.3 节）；<code>styles.css</code> 中旧变量映射到新令牌；</li>
+<li>新增 <code>src/components/ui/</code>：<code>Button</code>（primary/secondary/subtle/danger，<code>busy</code>）、<code>IconButton</code>（必须传 <code>label</code>）、<code>Field</code>（label/hint/error 自动关联）、<code>InfoBar</code>、<code>Dialog</code>（取代 <code>ConfirmDialog</code> 的实现，保留其焦点陷阱）、<code>Menu</code>、<code>StatusChip</code>、<code>SettingsCard</code>、<code>SegmentedControl</code>、<code>EmptyState</code>、<code>Skeleton</code>；</li>
+<li>新增 <code>src/icons/</code>（内置 SVG）；</li>
+<li>加一条 lint 规则：组件 CSS 中禁止十六进制颜色和不在刻度内的 px 值。</li>
+<li><strong>验收标准</strong>：</li>
+<li>新组件都有 zh/en 两种状态的截图用例；</li>
+<li><code>Menu</code> 支持方向键、Esc、点击外部关闭，并通过 axe；</li>
+<li><code>IconButton</code> 缺少 <code>label</code> 时 TypeScript 报错；</li>
+<li>迁移完的页面中没有直接使用 <code>.primary</code> 等全局类。</li>
+<li><strong>回归</strong>：全部 UI 旅程。</li>
+</ul>
+<h4 id="st-04-密码页列表-详情-只读详情-p0-l">ST-04 密码页列表/详情 + 只读详情 · P0 · L</h4>
+<ul>
+<li><strong>用户问题 → 预期结果</strong>：获取验证码、复制用户名、检查网址这些日常操作，从"打开编辑表单 + 展开 + 滚动"变成"选中 → 复制"；编辑成为显式动作。</li>
+<li><strong>改动</strong>：</li>
+<li>拆分 <code>VaultList.tsx</code> 为 <code>PasswordListPane</code>（列表、筛选、批量模式）与 <code>ItemDetail</code>（新增，只读）；</li>
+<li><code>EntryForm.tsx</code> 只负责编辑模式，嵌入详情栏，保持现有事务、<code>transaction_id</code>、脏数据与保存中保护；</li>
+<li><code>App.tsx</code> 增加 <code>selectedEntryId</code> 和 <code>mode: "view" | "edit"</code>；<code>requestNavigation</code> 的脏数据保护扩展到"切换选中条目"；</li>
+<li>宽度 &lt;760px 时退化为单栏推入式；</li>
+<li>键盘：↑↓、Enter、Ctrl+E、Ctrl+S、Esc；</li>
+<li>详情包含验证码遮罩 + 直接复制、健康提示、通行密钥分区、"⋯"菜单（输入到应用、分享、整理操作）。</li>
+<li><strong>相关文件（已核实）</strong>：<code>App.tsx:428-475</code>、<code>pages/VaultList.tsx</code>、<code>pages/EntryForm.tsx</code>、<code>components/TotpEditor.tsx</code>、<code>components/PasswordField.tsx</code>、<code>components/AutoTypeButton.tsx</code>、<code>components/HistoryReview.tsx</code>、<code>components/PasswordHealth.tsx</code>（提取一个可复用的单条目健康查询）。</li>
+<li><strong>依赖</strong>：ST-01（可先用旧样式实现结构，再换皮）；健康提示需要按条目查询，或在会话内缓存 <code>passwordHealth()</code> 的结果（不需要新增网络请求）。</li>
+<li><strong>验收标准</strong>（可测量）：</li>
+<li>1000×700 下列表完整可见 ≥8 行（现为 4）；</li>
+<li>对一个有验证码的条目，从按下 Ctrl+K 或点击列表开始，复制验证码 ≤3 次交互；</li>
+<li>点击条目不再进入编辑态；</li>
+<li>在编辑态切换条目，触发现有的"放弃未保存的更改？"确认；</li>
+<li>显示的密码在 30 秒、失焦、切换条目时隐藏（保留现有规则）。</li>
+<li><strong>回归</strong>：<code>core-journey.spec.ts</code>、<code>progressive-entry-editor.spec.ts</code>、<code>account-organization.spec.ts</code>、<code>totp-workflow.spec.ts</code>、<code>history-field-restore.spec.ts</code>、<code>duplicate-merge.spec.ts</code>、<code>credential-templates.spec.ts</code>、<code>passkeys.spec.ts</code>、<code>auto-type.spec.ts</code>、<code>full-user-journey-coverage.spec.ts</code>。</li>
+<li><strong>可用性</strong>：任务 N3、N4、E1、E2、E3（第 7 节）。</li>
+</ul>
+<h4 id="st-05-首启-解锁重设计-p0-m">ST-05 首启/解锁重设计 · P0 · M</h4>
+<ul>
+<li><strong>改动</strong>：按 5.1 节实施；锁定原因需要在 <code>lockToUnlock(reason)</code> 中传入，<code>desktop-system-locked</code> 事件对应 <code>system</code>，闲置计时器对应 <code>idle</code>；"无法解锁？"折叠区复用现有的恢复包、迁入、备份恢复表单与确认流程。</li>
+<li><strong>相关文件（已核实）</strong>：<code>pages/Unlock.tsx</code>、<code>App.tsx:65-78,202-209,282-298</code>、<code>components/PathPicker.tsx</code>。</li>
+<li><strong>依赖</strong>：QW-01、ST-01；强度反馈取决于 Q-02。</li>
+<li><strong>验收标准</strong>：</li>
+<li>解锁页在主密码输入框之前不出现任何恢复或迁移按钮；</li>
+<li>同一时间最多 1 个 <code>primary</code>；</li>
+<li>首启选择控件的 <code>role="radiogroup"</code> 通过 axe；</li>
+<li>闲置锁定后，解锁页显示锁定原因。</li>
+<li><strong>回归</strong>：<code>core-journey.spec.ts</code>、<code>migration-rehearsal.spec.ts</code>、<code>security-recovery-center.spec.ts</code>（恢复包入口）、<code>personal-payload.spec.ts</code>。</li>
+<li><strong>可用性</strong>：任务 N1、N2、N6、N7。</li>
+</ul>
+<h4 id="st-02-文案收进字典-键一致性检查-术语执行-p0-p1-m-l-渐进">ST-02 文案收进字典 + 键一致性检查 + 术语执行 · P0/P1 · M–L（渐进）</h4>
+<ul>
+<li><strong>改动</strong>：</li>
+<li>字典按功能拆分：<code>i18n/zh/*.ts</code>、<code>i18n/en/*.ts</code>；键名有类型约束，插值占位符在两种语言中必须一致；</li>
+<li>用 <code>Intl.PluralRules</code> 处理英文复数；用 <code>Intl.DateTimeFormat(locale)</code> 统一日期（I18N-05、I18N-06）；</li>
+<li>迁移顺序：首启/解锁 → 密码 → 编辑器 → 安全与恢复 → 连接 → 分享 → 设置；</li>
+<li>扩展也改为键值字典（目前已是二元数组，形式接近）。</li>
+<li><strong>验收标准</strong>：键一致性测试在 CI 中运行；每迁移完一个页面，该页面的内联三元表达式数为 0；全部迁移完成后，<code>apps/desktop/src</code> 中 <code>locale === "zh" ?</code> 的出现次数为 0。</li>
+</ul>
+<h4 id="st-03-外壳与左侧导航-p1-m">ST-03 外壳与左侧导航 · P1 · M</h4>
+<ul>
+<li><strong>改动</strong>：按 5.2 节；<code>App.tsx</code> 的 <code>navItems</code> 改为分组结构；在 ≥1008 / 641–1007 / &lt;641 三个宽度下自适应；合并两种冲突入口为一个"需要处理的修改"。</li>
+<li><strong>相关文件（已核实）</strong>：<code>App.tsx:388-494</code>、<code>components/PersonalSyncRunner.tsx</code>、<code>pages/ConflictModal.tsx</code>、<code>components/PersonalSync.tsx</code>。</li>
+<li><strong>验收标准</strong>：</li>
+<li>1000×700 下导航不换行；640px 下导航折叠为菜单；</li>
+<li>子页面时对应的一级入口保持选中；</li>
+<li>同时存在两类冲突时，只显示一个入口，计数为两者之和，进入后按来源分组。</li>
+<li><strong>回归</strong>：<code>beginner-information-architecture.spec.ts</code>（该测试检查 IA，需与文档同步更新）、<code>contextual-conflicts.spec.ts</code>、<code>personal-sync.spec.ts</code>。</li>
+</ul>
+<h4 id="st-06-安全与恢复-概览-子页-p1-l">ST-06 安全与恢复：概览 + 子页 · P1 · L</h4>
+<ul>
+<li><strong>改动</strong>：按 5.7 节；<code>PersonalCenter.tsx</code> 拆分为 <code>BackupSettings</code>、<code>RecoveryKit</code>、<code>ExportSection</code>；<code>BackupCenter.tsx</code> 移入"备份"子页的"管理备份历史"；去掉第二个手动备份文件夹，改为"备份到其他位置…"对话框（后端 <code>createBackup(destination)</code> 已支持传入目标）。</li>
+<li><strong>相关文件（已核实）</strong>：<code>pages/SecurityRecovery.tsx</code>、<code>components/PersonalCenter.tsx</code>、<code>components/BackupCenter.tsx</code>、<code>components/RecoveryRehearsal.tsx</code>、<code>components/PasswordHealth.tsx</code>、<code>components/PayloadUpgrade.tsx</code>、<code>components/ImportWizard.tsx</code>。</li>
+<li><strong>验收标准</strong>：</li>
+<li>概览在 1000×700 下无需滚动即可看到全部状态卡片（卡片网格两列）；</li>
+<li>每张卡片的颜色与状态一致；</li>
+<li>页面中只有一个"备份文件夹"设置；</li>
+<li>"从恢复包恢复"先确认，再锁定。</li>
+<li><strong>回归</strong>：<code>security-recovery-center.spec.ts</code>、<code>migration-rehearsal.spec.ts</code>、<code>password-health.spec.ts</code>、<code>personal-payload.spec.ts</code>、<code>import-preview-undo.spec.ts</code>。</li>
+<li><strong>可用性</strong>：任务 N5、N6、E5。</li>
+</ul>
+<h4 id="st-07-连接与同步重排-p1-m">ST-07 连接与同步重排 · P1 · M</h4>
+<ul>
+<li><strong>改动</strong>：按 5.8 节；外部服务折叠；"我的电脑之间同步"卡片固定显示位置、上次同步时间和电脑数（<code>PersonalSync.tsx</code> 已有这些状态）。</li>
+<li><strong>验收标准</strong>：浏览器扩展区块在 1000×700 首屏内；外部服务区块默认折叠，且没有 <code>primary</code> 按钮。</li>
+<li><strong>回归</strong>：<code>personal-sync.spec.ts</code>、<code>sync-item-preview.spec.ts</code>、<code>browser-extension-popup.spec.ts</code>（配对）、<code>contextual-conflicts.spec.ts</code>。</li>
+</ul>
+<h4 id="st-08-导入-单入口与预览分组-p1-m">ST-08 导入：单入口与预览分组 · P1 · M</h4>
+<ul>
+<li><strong>改动</strong>：按 5.6 节；步骤条状态由单一的 <code>step</code> 变量计算；条目分组（需要决定 / 将新增 / 将跳过），超过 200 条时分页；主按钮写出数量。</li>
+<li><strong>验收标准</strong>：</li>
+<li>任何时刻只有 1 个步骤处于 <code>aria-current="step"</code>；</li>
+<li>有可能重复项时，它们排在最前面并默认展开；</li>
+<li>5,000 条预览渲染时，主线程不出现长时间阻塞（用 Playwright 性能追踪测量，阈值由团队设定）。</li>
+<li><strong>回归</strong>：<code>browser-import.spec.ts</code>、<code>import-preview-undo.spec.ts</code>。</li>
+</ul>
+<h4 id="st-09-扩展-popup-重设计-p1-m">ST-09 扩展 popup 重设计 · P1 · M</h4>
+<ul>
+<li><strong>改动</strong>：按 5.4 节；状态机显式化（未配对 / 桌面未运行 / 已锁定 / 已连接无匹配 / 已连接有匹配 / 草稿 / 预览 / 结果）；共享令牌副本加一致性检查；Passkey 开关独立；跟随系统深浅色。</li>
+<li><strong>验收标准</strong>：每个状态都有截图用例（zh/en）；不新增任何权限（<code>manifest.json</code> 不变）；不新增跨网站的数据访问。</li>
+<li><strong>回归</strong>：<code>browser-extension-popup.spec.ts</code>、<code>browser-inline.spec.ts</code>、<code>otp-extension-fill.spec.ts</code>、<code>passkeys.spec.ts</code>。</li>
+</ul>
+<h4 id="st-10-分享页重构-p2-m">ST-10 分享页重构 · P2 · M</h4>
+<ul>
+<li>按 5.9 节；从条目详情发起分享；确认对话框结构化；待发送操作用 InfoBar。</li>
+<li><strong>验收</strong>：分享确认框逐行列出字段、有效期、查看次数、服务地址、可否撤回。</li>
+<li><strong>回归</strong>：<code>desktop-sharing.spec.ts</code>、<code>share-viewer.spec.ts</code>。</li>
+</ul>
+<h4 id="st-11-设置页-settingscard-与一致的保存模型-p2-s-m">ST-11 设置页 SettingsCard 与一致的保存模型 · P2 · S–M</h4>
+<ul>
+<li>按 5.10 节；立即生效的选项用 Toggle + "已保存"提示；只有多字段表单（自动备份）保留显式保存，并配粘性"未保存的更改"栏。</li>
+<li><strong>回归</strong>：<code>desktop-updates.spec.ts</code>、<code>quick-search.spec.ts</code>（快捷键设置）。</li>
+</ul>
+<h4 id="st-12-浅色主题与跟随系统-p2-m">ST-12 浅色主题与跟随系统 · P2 · M</h4>
+<ul>
+<li>按 4.3.3 节；Tauri 窗口标题栏颜色随主题切换（需要确认 Tauri 2 的相应 API，属于原生壳的改动）。</li>
+<li><strong>验收</strong>：所有截图基线在浅色主题下各有一份；对比度脚本在两套令牌上都通过。</li>
+</ul>
+<hr />
+<h2 id="7-可用性验证">7. 可用性验证</h2>
+<h3 id="7-1-与现有计划的关系">7.1 与现有计划的关系</h3>
+<p>仓库已有 <code>docs/usability-test-plan.md</code>（v1.3 新手核心路径：安装、创建、添加、复制、备份、重开解锁、理解备份与恢复包、找到扩展安装入口），以及 <code>docs/usability-test-results-template.md</code>。本节在此基础上补充 v1.4 功能与有经验的用户，并沿用现有的数据与隐私规则：只用生成数据、隔离的 Windows 账户或虚拟机、不录入真实凭据、记录前确认屏幕上只有生成值。</p>
+<h3 id="7-2-参与者">7.2 参与者</h3>
+<ul>
+<li><strong>新用户</strong>：没有读过 README、没用过 VU；按"是否用过其他密码管理器"分两组。</li>
+<li><strong>有经验的用户</strong>：用 VU ≥2 周，或熟练使用 1Password/Bitwarden/KeePassXC 中的一种（迁移场景）。</li>
+<li>每轮 5–8 人的形成性测试；中文与英文界面都要覆盖（至少各 2 人以英文界面完成全部任务）；记录 Windows 缩放比例和是否使用辅助技术。</li>
+<li><strong>不预设基线</strong>：先用当前版本（a2aa07a 或其后的稳定构建）跑一轮，得到基线；改版后用同样的任务、同样的数据卡再跑一轮比较。</li>
+</ul>
+<h3 id="7-3-任务">7.3 任务</h3>
+<p><strong>新用户任务（N）</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>任务（告诉参与者的话，不提按钮名）</th>
+<th>成功标准</th>
+<th>主要对应改动</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>N1</td>
+<td>"请把界面换成你习惯的语言，然后创建一个新的密码库。"</td>
+<td>在创建之前切换到目标语言；创建成功</td>
+<td>QW-01, ST-05</td>
+</tr>
+<tr>
+<td>N2</td>
+<td>"关掉应用再打开，用卡片上的主密码进入。第一次请故意输错一次。"</td>
+<td>理解错误提示（能复述原因）；第二次成功</td>
+<td>QW-01, ST-05</td>
+</tr>
+<tr>
+<td>N3</td>
+<td>"把卡片上的账号存进来，然后把它的密码复制出来。"</td>
+<td>保存成功，并在 60 秒内复制成功</td>
+<td>ST-04, QW-03</td>
+</tr>
+<tr>
+<td>N4</td>
+<td>"卡片上的账号还有一个两步验证密钥，请存进去，然后拿到现在的 6 位验证码。"</td>
+<td>验证码复制成功</td>
+<td>ST-04, QW-11</td>
+</tr>
+<tr>
+<td>N5</td>
+<td>"确保电脑坏了以后还能找回这些密码。可以用这个空文件夹。"</td>
+<td>启用自动备份并成功备份一次</td>
+<td>ST-06, QW-02, QW-04</td>
+</tr>
+<tr>
+<td>N6</td>
+<td>"如果你忘了主密码，现在能做什么准备？请做好。"</td>
+<td>创建恢复包，并能说出恢复码要和文件分开保存</td>
+<td>ST-06</td>
+</tr>
+<tr>
+<td>N7</td>
+<td>（锁定后）"刚才应用自己锁上了，你觉得发生了什么？"</td>
+<td>正确说出原因（闲置/手动/系统锁屏）</td>
+<td>ST-05</td>
+</tr>
+<tr>
+<td>N8</td>
+<td>"在测试浏览器里装上扩展，并让它连上这个应用。"（使用测试浏览器配置）</td>
+<td>完成配对</td>
+<td>QW-10, ST-09</td>
+</tr>
+<tr>
+<td>N9</td>
+<td>"打开测试登录页，用存好的账号填进去。"</td>
+<td>填充成功，且参与者知道不会自动提交</td>
+<td>ST-09</td>
+</tr>
+</tbody>
+</table>
+<p><strong>有经验用户任务（E）</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>任务</th>
+<th>成功标准</th>
+<th>主要对应改动</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>E1</td>
+<td>"在另一个应用里需要 Generated Bank 的密码，最快把它复制出来。"（从其他窗口开始）</td>
+<td>用全局快捷键或快捷搜索复制成功</td>
+<td>QW-09</td>
+</tr>
+<tr>
+<td>E2</td>
+<td>"给 Generated Mail 登录时需要验证码，从桌面端拿到它。"</td>
+<td>复制验证码成功</td>
+<td>ST-04, QW-09</td>
+</tr>
+<tr>
+<td>E3</td>
+<td>"找出所有弱密码或重复的密码，把其中一个改掉。"</td>
+<td>定位问题，并完成一次更新</td>
+<td>ST-04, ST-06</td>
+</tr>
+<tr>
+<td>E4</td>
+<td>"导入这个 Chrome 导出文件，遇到重复的由你决定，导完后撤销这次导入。"</td>
+<td>正确处理可能重复项；成功撤销</td>
+<td>ST-08</td>
+</tr>
+<tr>
+<td>E5</td>
+<td>"上周删掉的 Generated Shop，请找回来。"</td>
+<td>从回收站恢复</td>
+<td>ST-03, ST-04</td>
+</tr>
+<tr>
+<td>E6</td>
+<td>"把 Generated Forum 的用户名和密码分享给家人，24 小时内有效，只能看一次。"（使用测试分享服务）</td>
+<td>创建分享，并能说出分享了哪些字段、能否撤回</td>
+<td>ST-10, QW-07</td>
+</tr>
+<tr>
+<td>E7</td>
+<td>"把这台电脑和另一台测试电脑设置为同步。"（双测试账户，实验室环境）</td>
+<td>完成预览并确认连接</td>
+<td>ST-07</td>
+</tr>
+<tr>
+<td>E8</td>
+<td>"撤销对浏览器 'Generated Chrome' 的授权。"</td>
+<td>撤销成功</td>
+<td>ST-07</td>
+</tr>
+</tbody>
+</table>
+<h3 id="7-4-测量指标">7.4 测量指标</h3>
+<ul>
+<li><strong>任务完成</strong>：独立完成 / 有提示后完成 / 失败；记录每次提示的原文。</li>
+<li><strong>耗时</strong>：从任务说明结束到达成成功标准；报告中位数和范围，样本少时不报告均值。</li>
+<li><strong>错误</strong>：点错入口、误触危险操作入口（打开了确认框又取消）、误改数据（打开编辑后需要放弃更改）、复制错字段。</li>
+<li><strong>单题易用性（SEQ，7 点量表）</strong>：每个任务完成后立即询问。</li>
+<li><strong>理解度</strong>（开放式问题，按预设要点评分）：</li>
+<li>"'等待同步'是什么意思？现在需要你做什么吗？"</li>
+<li>"加密备份和紧急恢复包有什么区别？"</li>
+<li>"这个分享链接被打开过之后，你还能撤回吗？"</li>
+<li>"扩展会帮你点'登录'吗？"</li>
+<li><strong>结束问卷</strong>：SUS（不修改题目与计分），与 v1.3 计划保持一致。</li>
+<li><strong>自动化指标</strong>（每次 PR 都可测量，与人工测试互补）：</li>
+<li>密码页可见 <code>primary</code> 数；</li>
+<li>1000×700 下列表的完整可见行数；</li>
+<li>从列表复制验证码所需的交互次数（脚本化步骤数）；</li>
+<li>axe 严重/关键违规数；</li>
+<li>令牌对比度检查；</li>
+<li>中英文键一致性；</li>
+<li>内联三元文案数（逐步降为 0）。</li>
+</ul>
+<h3 id="7-5-判定规则">7.5 判定规则</h3>
+<ul>
+<li>任何任务出现数据完整性或安全边界问题（例如误以为分享可以撤回已看过的内容、在未确认的情况下覆盖数据），无论其他指标如何，该轮都判定为未通过。</li>
+<li>目标值由所有者在看到基线后设定，本报告不预设数字。</li>
+</ul>
+<hr />
+<h2 id="8-未决问题-需要所有者决定">8. 未决问题（需要所有者决定）</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>问题</th>
+<th>本报告的建议</th>
+<th>影响的条目</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Q-01</td>
+<td>统一用"密码库"还是"保险库"？登录类条目对用户统一叫"账号"还是"登录信息"？</td>
+<td>选一个写进术语表；建议"密码库"（对新手更直白）和"账号"（列表、扩展已大量使用）。英文保持 vault / login</td>
+<td>QW-12, ST-02</td>
+</tr>
+<tr>
+<td>Q-02</td>
+<td>主密码是否设最低强度门槛？</td>
+<td>至少显示强度反馈；弱密码需要二次确认；是否强制门槛由所有者决定（会影响从旧版迁入、恢复包设新密码等流程）</td>
+<td>ST-05</td>
+</tr>
+<tr>
+<td>Q-03</td>
+<td>"在此电脑记住主密码"（Windows 凭据管理器）是否继续保留在解锁页？</td>
+<td>移到 设置 → 解锁方式，与 Hello 一起说明风险；有 Hello 的设备上默认推荐 Hello</td>
+<td>ST-05, QW-08</td>
+</tr>
+<tr>
+<td>Q-04</td>
+<td>归档、移到回收站这类可恢复的操作，能否从"预览确认"改为"直接执行 + 撤销 toast"？</td>
+<td>单条操作改为"直接执行 + 撤销"，批量操作保留预览确认；永久删除始终需要确认。需要确认这是否符合"后果性操作必须预览"的产品原则</td>
+<td>QW-06, L-07</td>
+</tr>
+<tr>
+<td>Q-05</td>
+<td>导入时"我已查看…"勾选是否保留？</td>
+<td>暂时保留；如果主按钮写清数量、并有整批撤销，可在可用性测试后再评估</td>
+<td>ST-08</td>
+</tr>
+<tr>
+<td>Q-06</td>
+<td>确认对话框按钮顺序是否改为 Windows 惯例（执行在左、取消在右）？</td>
+<td>跟随 Windows（R-08），在 ST-01 换组件时一次性切换，并做回归，避免混用两种顺序</td>
+<td>QW-07, ST-01</td>
+</tr>
+<tr>
+<td>Q-07</td>
+<td>新快捷键（立即锁定、列表复制、快捷搜索动作）用哪些组合？</td>
+<td>先盘点现有快捷键（Ctrl+K、全局 Ctrl+Shift+Space、扩展 Alt+Shift+V）与常见冲突，再定；全部在提示中显示</td>
+<td>ST-03, ST-04, QW-09</td>
+</tr>
+<tr>
+<td>Q-08</td>
+<td>配对信息能否合并为一个字符串？</td>
+<td>需要安全评审：内容不变（loopback 地址 + 一次性、限时的配对码），只是改变复制方式</td>
+<td>QW-10</td>
+</tr>
+<tr>
+<td>Q-09</td>
+<td>默认语言是否跟随系统？扩展是否跟随桌面语言？</td>
+<td>首次启动跟随系统语言；扩展连接后跟随桌面端，未连接时用浏览器语言</td>
+<td>QW-01, B-06</td>
+</tr>
+<tr>
+<td>Q-10</td>
+<td>浅色主题是否在本轮范围内？</td>
+<td>令牌先按语义命名；浅色主题放在第 5 阶段</td>
+<td>ST-12</td>
+</tr>
+<tr>
+<td>Q-11</td>
+<td>列表行是否显示健康警告图标（需要在打开列表时计算本地健康结果）？</td>
+<td>只在本次会话已运行过检查时显示，或在后台空闲时本地计算；不触发任何网络请求</td>
+<td>ST-04</td>
+</tr>
+<tr>
+<td>Q-12</td>
+<td><code>sync_status</code> 的 <code>dirty</code> 是否只与外部服务有关？多电脑完整同步是否依赖它？</td>
+<td>需要后端负责人确认后再实现 QW-02 的显示条件</td>
+<td>QW-02</td>
+</tr>
+<tr>
+<td>Q-13</td>
+<td>保险库文件无法识别时，是否提供"先保留原文件、再从加密备份替换"的启动恢复流程？</td>
+<td>当前启动恢复拒绝覆盖已有保险库，这是安全设计；如需支持，应由后端提供带预览与原文件保留的流程，界面只负责说明</td>
+<td>ST-05</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="附录-a-实测数据-基线-a2aa07a-生成数据">附录 A：实测数据（基线 a2aa07a，生成数据）</h2>
+<table>
+<thead>
+<tr>
+<th>测量</th>
+<th>条件</th>
+<th>结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>密码页可见实心主按钮</td>
+<td>1280×800，9 条，中文</td>
+<td>7</td>
+</tr>
+<tr>
+<td>列表起始 y 坐标 / 完整可见行数</td>
+<td>1000×700，英文</td>
+<td>301px / 4 行</td>
+</tr>
+<tr>
+<td>列表行高</td>
+<td>有标签 / 无标签</td>
+<td>95px / 66px</td>
+</tr>
+<tr>
+<td>页头高度</td>
+<td>1000px / 640px 宽</td>
+<td>65px / 113px（导航折行）</td>
+</tr>
+<tr>
+<td>"等待同步"徽标</td>
+<td>未配置任何同步，9 条</td>
+<td>9/9</td>
+</tr>
+<tr>
+<td>备份数 vs 最近成功备份</td>
+<td>写入 9 条之后</td>
+<td><code>count=11</code> vs "尚未备份"；"尚未设置备份"提醒消失</td>
+</tr>
+<tr>
+<td>安全与恢复页高度 / 标题 / 按钮</td>
+<td>1280×800，中文</td>
+<td>2747px / 11 / 15</td>
+</tr>
+<tr>
+<td>编辑器页高（收起 / 展开"更多选项"）</td>
+<td>1280×800，中文</td>
+<td>900px / 2396px</td>
+</tr>
+<tr>
+<td>"动态验证码"标题位置</td>
+<td>展开"更多选项"后</td>
+<td>约 1479px</td>
+</tr>
+<tr>
+<td>连接页高度 / 主按钮</td>
+<td>1280×800，中文</td>
+<td>1514px / 4</td>
+</tr>
+<tr>
+<td>跳转链接未聚焦时的可见部分</td>
+<td>任意</td>
+<td><code>bottom=4.6px</code>，宽 94px</td>
+</tr>
+<tr>
+<td>中文界面主密码错误提示</td>
+<td>解锁</td>
+<td>"Invalid password or vault"</td>
+</tr>
+</tbody>
+</table>
+<h2 id="附录-b-对比度核算-wcag-2-x-相对亮度">附录 B：对比度核算（WCAG 2.x 相对亮度）</h2>
+<table>
+<thead>
+<tr>
+<th>组合</th>
+<th>当前</th>
+<th>要求</th>
+<th>结论</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>白字 / <code>--color-accent #2b6cb0</code></td>
+<td>5.42</td>
+<td>4.5</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>白字 / <code>--color-accent-hover #3182ce</code></td>
+<td>4.03</td>
+<td>4.5</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td><code>--color-text-muted #8b9bb4</code> / <code>#151b24</code></td>
+<td>6.13</td>
+<td>4.5</td>
+<td>通过</td>
+</tr>
+<tr>
+<td><code>--color-border-strong #2f3b4a</code> / <code>#151b24</code>（输入框边界）</td>
+<td>1.52</td>
+<td>3.0</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td><code>--color-border-strong #2f3b4a</code> / <code>#0f1419</code></td>
+<td>1.63</td>
+<td>3.0</td>
+<td><strong>不通过</strong></td>
+</tr>
+<tr>
+<td>次要按钮底 <code>#1e2733</code> / 卡片 <code>#151b24</code></td>
+<td>1.15</td>
+<td>—（有文字，作为可见性参考）</td>
+<td>弱</td>
+</tr>
+<tr>
+<td>焦点环 <code>#2b6cb0</code> / <code>#151b24</code></td>
+<td>3.19</td>
+<td>3.0</td>
+<td>勉强通过</td>
+</tr>
+<tr>
+<td>扩展焦点环 <code>#90cdf4</code> / <code>#151b24</code></td>
+<td>10.07</td>
+<td>3.0</td>
+<td>通过</td>
+</tr>
+<tr>
+<td>扩展输入边框 <code>#718096</code> / <code>#0c1016</code></td>
+<td>4.75</td>
+<td>3.0</td>
+<td>通过</td>
+</tr>
+<tr>
+<td><strong>建议</strong> <code>--border-control #6b7a92</code> / bg, layer-1, layer-2</td>
+<td>4.25 / 3.97 / 3.59</td>
+<td>3.0</td>
+<td>通过</td>
+</tr>
+<tr>
+<td><strong>建议</strong> 白字 / <code>--accent-hover #2a62a3</code></td>
+<td>6.22</td>
+<td>4.5</td>
+<td>通过</td>
+</tr>
+<tr>
+<td><strong>建议</strong> 白字 / <code>--danger-fill #c53030</code></td>
+<td>5.47</td>
+<td>4.5</td>
+<td>通过</td>
+</tr>
+<tr>
+<td><strong>建议（浅色）</strong> <code>--border-control #7a869a</code> / <code>#f4f6f9</code>, <code>#fff</code>, <code>#eef2f6</code>, <code>#e3edf9</code></td>
+<td>3.40 / 3.68 / 3.27 / 3.11</td>
+<td>3.0</td>
+<td>通过</td>
+</tr>
+<tr>
+<td><strong>建议（浅色）</strong> <code>--text-tertiary #5b6575</code> / 各层</td>
+<td>4.98–5.89</td>
+<td>4.5</td>
+<td>通过</td>
+</tr>
+</tbody>
+</table>
+<h2 id="附录-c-证据文件索引-基线提交">附录 C：证据文件索引（基线提交）</h2>
+<ul>
+<li>外壳与导航：<code>apps/desktop/src/App.tsx</code>（65-78 锁定、133-146 备份数、185-189 维护通知、388-425 导航、428-494 页面路由、496-502 闲置警告）</li>
+<li>样式：<code>apps/desktop/src/styles.css</code>（1-45 令牌、138-145 内容宽度、187-206 标题优先级、372-389 跳转链接、669-748 按钮与导航、1278-1288 安全摘要、1758-1804 toast、1829-1852 后期一行式样式）</li>
+<li>列表：<code>apps/desktop/src/pages/VaultList.tsx</code>（130 类型名、217 顿号、256-279 筛选、302-357 行结构与菜单）</li>
+<li>编辑器：<code>apps/desktop/src/pages/EntryForm.tsx</code>（41 可新建类型、537-541 通行密钥、553 生成按钮、582-720 更多选项、723-727 底部操作）</li>
+<li>解锁：<code>apps/desktop/src/pages/Unlock.tsx</code>（175-180 错误处理、337-363 恢复入口、407-430 切换按钮、558-573 解锁按钮与 Hello、577-608 确认对话框）</li>
+<li>反馈：<code>apps/desktop/src/components/Toast.tsx:25-55</code>、<code>ConfirmDialog.tsx:72-103</code>、<code>LoadingSkeleton.tsx:7</code></li>
+<li>安全与恢复：<code>pages/SecurityRecovery.tsx</code>、<code>components/PersonalCenter.tsx</code>、<code>components/BackupCenter.tsx</code>、<code>components/PasswordHealth.tsx</code>、<code>components/PayloadUpgrade.tsx:41</code></li>
+<li>连接：<code>pages/Connections.tsx</code>、<code>components/ConnectionTools.tsx:120-150</code>、<code>components/IntegrationManager.tsx:408,435</code>、<code>components/PersonalSyncRunner.tsx:30-34</code></li>
+<li>快捷搜索：<code>components/QuickSearch.tsx</code></li>
+<li>i18n：<code>apps/desktop/src/i18n/index.tsx:404-436</code>、<code>apps/desktop/index.html:2</code></li>
+<li>扩展：<code>apps/browser-extension/popup.html</code>、<code>popup.css</code>、<code>popup.js:5,17-79,201-235</code>、<code>connection.js:48-62</code>、<code>inline.js</code></li>
+<li>后端：<code>src/vault_unified/api/routes/auth.py:363</code>、<code>src/vault_unified/session.py:145-165</code>、<code>src/vault_unified/models.py:54-77</code>、<code>src/vault_unified/api/routes/entries.py:212-213,486</code>、<code>src/vault_unified/api/routes/personal.py:184-200</code></li>
+<li>原生：<code>apps/desktop/src-tauri/tauri.conf.json:16-17</code>、<code>apps/desktop/src-tauri/src/desktop.rs:30</code></li>
+</ul>
+  </article></main>
+</div>
+<button class="theme-toggle" type="button" aria-label="切换浅色/深色主题">切换主题</button>
+<script>
+document.querySelectorAll("article table").forEach(function (t) {
+  var w = document.createElement("div"); w.className = "table-wrap";
+  t.parentNode.insertBefore(w, t); w.appendChild(t);
+});
+document.querySelectorAll("article a[href^='http']").forEach(function (a) { a.target = "_blank"; a.rel = "noopener noreferrer"; });
+document.querySelector(".theme-toggle").addEventListener("click", function () {
+  var root = document.documentElement;
+  var dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  root.dataset.theme = dark ? "light" : "dark";
+});
+</script>
+</body>
+</html>
